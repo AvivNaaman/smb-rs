@@ -22,6 +22,7 @@ use crate::packets::netbios::{NetBiosMessageContent, NetBiosTcpMessage, NetBiosT
 ///
 /// Use [connect](NetBiosClient::connect), [send](NetBiosClient::send),
 /// and [receive_bytes](NetBiosClient::recieve_bytes) to interact with a server.
+#[derive(Debug)]
 pub struct NetBiosClient {
     connection: Option<TcpStream>,
 }
@@ -36,6 +37,26 @@ impl NetBiosClient {
     pub async fn connect(&mut self, address: &str) -> crate::Result<()> {
         self.connection = Some(TcpStream::connect(address).await?);
         Ok(())
+    }
+
+    pub fn is_connected(&self) -> bool {
+        self.connection.is_some()
+    }
+
+    #[cfg(feature = "sync")]
+    pub fn disconnect(&mut self) {
+        if let Some(connection) = self.connection.as_mut() {
+            let _ = connection.shutdown(std::net::Shutdown::Both);
+        }
+        self.connection = None;
+    }
+
+    #[cfg(feature = "async")]
+    pub async fn disconnect(&mut self) {
+        if let Some(connection) = self.connection.as_mut() {
+            let _ = connection.shutdown().await;
+        }
+        self.connection = None;
     }
 
     /// Sends a NetBios message.
@@ -127,8 +148,9 @@ impl NetBiosClient {
     }
 
     /// Clones the client, returning a new client with the same connection.
-    #[cfg(feature = "sync")]
+    #[cfg(all(feature = "sync", not(feature = "single_threaded")))]
     pub(crate) fn try_clone(&self) -> crate::Result<NetBiosClient> {
+        // TODO: If used for splitting read/write, call Shutdown::Read on the original connection and Shutdown::Write on the clone.
         Ok(NetBiosClient {
             connection: Some(
                 self.connection

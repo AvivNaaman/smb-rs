@@ -17,11 +17,11 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        compile_features: [ async, sync ]
+        compile_features: [ async, multi_threaded, single_threaded ]
 
     steps:
     - uses: actions/checkout@v4
     - name: Build/${{ matrix.compile_features }}
-      run: cargo build --verbose --features ${{ matrix.compile_features }}
+      run: cargo build --verbose --no-default-features --features "${{ matrix.compile_features }},sign,encrypt,compress"
     - name: Tests/${{ matrix.compile_features }}
-      run: cargo test --verbose --features ${{ matrix.compile_features }}
+      run: cargo test --verbose --no-default-features --features "${{ matrix.compile_features }},sign,encrypt,compress"

@@ -14,6 +14,8 @@ env_logger = "0.11.6"
 log = "0.4.22"
 
 [features]
-default = []
+default = ["async"]
 async = ["smb/async", "dep:tokio"]
 sync = ["smb/sync", "maybe-async/is_sync"]
+single_threaded = ["smb/single_threaded", "sync"]
+multi_threaded = ["smb/multi_threaded", "sync"]

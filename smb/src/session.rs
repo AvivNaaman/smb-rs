@@ -3,9 +3,10 @@
 //! This module contains the session setup logic, as well as the session message handling,
 //! including encryption and signing of messages.
 
+use crate::connection::worker::Worker;
 use crate::sync_helpers::*;
 use crate::{
-    connection::{preauth_hash::PreauthHashValue, ClientMessageHandler},
+    connection::{preauth_hash::PreauthHashValue, ConnectionMessageHandler},
     crypto::KeyToDerive,
     msg_handler::{
         HandlerReference, IncomingMessage, MessageHandler, OutgoingMessage, ReceiveOptions,
@@ -19,7 +20,7 @@ use binrw::prelude::*;
 use maybe_async::*;
 use sspi::{AuthIdentity, Secret, Username};
 use std::sync::Arc;
-type UpstreamHandlerRef = HandlerReference<ClientMessageHandler>;
+type UpstreamHandlerRef = HandlerReference<ConnectionMessageHandler>;
 
 mod authenticator;
 mod encryptor_decryptor;

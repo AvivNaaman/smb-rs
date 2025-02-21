@@ -22,6 +22,14 @@ impl File {
         }
     }
 
+    pub fn end_of_file(&self) -> u64 {
+        self.end_of_file
+    }
+
+    pub fn access(&self) -> FileAccessMask {
+        self.access
+    }
+
     #[maybe_async]
     pub async fn query_info(&self) -> crate::Result<FileBasicInformation> {
         let response = self

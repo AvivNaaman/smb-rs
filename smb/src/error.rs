@@ -64,6 +64,8 @@ pub enum Error {
     ChannelRecvError(#[from] std::sync::mpsc::RecvError),
     #[error("Not enough credits to satisfy this request by the server (req: {0}, balance: {1}).")]
     NoCredits(u16, u16),
+    #[error("Unexpected message with ID {0} (exp {1}).")]
+    UnexpectedMessageId(u64, u64),
 }
 
 impl<T> From<PoisonError<T>> for Error {

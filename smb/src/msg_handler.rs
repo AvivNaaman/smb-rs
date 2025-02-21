@@ -35,15 +35,15 @@ impl OutgoingMessage {
 #[derive(Debug)]
 pub struct SendMessageResult {
     // The message ID for the sent message.
-    pub msgid: u64,
+    pub msg_id: u64,
     // If finalized, this is set.
     pub preauth_hash: Option<PreauthHashValue>,
 }
 
 impl SendMessageResult {
-    pub fn new(msgid: u64, preauth_hash: Option<PreauthHashValue>) -> SendMessageResult {
+    pub fn new(msg_id: u64, preauth_hash: Option<PreauthHashValue>) -> SendMessageResult {
         SendMessageResult {
-            msgid,
+            msg_id,
             preauth_hash,
         }
     }
@@ -86,9 +86,9 @@ pub struct ReceiveOptions {
     /// If set, this command will be checked against the received command.
     pub cmd: Option<Command>,
 
-    /// When receiving a message, only messages with this msgid will be returned.
+    /// When receiving a message, only messages with this msg_id will be returned.
     /// This is mostly used for async message handling, where the client is waiting for a specific message.
-    pub msgid_filter: u64,
+    pub msg_id_filter: u64,
 }
 
 impl ReceiveOptions {
@@ -108,7 +108,7 @@ impl ReceiveOptions {
 
     // A matching message ID to the sent message.
     pub fn to(mut self, sent: SendMessageResult) -> Self {
-        self.msgid_filter = sent.msgid;
+        self.msg_id_filter = sent.msg_id;
         self
     }
 }
@@ -118,7 +118,7 @@ impl Default for ReceiveOptions {
         ReceiveOptions {
             status: Status::Success,
             cmd: None,
-            msgid_filter: 0,
+            msg_id_filter: 0,
         }
     }
 }
@@ -158,7 +158,7 @@ pub trait MessageHandler {
     ) -> crate::Result<IncomingMessage> {
         // Send the message and wait for the matching response.
         let send_result = self.sendo(msg).await?;
-        options.msgid_filter = send_result.msgid;
+        options.msg_id_filter = send_result.msg_id;
         self.recvo(options).await
     }
 

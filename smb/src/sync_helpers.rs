@@ -1,12 +1,14 @@
 ///! This is a helper module that allows easy access and usage of
 /// Async/Multi-threaded features in the library, according to the
 /// features enabled.
-#[cfg(feature = "sync")]
+#[cfg(not(feature = "async"))]
 pub use std::{
     cell::OnceCell,
-    sync::{mpsc, Mutex, RwLock},
-    thread::JoinHandle,
+    sync::{Mutex, RwLock},
 };
+
+#[cfg(feature = "multi_threaded")]
+pub use std::{sync::mpsc, thread::JoinHandle};
 
 #[cfg(feature = "async")]
 pub use tokio::{

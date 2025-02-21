@@ -13,7 +13,7 @@ categories.workspace = true
 # Encoding/Decoding
 binrw = "0.14.1"
 modular-bitfield = "0.11.2"
-der = {version = "0.7.9", features = ["std", "alloc"]}
+der = { version = "0.7.9", features = ["std", "alloc"] }
 
 # Async
 tokio = { version = "1.43", optional = true, features = ["full"] }
@@ -23,33 +23,37 @@ maybe-async = "0.2"
 # General utils
 rand = "0.8.5"
 log = "0.4.22"
-time = {version = "0.3.37", features = ["macros"]}
+time = { version = "0.3.37", features = ["macros"] }
 thiserror = "2.0"
 
 # APIs
 sspi = { version = "0.15.1" }
-gss-api = {version = "0.1.0", features = []}
+gss-api = { version = "0.1.0", features = [] }
 
 # Crypto
 hmac = "0.12.1"
 sha2 = "0.10.8"
-rust-kbkdf = {version = "1.0.1"}
-crypto-common = {version = "0.1"}
+rust-kbkdf = { version = "1.0.1" }
+crypto-common = { version = "0.1" }
 aes = "0.8.4"
-aes-gcm = {version = "0.10.3", features = ["std"], optional = true}
-cmac = {version = "0.7.2", optional = true}
-ccm = {version = "0.5.0", optional = true}
-aead = {version = "0.5", optional = true}
+aes-gcm = { version = "0.10.3", features = ["std"], optional = true }
+cmac = { version = "0.7.2", optional = true }
+ccm = { version = "0.5.0", optional = true }
+aead = { version = "0.5", optional = true }
 
 # Compression
-lz4_flex = { version = "0.11", default-features = false, features = ["std"], optional = true }
+lz4_flex = { version = "0.11", default-features = false, features = [
+    "std",
+], optional = true }
 
 [features]
 default = ["sign", "encrypt", "compress"]
 
-# Async
+# Threading models
 async = ["dep:tokio", "dep:tokio-util"]
-sync = ["maybe-async/is_sync"]
+sync = ["maybe-async/is_sync"] # sync = not async: single/multi-threaded
+multi_threaded = ["sync"]
+single_threaded = ["sync"]
 
 # Compression
 compress_pattern_v1 = []
@@ -60,7 +64,7 @@ compress = ["compress_pattern_v1", "compress_lz4"]
 encrypt_aes128ccm = ["dep:ccm", "dep:aead"]
 encrypt_aes256ccm = ["dep:ccm", "dep:aead"]
 encrypt_aesccm = ["encrypt_aes128ccm", "encrypt_aes256ccm"]
-encrypt = ["encrypt_aesccm"] 
+encrypt = ["encrypt_aesccm"]
 
 # Signing
 sign_gmac = ["dep:aes-gcm"]

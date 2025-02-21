@@ -1,3 +1,4 @@
+use crate::sync_helpers::OnceCell;
 use binrw::io::SeekFrom;
 use binrw::{
     helpers::{read_u24, write_u24},
@@ -5,9 +6,20 @@ use binrw::{
 };
 use std::{convert::TryFrom, fmt::Debug};
 
+#[derive(Default)]
 pub struct PosMarker3Byte {
-    pub pos: core::cell::Cell<u64>,
+    pub pos: OnceCell<u64>,
     pub value: u32,
+}
+
+impl PosMarker3Byte {
+    fn get_pos(&self) -> binrw::BinResult<u64> {
+        let value = self.pos.get().ok_or(binrw::error::Error::Custom {
+            pos: 0,
+            err: Box::new("PosMarker has not been written to yet"),
+        })?;
+        Ok(*value)
+    }
 }
 
 impl BinRead for PosMarker3Byte {
@@ -20,7 +32,7 @@ impl BinRead for PosMarker3Byte {
     ) -> BinResult<Self> {
         let pos = reader.stream_position()?;
         read_u24(reader, endian, args).map(|value| Self {
-            pos: core::cell::Cell::new(pos),
+            pos: OnceCell::from(pos),
             value,
         })
     }
@@ -35,7 +47,10 @@ impl BinWrite for PosMarker3Byte {
         endian: binrw::Endian,
         args: Self::Args<'_>,
     ) -> BinResult<()> {
-        self.pos.set(writer.stream_position()?);
+        self.pos.set(writer.stream_position()?).map_err(|_| binrw::error::Error::Custom {
+            pos: writer.stream_position().unwrap(),
+            err: Box::new("PosMarker has already been written to"),
+        })?;
         write_u24(&u32::default(), writer, endian, args)
     }
 }
@@ -57,7 +72,7 @@ impl PosMarker3Byte {
                 pos: begin_offset,
                 err: Box::new(err),
             })?;
-        writer.seek(SeekFrom::Start(this.pos.get()))?;
+        writer.seek(SeekFrom::Start(this.get_pos()?))?;
         write_u24(&written_bytes_value, writer, endian, ())?;
         writer.seek(SeekFrom::End(0))?;
         Ok(())
@@ -73,19 +88,10 @@ impl Debug for PosMarker3Byte {
     }
 }
 
-impl Default for PosMarker3Byte {
-    fn default() -> Self {
-        Self {
-            pos: core::cell::Cell::new(0),
-            value: u32::default(),
-        }
-    }
-}
-
 impl From<u32> for PosMarker3Byte {
     fn from(value: u32) -> Self {
         Self {
-            pos: core::cell::Cell::new(0),
+            pos: OnceCell::new(),
             value,
         }
     }

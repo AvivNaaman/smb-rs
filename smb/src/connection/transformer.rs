@@ -147,7 +147,7 @@ impl Transformer {
     /// Gets an OutgoingMessage ready for sending, performs crypto operations, and returns the
     /// final bytes to be sent.
     #[maybe_async]
-    pub async fn tranform_outgoing(
+    pub async fn transform_outgoing(
         &self,
         msg: OutgoingMessage,
     ) -> crate::Result<NetBiosTcpMessage> {

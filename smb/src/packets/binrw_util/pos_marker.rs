@@ -1,13 +1,24 @@
-use std::{fmt::Debug, io::SeekFrom};
-
+use crate::sync_helpers::OnceCell;
 use binrw::{BinRead, BinResult, BinWrite, Endian};
+use std::{fmt::Debug, io::SeekFrom};
 
 /**
  * Source: https://github.com/jam1garner/binrw/discussions/229
  */
+#[derive(Default)]
 pub struct PosMarker<T> {
-    pub pos: core::cell::Cell<u64>,
+    pub pos: OnceCell<u64>,
     pub value: T,
+}
+
+impl<T> PosMarker<T> {
+    fn get_pos(&self) -> binrw::BinResult<u64> {
+        let value = self.pos.get().ok_or(binrw::error::Error::Custom {
+            pos: 0,
+            err: Box::new("PosMarker has not been written to yet"),
+        })?;
+        Ok(*value)
+    }
 }
 
 impl<T> PosMarker<T>
@@ -16,14 +27,18 @@ where
 {
     /// This function assumes the PosMarker is used to describe an offset from it's location.
     /// You can use it to get a `SeekFrom` to seek to the position described by the PosMarker
-    pub fn seek_relative(&self, zero_check: bool) -> SeekFrom {
-        debug_assert!(self.pos.get() != u64::MAX); // sanity
-        let pos = SeekFrom::Start(self.pos.get() + self.value.into());
-        if !zero_check || Into::<u64>::into(self.value) > 0 {
+    pub fn try_seek_relative(&self, zero_check: bool) -> BinResult<SeekFrom> {
+        let pos = SeekFrom::Start(self.get_pos()? + self.value.into());
+        Ok(if !zero_check || Into::<u64>::into(self.value) > 0 {
             pos
         } else {
             SeekFrom::Current(0)
-        }
+        })
+    }
+
+    /// Just like [try_seek_relative](Self::try_seek_relative), but unwraps the result.
+    pub fn seek_relative(&self, zero_check: bool) -> SeekFrom {
+        self.try_seek_relative(zero_check).unwrap()
     }
 }
 
@@ -40,7 +55,7 @@ where
     ) -> BinResult<Self> {
         let pos = reader.stream_position()?;
         T::read_options(reader, endian, args).map(|value| Self {
-            pos: core::cell::Cell::new(pos),
+            pos: OnceCell::from(pos),
             value,
         })
     }
@@ -58,7 +73,12 @@ where
         endian: binrw::Endian,
         args: Self::Args<'_>,
     ) -> BinResult<()> {
-        self.pos.set(writer.stream_position()?);
+        self.pos
+            .set(writer.stream_position()?)
+            .map_err(|_| binrw::error::Error::Custom {
+                pos: writer.stream_position().unwrap(),
+                err: Box::new("PosMarker has already been written to"),
+            })?;
         T::default().write_options(writer, endian, args)
     }
 }
@@ -80,11 +100,11 @@ where
         W: binrw::io::Write + binrw::io::Seek,
     {
         let return_to = writer.stream_position()?;
-        writer.seek(SeekFrom::Start(self.pos.get()))?;
+        writer.seek(SeekFrom::Start(self.get_pos()?))?;
         value
             .try_into()
             .map_err(|_| binrw::error::Error::Custom {
-                pos: self.pos.get(),
+                pos: self.get_pos().unwrap(),
                 err: Box::new("Error converting value to T"),
             })?
             .write_options(writer, endian, ())?;
@@ -125,7 +145,7 @@ where
             Some(write_offset_at) => {
                 // Is there a base offset marker? Subtract it from the current position.
                 let base_offset_val = match offset_relative_to {
-                    Some(offset_base) => offset_base.pos.get(),
+                    Some(offset_base) => offset_base.get_pos()?,
                     None => 0,
                 };
                 let offset_to_write = start_offset - base_offset_val;
@@ -315,17 +335,5 @@ where
             .field("pos", &self.pos)
             .field("value", &self.value)
             .finish()
-    }
-}
-
-impl<T> Default for PosMarker<T>
-where
-    T: Default,
-{
-    fn default() -> Self {
-        Self {
-            pos: core::cell::Cell::new(u64::MAX),
-            value: T::default(),
-        }
     }
 }

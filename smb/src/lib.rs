@@ -1,5 +1,19 @@
-#[cfg(not(any(feature = "async", feature = "sync")))]
-compile_error!("You must enable at least one of the features: 'async' or 'sync.");
+#[cfg(not(any(
+    feature = "async",
+    feature = "single_threaded",
+    feature = "multi_threaded"
+)))]
+compile_error!(
+    "You must enable exactly one of the following features: async, single_threaded, multi_threaded"
+);
+#[cfg(any(
+    all(feature = "async", feature = "single_threaded"),
+    all(feature = "async", feature = "multi_threaded"),
+    all(feature = "single_threaded", feature = "multi_threaded")
+))]
+compile_error!(
+    "You must enable exactly one of the following features: async, single_threaded, multi_threaded"
+);
 
 pub mod compression;
 pub mod connection;
