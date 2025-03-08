@@ -14,3 +14,4 @@ repository = "https://github.com/AvivNaaman/smb-rs"
 authors = ["Aviv Naaman <avivnaaman04@gmail.com>"]
 keywords = ["smb", "network", "file-sharing", "windows"]
 categories = ["network-programming", "parsing", "filesystem"]
+readme = "README.md"
