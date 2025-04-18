@@ -108,10 +108,10 @@ impl Connection {
                 SMBMessage::SMB1Message(SMB1NegotiateMessage::new()).try_into()?;
             transport.send(&msg_bytes).await?;
 
-            log::debug!("Sent SMB1 negotiate request, Receieving SMB2 response");
+            log::debug!("Sent SMB1 negotiate request, Receiving SMB2 response");
             // 2. Expect SMB2 negotiate response
-            let recieved_bytes = transport.receive().await?;
-            let response = SMBMessage::try_from(recieved_bytes.as_ref())?;
+            let received_bytes = transport.receive().await?;
+            let response = SMBMessage::try_from(received_bytes.as_ref())?;
             let message = match response {
                 SMBMessage::SMB2Message(Message::Plain(m)) => m,
                 _ => {
