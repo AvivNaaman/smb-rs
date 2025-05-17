@@ -1,11 +1,6 @@
-/* * TERMINALS * */
-Integer_literal = @{ ASCII_DIGIT+ }
-Uuid_rep        = @{ ASCII_HEX_DIGIT{8} ~ "-" ~ (ASCII_HEX_DIGIT{4} ~ "-"){3} ~ ASCII_HEX_DIGIT{12} }
-identifier      = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHA | ASCII_DIGIT | "_")* }
-
 interface = { SOI ~ interface_header ~ "{" ~ interface_body ~ "}" ~ EOI }
 
-interface_header = { "[" ~ interface_attributes ~ "]" ~ "interface" ~ identifier }
+interface_header = { "[" ~ interface_attributes ~ "]" ~ "interface" ~ Identifier }
 
 interface_attributes = { interface_attribute ~ ("," ~ interface_attribute)* }
 interface_attribute  = {
@@ -14,16 +9,199 @@ interface_attribute  = {
   | ("exceptions" ~ "(" ~ excep_name ~ ("," ~ excep_name)* ~ ")")
   | ("local")
   | ("pointer_default" ~ "(" ~ ptr_attr ~ ")")
+  | "ms_union" // MS-RPCE 2.2.4.5
 }
 
-excep_name = { identifier }
+excep_name = { Identifier }
 ptr_attr   = {
     "ref"
   | "unique"
   | "ptr"
 }
 
-interface_body = { "body" }
+interface_body = { import* ~ interface_component+ }
 
+import      = { "import" ~ import_list ~ ";" }
+import_list = { import_name ~ ("," ~ import_name)* }
+import_name = { Import_string }
+
+interface_component = { export | op_declarator ~ ";" }
+export              = { type_declarator ~ ";" | const_declarator ~ ";" | tagged_declarator ~ ";" }
+
+const_declarator   = { "const" ~ const_type_spec ~ Identifier ~ "=" ~ const_exp }
+const_type_spec    = { primitive_integer_type | "char" | "boolean" | "void" ~ "*" | "char" ~ "*" }
+const_exp          = { integer_const_exp | Identifier | string | character_constant | "NULL" | "TRUE" | "FALSE" }
+integer_const_exp  = { conditional_exp }
+conditional_exp    = { logical_or_exp ~ ("?" ~ integer_const_exp ~ ":" ~ conditional_exp)? }
+logical_or_exp     = { logical_and_exp ~ ("||" ~ logical_and_exp)* }
+logical_and_exp    = { inclusive_or_exp ~ ("&&" ~ inclusive_or_exp)* }
+inclusive_or_exp   = { exclusive_or_exp ~ ("|" ~ exclusive_or_exp)* }
+exclusive_or_exp   = { and_exp ~ ("^" ~ and_exp)* }
+and_exp            = { equality_exp ~ ("&" ~ equality_exp)* }
+equality_exp       = { relational_exp ~ (("==" | "!=") ~ relational_exp)* }
+relational_exp     = { shift_exp ~ (("<" | ">" | "<=" | ">=") ~ shift_exp)* }
+shift_exp          = { additive_exp ~ (("<<" | ">>") ~ additive_exp)* }
+additive_exp       = { multiplicative_exp ~ (("+" | "-") ~ multiplicative_exp)* }
+multiplicative_exp = { unary_exp ~ (("*" | "/" | "%") ~ unary_exp)* }
+unary_exp          = { primary_exp ~ (("+" | "-" | "~" | "!") ~ primary_exp)* }
+primary_exp        = { Integer_literal | Identifier | "(" ~ const_exp ~ ")" }
+
+type_declarator     = { "typedef" ~ type_attribute_list? ~ type_spec ~ declarators }
+type_attribute_list = { "[" ~ type_attribute ~ ("," ~ type_attribute)* ~ "]" }
+/*
+    *
+    <simple_type_spec> ::= <base_type_spec>
+    | <predefined_type_spec>
+    | <Identifier>
+    <type_spec> ::= <simple_type_spec>
+    | <constructed_type_spec>
+    <declarators> ::= <declarator> [ , <declarator> ] ...
+    <declarator> ::= <pointer_opt> <direct_declarator>
+    <direct_declarator> ::= <Identifier>
+    | ( <declarator> )
+    | <array_declarator>
+    | <function_declarator>
+    <tagged_declarator> ::= <tagged_struct_declarator>
+    | <tagged_union_declarator>
+*/
+simple_type_spec       = { base_type_spec | predefined_type_spec | Identifier }
+type_spec              = { simple_type_spec | constructed_type_spec }
+constructed_type_spec  = { struct_type | union_type | enumeration_type | tagged_declarator | pipe_type }
+declarators            = { declarator ~ ("," ~ declarator)* }
+direct_declarator_base = { Identifier | "(" ~ declarator ~ ")" }
+direct_declarator      = { direct_declarator_base ~ (array_bounds_declarator | function_declarator)* }
+tagged_declarator      = { tagged_struct_declarator | tagged_union_declarator }
+
+// Struct declarator
+tagged_struct_declarator = { "struct" ~ tag | tagged_struct }
+struct_type              = { "struct" ~ "{" ~ member_list ~ "}" }
+tagged_struct            = { "struct" ~ tag ~ "{" ~ member_list ~ "}" }
+tag                      = { Identifier }
+member_list              = { member ~ (member)* }
+member                   = { field_declarator ~ ";" }
+field_declarator         = { field_attribute_list? ~ type_spec ~ declarators }
+field_attribute_list     = { "[" ~ field_attribute ~ ("," ~ field_attribute)* ~ "]" }
+
+// Union declarator
+tagged_union_declarator    = { "union" ~ tag | tagged_union }
+union_type                 = { "union" ~ union_switch ~ "{" ~ union_body ~ "}" | "union" ~ "{" ~ union_body_n_e ~ "}" }
+union_switch               = { "switch" ~ "(" ~ switch_type_spec ~ Identifier ~ ")" ~ union_name? }
+switch_type_spec           = { primitive_integer_type | char_type | boolean_type | Identifier }
+tagged_union               = { "union" ~ Identifier ~ union_switch ~ "{" ~ union_body ~ "}" | "union" ~ Identifier ~ "{" ~ union_body_n_e ~ "}" }
+union_name                 = { Identifier }
+union_body                 = { union_case+ }
+union_body_n_e             = { union_case_n_e+ }
+union_case                 = { union_case_label+ ~ union_arm | default_case }
+union_case_n_e             = { union_case_label_n_e ~ union_arm | default_case_n_e }
+union_case_label           = { "case" ~ const_exp ~ ":" }
+union_case_label_n_e       = { "[" ~ "case" ~ "(" ~ const_exp ~ ("," ~ const_exp)* ~ ")" ~ "]" }
+default_case               = { "default" ~ ":" ~ union_arm }
+default_case_n_e           = { "[" ~ "default" ~ "]" ~ union_arm }
+union_arm                  = { field_declarator? ~ ";" }
+union_type_switch_attr     = { "switch_type" ~ "(" ~ switch_type_spec ~ ")" }
+union_instance_switch_attr = { "switch_is" ~ "(" ~ attr_var ~ ")" }
+
+// Enumeration type
+enumeration_type = { "enum" ~ Identifier ~ "{" ~ Identifier ~ ("," ~ Identifier)* ~ "}" }
+
+// Pipes
+pipe_type = { "pipe" ~ Identifier }
+
+// Arrays
+array_bounds_declarator = { "[" ~ array_bound? ~ "]" | "[" ~ array_bounds_pair ~ "]" }
+array_bounds_pair       = { array_bound ~ ".." ~ array_bound }
+array_bound             = { "*" | Integer_literal | Identifier }
+
+// Type attributes
+/*
+    <type_attribute> ::= transmit_as ( <xmit_type> )
+    | handle
+    | <usage_attribute>
+    | <union_type_switch_attr>
+    | <ptr_attr>
+    <usage_attribute> ::= string
+    | context_handle
+    <xmit_type> ::= <simple_type_spec>
+*/
+type_attribute  = { "transmit_as" ~ "(" ~ xmit_type ~ ")" | "handle" | usage_attribute | union_type_switch_attr | ptr_attr }
+usage_attribute = { "string" | "context_handle" }
+xmit_type       = { simple_type_spec }
+
+// Field attributes
+field_attribute = {
+    "first_is" ~ "(" ~ attr_var_list ~ ")"
+  | "last_is" ~ "(" ~ attr_var_list ~ ")"
+  | "length_is" ~ "(" ~ attr_var_list ~ ")"
+  | "min_is" ~ "(" ~ attr_var_list ~ ")"
+  | "max_is" ~ "(" ~ attr_var_list ~ ")"
+  | "size_is" ~ "(" ~ attr_var_list ~ ")"
+  | usage_attribute
+  | union_instance_switch_attr
+  | "ignore"
+  | ptr_attr
+}
+attr_var_list   = { attr_var ~ ("," ~ attr_var)* }
+attr_var        = { "*"? ~ Integer_literal }
+
+// Operation declarator
+op_declarator = { op_attributes? ~ simple_type_spec ~ Identifier ~ param_declarators }
+op_attributes = { "[" ~ op_attribute ~ ("," ~ op_attribute)* ~ "]" }
+op_attribute  = { "idempotent" | "broadcast" | "maybe" | "reflect_deletions" | usage_attribute | ptr_attr }
+/*
+    <param_declarators> ::= ( [ <param_declarator>
+    [ , <param_declarator> ] ... ] )
+    | ( void )
+    <param_declarator> ::= <param_attributes> <type_spec> <declarator>
+    <param_attributes> ::= <[> <param_attribute>
+    [ , <param_attribute> ] ... <]>
+
+    <param_attribute> ::= <directional_attribute>
+    | <field_attribute>
+    <directional_attribute> ::= in
+    | out
+*/
+param_declarators     = { "(" ~ ("void" | (param_declarator ~ ("," ~ param_declarator)*)?) ~ ")" }
+param_declarator      = { param_attributes? ~ type_spec ~ declarators }
+param_attributes      = { "[" ~ param_attribute ~ ("," ~ param_attribute)* ~ "]" }
+param_attribute       = { directional_attribute | field_attribute }
+directional_attribute = { "in" | "out" | "inout" }
+
+// Function pointers
+function_declarator          = { direct_declarator_base ~ param_declarators }
+predefined_type_spec         = { "error_status_t" | international_character_type }
+international_character_type = { "ISO_LATIN_1" | "ISO_MULTILINGUAL" | "ISO_UCS" }
+
+// Pointer
+declarator  = { pointer_opt ~ direct_declarator }
+pointer_opt = { pointer? }
+pointer     = { "*..." }
+
+base_type_spec         = { floating_pt_type | integer_type | char_type | boolean_type | byte_type | void_type | handle_type }
+floating_pt_type       = { "float" | "double" }
+integer_type           = { primitive_integer_type | hyper_int }
+primitive_integer_type = { signed_integer | unsigned_integer }
+signed_integer         = { integer_size ~ ("int")? }
+integer_size           = { "long" | "short" | "small" }
+hyper_int              = { "hyper" ~ ("unsigned" ~ "int")? | "unsigned" ~ "hyper" }
+unsigned_integer       = { (("unsigned" ~ integer_size) | integer_size ~ "unsigned") ~ ("int")? }
+char_type              = { "char" ~ ("unsigned")? }
+boolean_type           = { "boolean" }
+byte_type              = { "byte" }
+void_type              = { "void" }
+handle_type            = { "handle_t" }
+
+// character_constant - contains all chars from the portable charset, wrapped in single quotes,
+// unless it's single quote, in which case it's escaped with a backslash
+character_constant = @{ "'" ~ (!"'" ~ ANY)* ~ "'" }
+// same goes for string here.
+string = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+
+/* * TERMINALS * */
+Integer_literal = @{ ASCII_DIGIT+ }
+Uuid_rep        = @{ ASCII_HEX_DIGIT{8} ~ "-" ~ (ASCII_HEX_DIGIT{4} ~ "-"){3} ~ ASCII_HEX_DIGIT{12} }
+Identifier      = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHA | ASCII_DIGIT | "_"){,31} }
+Import_string   = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+
+/* * SPECIAL TOKENS * */
 WHITESPACE = _{ " " | "\r" | "\n" | "\t" }
-COMMENT = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
+COMMENT    = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }

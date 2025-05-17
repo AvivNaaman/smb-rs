@@ -1,11 +1,19 @@
 /*
-    A Test IDL file.
+* greet.idl
+*
+* The "greet" interface.
 */
-[
-uuid(3d6ead56-06e3-11ca-8dd1-826901beabcd),
-version(1.0)
-]
+
+[uuid(3d6ead56-06e3-11ca-8dd1-826901beabcd),
+version(1.0)]
+
 interface greetif
 {
-    body
+const long int REPLY_SIZE = 100;
+
+void greet(
+[in] handle_t h,
+[in, string] char client_greeting[],
+[out, string] char server_reply[REPLY_SIZE]
+);
 }
