@@ -30,6 +30,11 @@ async fn _main() -> Result<(), Box<dyn Error>> {
     log::info!("Starting smb-cli");
     log::info!("Version: {}", env!("CARGO_PKG_VERSION"));
 
+    log::info!{"Profiling enabled. Attach the profiler, and press any key to continue."};
+    let mut s = String::new();
+    std::io::stdin().read_line(&mut s)?;
+    log::info!{"Profiler attached. Starting."};
+
     let cli = Cli::parse();
 
     // In macOS, we need to attach, since local network connections are problematic when

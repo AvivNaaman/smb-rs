@@ -1,5 +1,5 @@
 [workspace]
-members = ["smb", "smb-cli"]
+members = ["smb", "smb-cli", "msrpc"]
 resolver = "2"
 
 [workspace.package]
