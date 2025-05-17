@@ -1,0 +1,11 @@
+/*
+    A Test IDL file.
+*/
+[
+uuid(3d6ead56-06e3-11ca-8dd1-826901beabcd),
+version(1.0)
+]
+interface greetif
+{
+    body
+}

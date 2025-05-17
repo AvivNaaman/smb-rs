@@ -1,1 +1,29 @@
-a = { "a" }
+/* * TERMINALS * */
+Integer_literal = @{ ASCII_DIGIT+ }
+Uuid_rep        = @{ ASCII_HEX_DIGIT{8} ~ "-" ~ (ASCII_HEX_DIGIT{4} ~ "-"){3} ~ ASCII_HEX_DIGIT{12} }
+identifier      = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHA | ASCII_DIGIT | "_")* }
+
+interface = { SOI ~ interface_header ~ "{" ~ interface_body ~ "}" ~ EOI }
+
+interface_header = { "[" ~ interface_attributes ~ "]" ~ "interface" ~ identifier }
+
+interface_attributes = { interface_attribute ~ ("," ~ interface_attribute)* }
+interface_attribute  = {
+    ("uuid" ~ "(" ~ Uuid_rep ~ ")")
+  | ("version" ~ "(" ~ Integer_literal ~ ("." ~ Integer_literal)? ~ ")")
+  | ("exceptions" ~ "(" ~ excep_name ~ ("," ~ excep_name)* ~ ")")
+  | ("local")
+  | ("pointer_default" ~ "(" ~ ptr_attr ~ ")")
+}
+
+excep_name = { identifier }
+ptr_attr   = {
+    "ref"
+  | "unique"
+  | "ptr"
+}
+
+interface_body = { "body" }
+
+WHITESPACE = _{ " " | "\r" | "\n" | "\t" }
+COMMENT = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }
