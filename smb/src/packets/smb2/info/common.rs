@@ -16,6 +16,7 @@ pub enum InfoType {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy, Default)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct AdditionalInfo {
     pub owner_security_information: bool,
     pub group_security_information: bool,

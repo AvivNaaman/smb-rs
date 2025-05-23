@@ -9,6 +9,7 @@ use modular_bitfield::prelude::*;
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct TreeConnectRequestFlags {
     pub cluster_reconnect: bool,
     pub redirect_to_owner: bool,
@@ -161,6 +162,7 @@ type SidArrayData = ArrayData<SidAttrData>;
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct SidAttrSeGroup {
     pub mandatory: bool,
     pub enabled_by_default: bool,
@@ -184,6 +186,7 @@ pub struct LuidAttrData {
 /// [MS-LSAD 2.2.5.4](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-lsad/03c834c0-f310-4e0c-832e-b6e7688364d1)
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy, PartialEq, Eq)]
+#[br(map = Self::from_bytes)]
 pub struct LsaprLuidAttributes {
     pub default: bool,
     pub enabled: bool,
@@ -233,6 +236,7 @@ pub enum ShareCacheMode {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct ShareFlags {
     pub dfs: bool,
     pub dfs_root: bool,
@@ -263,6 +267,7 @@ pub struct ShareFlags {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct TreeCapabilities {
     #[skip]
     __: B3,

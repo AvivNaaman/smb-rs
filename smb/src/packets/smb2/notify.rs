@@ -25,6 +25,7 @@ pub struct ChangeNotifyRequest {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct NotifyFlags {
     pub watch_tree: bool,
     #[skip]
@@ -34,6 +35,7 @@ pub struct NotifyFlags {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct NotifyFilter {
     pub file_name: bool,
     pub dir_name: bool,

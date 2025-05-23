@@ -26,6 +26,7 @@ pub struct SessionSetupRequest {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct SessionSecurityMode {
     pub signing_enabled: bool,
     pub signing_required: bool,
@@ -36,6 +37,7 @@ pub struct SessionSecurityMode {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct SetupRequestFlags {
     pub binding: bool,
     #[skip]
@@ -45,6 +47,7 @@ pub struct SetupRequestFlags {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct NegotiateCapabilities {
     pub dfs: bool,
     #[skip]
@@ -83,6 +86,7 @@ pub struct SessionSetupResponse {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct SessionFlags {
     pub is_guest: bool,
     pub is_null_session: bool,

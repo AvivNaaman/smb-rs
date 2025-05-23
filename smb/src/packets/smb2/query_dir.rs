@@ -38,6 +38,7 @@ pub struct QueryDirectoryRequest {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct QueryDirectoryFlags {
     pub restart_scans: bool,
     pub return_single_entry: bool,
