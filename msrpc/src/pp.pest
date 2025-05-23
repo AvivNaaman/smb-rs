@@ -1,0 +1,128 @@
+program = {
+    SOI ~ "\n"* ~ (line ~ "\n"*)* ~ line? ~ "\n"* ~ EOI
+}
+
+line = {
+    (control_line | conditional | token_string)+
+}
+
+control_line = {
+    define_line
+  | include_line
+}
+
+define_line = {
+    "#define" ~ identifier ~ token_string? ~ "\n"
+}
+
+include_line = {
+    "#include" ~ ("\"" ~ path_spec ~ "\"" | "<" ~ path_spec ~ ">") ~ "\n"
+}
+
+constant_expression = {
+    "defined" ~ "(" ~ identifier ~ ")"
+  | "defined" ~ identifier
+  | identifier
+  | "0"
+  | "1"
+}
+conditional         = {
+    if_part ~ elif_parts? ~ else_part? ~ endif_line
+}
+
+if_part = {
+    if_line ~ text
+}
+
+if_line = {
+    "#if" ~ constant_expression
+  | "#ifdef" ~ identifier
+  | "#ifndef" ~ identifier
+}
+
+elif_parts = {
+    (elif_line ~ text)+
+}
+
+elif_line = {
+    "#elif" ~ constant_expression
+}
+
+else_part = {
+    else_line ~ text
+}
+
+else_line = {
+    "#else"
+}
+
+endif_line = {
+    "#endif"
+}
+
+token_string = {
+    token+
+}
+
+token = {
+    identifier
+  | Import_string
+  | Integer_literal
+  | Uuid_rep
+  | "("
+  | ":"
+  | ".."
+  | "*"
+  | ">="
+  | "/"
+  | ";"
+  | "!"
+  | "}"
+  | "!="
+  | "*..."
+  | "["
+  | "=="
+  | "<="
+  | "."
+  | "<<"
+  | "<"
+  | ">"
+  | "?"
+  | "{"
+  | "]"
+  | "-"
+  | "%"
+  | "| "
+  | ">>"
+  | "&"
+  | "&&"
+  | ")"
+  | "^"
+  | "+"
+  | "="
+  | ","
+  | "||"
+}
+
+path_spec = @{
+    path_comp ~ (("/" | "\\") ~ path_comp)*
+}
+path_comp = @{
+    (ASCII_ALPHANUMERIC | "_" | ".")+
+}
+
+identifier = @{
+    (ASCII_ALPHA | "_" | "." | "-") ~ (ASCII_ALPHANUMERIC | "_" | "." | "-")*
+}
+
+text = {
+    ANY*
+}
+
+Integer_literal = @{ ASCII_DIGIT+ }
+Uuid_rep        = @{ ASCII_HEX_DIGIT{8} ~ "-" ~ (ASCII_HEX_DIGIT{4} ~ "-"){3} ~ ASCII_HEX_DIGIT{12} }
+Import_string   = @{ "\"" ~ (ASCII_ALPHA | ASCII_DIGIT | "_" | "-" | "." | "/")* ~ "\"" }
+
+/* * SPECIAL TOKENS * */
+WHITESPACE = _{ " " | "\r" | "\t" }
+COMMENT    = _{ "/*" ~ (!"*/" ~ ANY)* ~ "*/" }

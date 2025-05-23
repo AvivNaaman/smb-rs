@@ -21,13 +21,16 @@ ptr_attr   = {
 
 interface_body = { import* ~ interface_component+ }
 
+// Imports
 import      = { "import" ~ import_list ~ ";" }
 import_list = { import_name ~ ("," ~ import_name)* }
-import_name = { Import_string }
+import_name = { "\"" ~ Import_string ~ "\"" }
 
+// Interface components
 interface_component = { export | op_declarator ~ ";" }
 export              = { type_declarator ~ ";" | const_declarator ~ ";" | tagged_declarator ~ ";" }
 
+// Constants
 const_declarator   = { "const" ~ const_type_spec ~ Identifier ~ "=" ~ const_exp }
 const_type_spec    = { primitive_integer_type | "char" | "boolean" | "void" ~ "*" | "char" ~ "*" }
 const_exp          = { integer_const_exp | Identifier | string | character_constant | "NULL" | "TRUE" | "FALSE" }
@@ -48,22 +51,8 @@ primary_exp        = { Integer_literal | Identifier | "(" ~ const_exp ~ ")" }
 
 type_declarator     = { "typedef" ~ type_attribute_list? ~ type_spec ~ declarators }
 type_attribute_list = { "[" ~ type_attribute ~ ("," ~ type_attribute)* ~ "]" }
-/*
-    *
-    <simple_type_spec> ::= <base_type_spec>
-    | <predefined_type_spec>
-    | <Identifier>
-    <type_spec> ::= <simple_type_spec>
-    | <constructed_type_spec>
-    <declarators> ::= <declarator> [ , <declarator> ] ...
-    <declarator> ::= <pointer_opt> <direct_declarator>
-    <direct_declarator> ::= <Identifier>
-    | ( <declarator> )
-    | <array_declarator>
-    | <function_declarator>
-    <tagged_declarator> ::= <tagged_struct_declarator>
-    | <tagged_union_declarator>
-*/
+
+// Type specifiers
 simple_type_spec       = { base_type_spec | predefined_type_spec | Identifier }
 type_spec              = { simple_type_spec | constructed_type_spec }
 constructed_type_spec  = { struct_type | union_type | enumeration_type | tagged_declarator | pipe_type }
@@ -113,16 +102,6 @@ array_bounds_pair       = { array_bound ~ ".." ~ array_bound }
 array_bound             = { "*" | Integer_literal | Identifier }
 
 // Type attributes
-/*
-    <type_attribute> ::= transmit_as ( <xmit_type> )
-    | handle
-    | <usage_attribute>
-    | <union_type_switch_attr>
-    | <ptr_attr>
-    <usage_attribute> ::= string
-    | context_handle
-    <xmit_type> ::= <simple_type_spec>
-*/
 type_attribute  = { "transmit_as" ~ "(" ~ xmit_type ~ ")" | "handle" | usage_attribute | union_type_switch_attr | ptr_attr }
 usage_attribute = { "string" | "context_handle" }
 xmit_type       = { simple_type_spec }
@@ -144,22 +123,9 @@ attr_var_list   = { attr_var ~ ("," ~ attr_var)* }
 attr_var        = { "*"? ~ Integer_literal }
 
 // Operation declarator
-op_declarator = { op_attributes? ~ simple_type_spec ~ Identifier ~ param_declarators }
-op_attributes = { "[" ~ op_attribute ~ ("," ~ op_attribute)* ~ "]" }
-op_attribute  = { "idempotent" | "broadcast" | "maybe" | "reflect_deletions" | usage_attribute | ptr_attr }
-/*
-    <param_declarators> ::= ( [ <param_declarator>
-    [ , <param_declarator> ] ... ] )
-    | ( void )
-    <param_declarator> ::= <param_attributes> <type_spec> <declarator>
-    <param_attributes> ::= <[> <param_attribute>
-    [ , <param_attribute> ] ... <]>
-
-    <param_attribute> ::= <directional_attribute>
-    | <field_attribute>
-    <directional_attribute> ::= in
-    | out
-*/
+op_declarator         = { op_attributes? ~ simple_type_spec ~ Identifier ~ param_declarators }
+op_attributes         = { "[" ~ op_attribute ~ ("," ~ op_attribute)* ~ "]" }
+op_attribute          = { "idempotent" | "broadcast" | "maybe" | "reflect_deletions" | usage_attribute | ptr_attr }
 param_declarators     = { "(" ~ ("void" | (param_declarator ~ ("," ~ param_declarator)*)?) ~ ")" }
 param_declarator      = { param_attributes? ~ type_spec ~ declarators }
 param_attributes      = { "[" ~ param_attribute ~ ("," ~ param_attribute)* ~ "]" }
@@ -176,6 +142,7 @@ declarator  = { pointer_opt ~ direct_declarator }
 pointer_opt = { pointer? }
 pointer     = { "*..." }
 
+// Types
 base_type_spec         = { floating_pt_type | integer_type | char_type | boolean_type | byte_type | void_type | handle_type }
 floating_pt_type       = { "float" | "double" }
 integer_type           = { primitive_integer_type | hyper_int }
@@ -200,7 +167,7 @@ string = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 Integer_literal = @{ ASCII_DIGIT+ }
 Uuid_rep        = @{ ASCII_HEX_DIGIT{8} ~ "-" ~ (ASCII_HEX_DIGIT{4} ~ "-"){3} ~ ASCII_HEX_DIGIT{12} }
 Identifier      = @{ (ASCII_ALPHA | "_") ~ (ASCII_ALPHA | ASCII_DIGIT | "_"){,31} }
-Import_string   = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+Import_string   = @{ (ASCII_ALPHA | ASCII_DIGIT | "_" | "-" | "." | "/") }
 
 /* * SPECIAL TOKENS * */
 WHITESPACE = _{ " " | "\r" | "\n" | "\t" }

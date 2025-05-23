@@ -1,0 +1,170 @@
+#include "idl_types.h"
+
+/*
+  schannel structures
+*/
+
+import "netlogon.idl", "nbt.idl", "misc.idl", "security.idl";
+
+[
+	pointer_default(unique),
+	helper("../librpc/ndr/ndr_schannel.h", "../librpc/ndr/ndr_nbt.h")
+]
+interface schannel
+{
+	/* this structure is used internally in the NETLOGON server */
+
+	typedef [flag(NDR_PAHEX)] struct {
+		/*
+		 * This can be used in order to
+		 * make backward compatible changes,
+		 * see commits:
+		 * 518f57b93bdb84900d3b58cd94bdf1046f82a5a6
+		 * dfbc5e5a19420311eac3db5ede1c665a9198395d
+		 * 8b972fea0978101575f847eac33b09d2fd8d02e7
+		 */
+		dom_sid dummy_sid;
+	} netlogon_creds_CredentialState_extra_info;
+
+	typedef [public,flag(NDR_PAHEX)] struct {
+		[value(0)] uint32 zero_flags;
+		[flag(NDR_SECRET)] uint8 session_key[16];
+		uint32 sequence;
+		netr_Credential seed;
+		netr_Credential client;
+		netr_Credential server;
+		netr_SchannelType secure_channel_type;
+		[string,charset(UTF8)] uint8 computer_name[];
+		[string,charset(UTF8)] uint8 account_name[];
+		/*
+		 * magic1 used to be a pointer to
+		 * in 4.21 and older.
+		 *
+		 * magic2 was 'magic' or the first
+		 * for 4 bytes of dom_sid (in 4.19)
+		 *
+		 * magic3 was the first 4 bytes of
+		 * dom_sid in 4.21 and 4.20.
+		 *
+		 * With 4.22 we break the compat!
+		 * So we have all of them as UINT32_MAX
+		 * which means the parsing of a new record would
+		 * fail in older releases.
+		 */
+		[value(0xFFFFFFFF)] uint32 magic1;
+		[value(0xFFFFFFFF)] uint32 magic2;
+		netr_NegotiateFlags negotiate_flags;
+		netr_NegotiateFlags client_requested_flags;
+		NTTIME auth_time;
+		[value(0xFFFFFFFF)] uint32 magic3;
+		dom_sid28 client_sid;
+		/*
+		 * objectGUID of the trustedDomain object
+		 * for SEC_CHAN_DOMAIN and SEC_CHAN_DNS_DOMAIN
+		 */
+		GUID tdo_guid;
+		/*
+		 * NETLOGON_NEG_SUPPORTS_KERBEROS_AUTH is not
+		 * enough to implement the logic
+		 * for netr_ServerAuthenticateKerberos()
+		 * as NETLOGON_NEG_SUPPORTS_KERBEROS_AUTH
+		 * was also used as dummy flag in
+		 * some Windows versions.
+		 *
+		 * NETLOGON_NEG_SUPPORTS_KERBEROS_AUTH
+		 * also indicates no encryption for
+		 * application buffers, even if it's
+		 * used via netr_ServerAuthenticate3()
+		 * and aes, arcfour or des are
+		 * otherwise in use.
+		 */
+		boolean8 authenticate_kerberos;
+		/* here's some padding ... */
+		[value(0)] hyper reserved2;
+		[value(NULL)] netlogon_creds_CredentialState_extra_info *ex;
+	} netlogon_creds_CredentialState;
+
+	/* This is used in the schannel_store.tdb */
+	typedef [public] struct {
+		[string,charset(UTF16)] uint16 *computer_name;
+		netr_Credential server_challenge;
+		netr_Credential client_challenge;
+	} netlogon_cache_entry;
+
+	/* MS-NRPC 2.2.1.3.1 NL_AUTH_MESSAGE */
+
+	typedef [v1_enum] enum {
+		NL_NEGOTIATE_REQUEST	= 0x00000000,
+		NL_NEGOTIATE_RESPONSE	= 0x00000001
+	} NL_AUTH_MESSAGE_TYPE;
+
+	typedef [bitmap32bit] bitmap {
+		NL_FLAG_OEM_NETBIOS_DOMAIN_NAME		= 0x00000001,
+		NL_FLAG_OEM_NETBIOS_COMPUTER_NAME	= 0x00000002,
+		NL_FLAG_UTF8_DNS_DOMAIN_NAME		= 0x00000004,
+		NL_FLAG_UTF8_DNS_HOST_NAME		= 0x00000008,
+		NL_FLAG_UTF8_NETBIOS_COMPUTER_NAME	= 0x00000010
+	} NL_AUTH_MESSAGE_FLAGS;
+
+	typedef [public,nodiscriminant,noprint] union {
+		[case (NL_FLAG_OEM_NETBIOS_DOMAIN_NAME)]	astring	 a;
+		[case (NL_FLAG_OEM_NETBIOS_COMPUTER_NAME)]	astring	 a;
+		[case (NL_FLAG_UTF8_DNS_DOMAIN_NAME)]		nbt_string u;
+		[case (NL_FLAG_UTF8_DNS_HOST_NAME)]		nbt_string u;
+		[case (NL_FLAG_UTF8_NETBIOS_COMPUTER_NAME)]	nbt_string u;
+		[default]					;
+	} NL_AUTH_MESSAGE_BUFFER;
+
+	typedef [public,nodiscriminant,noprint] union {
+		[case (NL_NEGOTIATE_RESPONSE)]			uint32 dummy;
+		[default]					;
+	} NL_AUTH_MESSAGE_BUFFER_REPLY;
+
+	typedef [public,flag(NDR_PAHEX)] struct {
+		NL_AUTH_MESSAGE_TYPE MessageType;
+		NL_AUTH_MESSAGE_FLAGS Flags;
+		[switch_is(Flags & NL_FLAG_OEM_NETBIOS_DOMAIN_NAME)]	NL_AUTH_MESSAGE_BUFFER oem_netbios_domain;
+		[switch_is(Flags & NL_FLAG_OEM_NETBIOS_COMPUTER_NAME)]	NL_AUTH_MESSAGE_BUFFER oem_netbios_computer;
+		[switch_is(Flags & NL_FLAG_UTF8_DNS_DOMAIN_NAME)]	NL_AUTH_MESSAGE_BUFFER utf8_dns_domain;
+		[switch_is(Flags & NL_FLAG_UTF8_DNS_HOST_NAME)]		NL_AUTH_MESSAGE_BUFFER utf8_dns_host;
+		[switch_is(Flags & NL_FLAG_UTF8_NETBIOS_COMPUTER_NAME)]	NL_AUTH_MESSAGE_BUFFER utf8_netbios_computer;
+		[switch_is(MessageType & NL_NEGOTIATE_RESPONSE)]	NL_AUTH_MESSAGE_BUFFER_REPLY Buffer;
+	} NL_AUTH_MESSAGE;
+
+	/* MS-NRPC 2.2.1.3.2 NL_AUTH_SIGNATURE */
+
+	typedef enum {
+		NL_SIGN_HMAC_SHA256	= 0x0013,
+		NL_SIGN_HMAC_MD5	= 0x0077
+	} NL_SIGNATURE_ALGORITHM;
+
+	typedef enum {
+		NL_SEAL_AES128		= 0x001A,
+		NL_SEAL_RC4		= 0x007A,
+		NL_SEAL_NONE		= 0xFFFF
+	} NL_SEAL_ALGORITHM;
+
+	typedef [public,flag(NDR_PAHEX)] struct {
+		[value(NL_SIGN_HMAC_MD5)] NL_SIGNATURE_ALGORITHM SignatureAlgorithm;
+		NL_SEAL_ALGORITHM SealAlgorithm;
+		uint16 Pad;
+		uint16 Flags;
+		uint8 SequenceNumber[8];
+		uint8 Checksum[8];
+		uint8 Confounder[8];
+	} NL_AUTH_SIGNATURE;
+
+	const int NL_AUTH_SIGNATURE_SIZE = 0x20;
+
+	/* MS-NRPC 2.2.1.3.3 NL_AUTH_SHA2_SIGNATURE */
+
+	typedef [public,flag(NDR_PAHEX)] struct {
+		[value(NL_SIGN_HMAC_SHA256)] NL_SIGNATURE_ALGORITHM SignatureAlgorithm;
+		NL_SEAL_ALGORITHM SealAlgorithm;
+		uint16 Pad;
+		uint16 Flags;
+		uint8 SequenceNumber[8];
+		uint8 Checksum[32];
+		uint8 Confounder[8];
+	} NL_AUTH_SHA2_SIGNATURE;
+}

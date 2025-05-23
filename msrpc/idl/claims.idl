@@ -1,0 +1,203 @@
+/*
+  claims
+
+  claim: An assertion about a security principal
+
+  From MS-ADTS:
+
+   For ease of implementation, the full IDL for the data types used for
+   claims is provided
+
+  The below was initially obtained from MS-ADTS which is
+  Copyright © 2022 Microsoft Corporation as permitted
+  by the Open Specifications terms reproduced in IDL_LICENCE.txt
+*/
+
+#include "idl_types.h"
+
+[
+  uuid("bba9cb76-eb0c-462c-aa1b-5d8c34415701"),
+  version(1.0),
+  pointer_default(unique),
+  helpstring("Active Directory Claims"),
+  helper("../librpc/ndr/ndr_claims.h")
+]
+interface claims
+{
+#define wchar_t uint16
+#define CLAIM_ID [string, charset(UTF16)] wchar_t *
+
+	const int CLAIM_LOWER_COMPRESSION_THRESHOLD = 368;
+	const int CLAIM_UPPER_COMPRESSION_THRESHOLD = 384;
+
+	typedef enum {
+		CLAIM_TYPE_INT64 = 1,
+		CLAIM_TYPE_UINT64 = 2,
+		CLAIM_TYPE_STRING = 3,
+		CLAIM_TYPE_BOOLEAN = 6
+	} CLAIM_TYPE;
+
+	typedef enum {
+		CLAIMS_SOURCE_TYPE_AD = 1,
+		CLAIMS_SOURCE_TYPE_CERTIFICATE = 2
+	} CLAIMS_SOURCE_TYPE;
+
+	typedef enum {
+		CLAIMS_COMPRESSION_FORMAT_NONE = 0,
+		CLAIMS_COMPRESSION_FORMAT_LZNT1 = 2,
+		CLAIMS_COMPRESSION_FORMAT_XPRESS = 3,
+		CLAIMS_COMPRESSION_FORMAT_XPRESS_HUFF = 4
+	} CLAIMS_COMPRESSION_FORMAT;
+
+	typedef struct {
+		[range(0, 10*1024*1024)] uint32 value_count;
+		[size_is(value_count)] int64 *values;
+	} CLAIM_INT64;
+
+	typedef struct {
+		[range(0, 10*1024*1024)] uint32 value_count;
+		[size_is(value_count)] hyper *values;
+	} CLAIM_UINT64;
+
+	typedef struct {
+		[range(0, 10*1024*1024)] uint32 value_count;
+		[size_is(value_count), string, charset(UTF16)] wchar_t **values;
+	} CLAIM_STRING;
+
+	typedef [switch_type(CLAIM_TYPE),flag(NDR_ALIGN8)] union {
+		[case(CLAIM_TYPE_INT64)] CLAIM_INT64 claim_int64;
+		[case(CLAIM_TYPE_UINT64)] CLAIM_UINT64 claim_uint64;
+		[case(CLAIM_TYPE_STRING)] CLAIM_STRING claim_string;
+		[case(CLAIM_TYPE_BOOLEAN)] CLAIM_UINT64 claim_boolean;
+		[default];
+	} CLAIM_ENTRY_VALUES;
+
+	typedef struct {
+		CLAIM_ID id;
+		CLAIM_TYPE type;
+		[switch_is(type)] CLAIM_ENTRY_VALUES values;
+	} CLAIM_ENTRY;
+
+	typedef struct {
+		CLAIMS_SOURCE_TYPE claims_source_type;
+		uint32 claims_count;
+		[size_is(claims_count)] CLAIM_ENTRY *claim_entries;
+	} CLAIMS_ARRAY;
+
+	typedef struct {
+		CLAIMS_SET_METADATA *metadata;
+	} CLAIMS_SET_METADATA_CTR;
+
+	typedef struct {
+		CLAIMS_SET *claims;
+	} CLAIMS_SET_CTR;
+
+	/* Public structures. */
+
+	typedef [public] struct {
+		uint32 claims_array_count;
+		[size_is(claims_array_count)] CLAIMS_ARRAY *claims_arrays;
+		uint16 reserved_type;
+		uint32 reserved_field_size;
+		[size_is(reserved_field_size)] uint8 *reserved_field;
+	} CLAIMS_SET;
+
+	typedef [public, gensize] struct {
+		[subcontext(0xFFFFFC01)] CLAIMS_SET_CTR claims;
+	} CLAIMS_SET_NDR;
+
+	typedef [public] struct {
+		[subcontext(0xFFFFFC01)] CLAIMS_SET_METADATA_CTR claims;
+	} CLAIMS_SET_METADATA_NDR;
+
+	typedef [public] struct {
+		[value(ndr_claims_compressed_size(claims_set,
+						  r->compression_format,
+						  ndr->flags))] uint32 claims_set_size;
+		[subcontext(4),
+		 compression(ndr_claims_compression_alg(compression_format),
+			     claims_set_size,
+			     uncompressed_claims_set_size)
+			] CLAIMS_SET_NDR *claims_set;
+		/*
+		 * The second argument to
+		 * ndr_claims_actual_wire_compression_alg() in the
+		 * value() below should be
+		 * uncompressed_claims_set_size but the value()
+		 * handling isn't recursive (enough) so we have to
+		 * specify that manually otherwise the
+		 * compression_format in the above includes the struct
+		 * member, not the value()
+		 *
+		 * The caller should set compression_format to
+		 * CLAIMS_COMPRESSION_FORMAT_XPRESS_HUFF and this will
+		 * be reset to CLAIMS_COMPRESSION_FORMAT_NONE if the
+		 * buffer is not large enough to compress.
+		 *
+		 * Otherwise setting CLAIMS_COMPRESSION_FORMAT_NONE
+		 * disabled compression entirely.
+		 */
+		[value(ndr_claims_actual_wire_compression_alg(r->compression_format,
+							      claims_set,
+							      ndr->flags))] CLAIMS_COMPRESSION_FORMAT compression_format;
+		[value(ndr_size_CLAIMS_SET_NDR(claims_set,
+					       ndr->flags))] uint32 uncompressed_claims_set_size;
+		uint16 reserved_type;
+		uint32 reserved_field_size;
+		[size_is(reserved_field_size)] uint8 *reserved_field;
+	} CLAIMS_SET_METADATA;
+
+	typedef [nopush,nopull] enum {
+		CLAIMS_TF_CONDITION_OPERATOR_INVALID = 0,
+		CLAIMS_TF_CONDITION_OPERATOR_EQ = 1,
+		CLAIMS_TF_CONDITION_OPERATOR_NEQ = 2,
+		CLAIMS_TF_CONDITION_OPERATOR_REGEXP_MATCH = 3,
+		CLAIMS_TF_CONDITION_OPERATOR_REGEXP_NOT_MATCH = 4
+	} claims_tf_condition_operator;
+
+	typedef [nopush,nopull] enum {
+		CLAIMS_TF_PROPERTY_INVALID = 0,
+		CLAIMS_TF_PROPERTY_TYPE = 1,
+		CLAIMS_TF_PROPERTY_VALUE = 2,
+		CLAIMS_TF_PROPERTY_VALUE_TYPE = 3
+	} claims_tf_property_enum;
+
+	typedef [nopush,nopull] struct {
+		claims_tf_property_enum property;
+		claims_tf_condition_operator operator;
+		[ref,string, charset(UTF8)] char *string;
+	} claims_tf_condition;
+
+	typedef [nopush,nopull] struct {
+		[unique, string, charset(UTF8)] char *opt_identifier;
+		uint32 num_conditions;
+		claims_tf_condition conditions[num_conditions];
+	} claims_tf_condition_set;
+
+	typedef [nopush,nopull] struct claims_tf_property_ref {
+		[unique, string, charset(UTF8)] char *identifier;
+		claims_tf_property_enum property;
+	} claims_tf_property_ref;
+
+	typedef [nopush,nopull] struct claims_tf_property {
+		claims_tf_property_ref ref;
+		[unique, string, charset(UTF8)] char *string;
+	} claims_tf_property;
+
+	typedef [nopush,nopull] struct {
+		claims_tf_property type;
+		claims_tf_property value;
+		claims_tf_property value_type;
+	} claims_tf_rule_action;
+
+	typedef [nopush,nopull] struct claims_tf_rule {
+		uint32 num_condition_sets;
+		claims_tf_condition_set condition_sets[num_condition_sets];
+		claims_tf_rule_action action;
+	} claims_tf_rule;
+
+	typedef [public,nopush,nopull] struct {
+		uint32 num_rules;
+		claims_tf_rule rules[num_rules];
+	} claims_tf_rule_set;
+}
