@@ -5,18 +5,8 @@
 */
 #include "abc.idl" /* well */
 
-[uuid(3d6ead56-06e3-11ca-8dd1-826901beabcd),
-version(1.0)]
+#define GreetInterface "greetif"
 
-import "hello.idl";
-
-interface greetif
-{
-const long int REPLY_SIZE = 100;
-
-void greet(
-[in] handle_t h,
-[in, string] char client_greeting[],
-[out, string] char server_reply[REPLY_SIZE]
-);
-}
+#ifdef ABC
+extern "C" {
+#endif

@@ -3,7 +3,9 @@ program = {
 }
 
 line = {
-    (control_line | conditional | token_string)+
+    control_line
+  | conditional
+  | token_string
 }
 
 control_line = {
@@ -35,9 +37,17 @@ if_part = {
 }
 
 if_line = {
-    "#if" ~ constant_expression
-  | "#ifdef" ~ identifier
-  | "#ifndef" ~ identifier
+    if_line_const
+  | ifdef_line
+  | ifndef_line
+}
+
+if_line_const = { "#if" ~ constant_expression }
+ifdef_line    = {
+    "#ifdef" ~ identifier
+}
+ifndef_line   = {
+    "#ifndef" ~ identifier
 }
 
 elif_parts = {
