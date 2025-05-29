@@ -6,7 +6,7 @@ use time::PrimitiveDateTime;
 use crate::{
     Error,
     connection::connection_info::ConnectionInfo,
-    msg_handler::{HandlerReference, MessageHandler, OutgoingMessage},
+    msg_handler::{HandlerReference, MessageHandler, OutgoingMessage, ReceiveOptions},
     packets::{fscc::*, security::SecurityDescriptor, smb2::*},
     tree::TreeMessageHandler,
 };
@@ -364,6 +364,59 @@ impl ResourceHandle {
             })
             .await?
             .unwrap_security())
+    }
+
+    /// Sends an FSCTL message for the current file.
+    /// # Type Parameters
+    /// * `T` - The type of the response to return. Must implement the [IoctlFsctlResponseContent] trait.
+    /// # Arguments
+    /// * `fsctl_code` - The fsctl command to issue
+    /// * `fsctl_data` - The data associated with the ioctl request
+    /// # Returns
+    /// A `Result` containing the requested information.
+    pub async fn send_fsctl<T: IoctlFsctlResponseContent>(
+        &self,
+        fsctl_code: FsctlCodes,
+        fsctl_data: IoctlReqData,
+    ) -> crate::Result<T> {
+        self.send_fsctl_with_options(fsctl_code, fsctl_data, 1024, 1024)
+            .await
+    }
+
+    /// Sends an FSCTL message for the current file with more options.
+    /// # Type Parameters
+    /// * `T` - The type of the response to return. Must implement the [IoctlFsctlResponseContent] trait.
+    /// # Arguments
+    /// * `fsctl_code` - The fsctl command to issue
+    /// * `fsctl_data` - The data associated with the ioctl request
+    /// * `max_input_response` - Maximum length of the input response in bytes
+    /// * `max_output_response` - Maximum length of the output response in bytes
+    /// # Returns
+    /// A `Result` containing the requested information.
+    pub async fn send_fsctl_with_options<T: IoctlFsctlResponseContent>(
+        &self,
+        fsctl_code: FsctlCodes,
+        fsctl_data: IoctlReqData,
+        max_input_response: usize,
+        max_output_response: usize,
+    ) -> crate::Result<T> {
+        self.handler
+            .send_recvo(
+                RequestContent::Ioctl(IoctlRequest {
+                    ctl_code: fsctl_code as u32,
+                    file_id: self.file_id,
+                    max_input_response: max_input_response as u32,
+                    max_output_response: max_output_response as u32,
+                    flags: IoctlRequestFlags::new().with_is_fsctl(true),
+                    buffer: fsctl_data,
+                }),
+                ReceiveOptions::new().with_allow_async(true),
+            )
+            .await?
+            .message
+            .content
+            .to_ioctl()?
+            .parse_fsctl::<T>()
     }
 
     /// Querys the file system information for the current file.

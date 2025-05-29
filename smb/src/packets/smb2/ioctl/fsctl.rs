@@ -1,5 +1,5 @@
 //! FSCTL codes and structs.
-use binrw::{io::TakeSeekExt, prelude::*, NullWideString};
+use binrw::{NullWideString, io::TakeSeekExt, prelude::*};
 use modular_bitfield::prelude::*;
 
 use crate::packets::{
@@ -9,6 +9,8 @@ use crate::packets::{
     guid::Guid,
     smb2::{Dialect, NegotiateSecurityMode},
 };
+
+use std::ops::Deref;
 
 use super::common::IoctlRequestContent;
 
@@ -30,6 +32,7 @@ pub enum FsctlCodes {
     DfsGetReferralsEx = 0x000601B0,
     FileLevelTrim = 0x00098208,
     ValidateNegotiateInfo = 0x00140204,
+    QueryAllocatedRanges = 0x000940CF,
 }
 
 /// The Length of source/dest keys in SrvCopyChunk* FSCTLs contents.
@@ -318,6 +321,41 @@ impl IoctlRequestContent for ReqGetDfsReferralEx {
     }
 }
 
+#[binrw::binrw]
+#[derive(Debug, PartialEq, Eq)]
+pub struct QueryAllocRangesItem {
+    pub offset: u64,
+    pub len: u64,
+}
+
+impl IoctlRequestContent for QueryAllocRangesItem {
+    fn get_bin_size(&self) -> u32 {
+        (size_of::<u64>() * 2) as u32
+    }
+}
+
+#[binrw::binrw]
+#[derive(Debug, PartialEq, Eq)]
+pub struct QueryAllocRangesResult {
+    #[br(parse_with = binrw::helpers::until_eof)]
+    values: Vec<QueryAllocRangesItem>,
+}
+
+impl Deref for QueryAllocRangesResult {
+    type Target = Vec<QueryAllocRangesItem>;
+    fn deref(&self) -> &Self::Target {
+        &self.values
+    }
+}
+
+impl Default for QueryAllocRangesResult {
+    fn default() -> Self {
+        Self { values: Vec::new() }
+    }
+}
+
+impl_fsctl_response!(QueryAllocatedRanges, QueryAllocRangesResult);
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -406,6 +444,33 @@ mod tests {
                 chunks_written: 10,
                 chunk_bytes_written: 0,
                 total_bytes_written: 10417096,
+            }
+        );
+    }
+
+    #[test]
+    fn test_fsctl_query_alloc_ranges_resp() {
+        let data = [
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xd1, 0xb6, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,
+        ];
+
+        let mut cursor = std::io::Cursor::new(data);
+        let res = QueryAllocRangesResult::read_le(&mut cursor).unwrap();
+        assert_eq!(
+            res,
+            QueryAllocRangesResult {
+                values: vec![
+                    QueryAllocRangesItem {
+                        offset: 0,
+                        len: 4096,
+                    },
+                    QueryAllocRangesItem {
+                        offset: 8192,
+                        len: 46801,
+                    },
+                ],
             }
         );
     }

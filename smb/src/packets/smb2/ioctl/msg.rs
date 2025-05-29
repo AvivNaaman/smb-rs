@@ -96,6 +96,7 @@ ioctl_req_data! {
     SetReparsePoint: IoctlBuffer,
     DfsGetReferralsEx: ReqGetDfsReferralEx,
     FileLevelTrim: IoctlBuffer,
+    QueryAllocatedRanges: QueryAllocRangesItem,
 }
 
 #[bitfield]
