@@ -27,7 +27,7 @@ rand = "0.8.5"
 log = "0.4.22"
 time = { version = "0.3.37", features = ["macros"] }
 thiserror = "2.0"
-paste = "1.0.15"
+paste = "1.0"
 url = "2.5.0"
 
 # APIs
