@@ -354,6 +354,12 @@ impl Default for QueryAllocRangesResult {
     }
 }
 
+impl From<Vec<QueryAllocRangesItem>> for QueryAllocRangesResult {
+    fn from(value: Vec<QueryAllocRangesItem>) -> Self {
+        Self { values: value }
+    }
+}
+
 impl_fsctl_response!(QueryAllocatedRanges, QueryAllocRangesResult);
 
 #[cfg(test)]
