@@ -24,6 +24,7 @@ macro_rules! access_mask {
     #[bitfield]
     #[derive(BinWrite, BinRead, Debug, Clone, Copy, PartialEq, Eq)]
     #[bw(map = |&x| Self::into_bytes(x))]
+    #[br(map = Self::from_bytes)]
         $vis struct $name {
             // User fields
             $(
@@ -171,6 +172,7 @@ pub struct AccessObjectAce {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct ObjectAceFlags {
     pub object_type_present: bool,
     pub inherited_object_type_present: bool,
@@ -247,6 +249,7 @@ pub enum ClaimSecurityAttributeType {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct FciClaimSecurityAttributes {
     pub non_inheritable: bool,
     pub value_case_sensitive: bool,
@@ -293,6 +296,7 @@ pub enum AceType {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct AceFlags {
     pub object_inherit: bool,
     pub container_inherit: bool,

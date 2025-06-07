@@ -110,6 +110,7 @@ impl ReadResponse {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Default, Clone, Copy)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct ReadFlags {
     pub read_unbuffered: bool,
     pub read_compressed: bool,
@@ -183,6 +184,7 @@ pub struct WriteResponse {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Default, Clone, Copy)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct WriteFlags {
     pub write_unbuffered: bool,
     pub write_through: bool,

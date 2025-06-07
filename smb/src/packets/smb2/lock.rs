@@ -19,6 +19,7 @@ pub struct LockRequest {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct LockSequence {
     pub number: B4,
     pub index: B28,
@@ -38,6 +39,7 @@ pub struct LockElement {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct LockFlag {
     pub shared: bool,
     pub exclusive: bool,

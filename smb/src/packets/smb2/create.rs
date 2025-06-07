@@ -114,6 +114,7 @@ pub enum CreateDisposition {
 #[bitfield]
 #[derive(BinWrite, BinRead, Default, Debug, Clone, Copy)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct CreateOptions {
     pub directory_file: bool,
     pub write_through: bool,
@@ -154,6 +155,7 @@ pub struct CreateOptions {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct ShareAccessFlags {
     pub read: bool,
     pub write: bool,
@@ -199,6 +201,7 @@ pub struct CreateResponse {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct CreateResponseFlags {
     pub reparsepoint: bool,
     #[skip]
@@ -535,6 +538,7 @@ pub struct DurableHandleRequestV2 {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct DurableHandleV2Flags {
     #[skip]
     __: bool,
@@ -690,6 +694,7 @@ pub struct CloseResponse {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct CloseFlags {
     pub postquery_attrib: bool,
     #[skip]

@@ -41,6 +41,7 @@ pub struct NegotiateRequest {
 #[bitfield]
 #[derive(BinRead, BinWrite, Debug, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct NegotiateSecurityMode {
     pub signing_enabled: bool,
     pub signing_required: bool,
@@ -51,6 +52,7 @@ pub struct NegotiateSecurityMode {
 #[bitfield]
 #[derive(BinRead, BinWrite, Debug, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct GlobalCapabilities {
     pub dfs: bool,
     pub leasing: bool,
@@ -379,6 +381,7 @@ impl std::fmt::Display for CompressionAlgorithm {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct CompressionCapsFlags {
     pub chained: bool,
     #[skip]
@@ -394,6 +397,7 @@ pub struct NetnameNegotiateContextId {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct TransportCapabilities {
     pub accept_transport_layer_security: bool,
     #[skip]

@@ -38,6 +38,7 @@ pub struct FileFsAttributeInformation {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct FileSystemAttributes {
     pub case_sensitive_search: bool,
     pub case_preserved_names: bool,
@@ -97,6 +98,7 @@ pub enum FsDeviceType {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct FsDeviceCharacteristics {
     pub removable_media: bool,
     pub read_only: bool,
@@ -127,6 +129,7 @@ pub struct FsDeviceCharacteristics {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct FileSystemControlFlags {
     pub quota_track: bool,
     pub quota_enforce: bool,
@@ -177,6 +180,7 @@ pub struct FileFsSectorSizeInformation {
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
 pub struct SectorSizeInfoFlags {
     pub aligned_device: bool,
     pub partition_aligned_on_device: bool,
