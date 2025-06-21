@@ -112,9 +112,7 @@ impl Client {
         self.get_opened_conn_for_path(unc)
             .map(|info| &info.tree)
             .map_err(|e| {
-                crate::Error::InvalidArgument(format!(
-                    "Failed to get share for path {unc}: {e}",
-                ))
+                crate::Error::InvalidArgument(format!("Failed to get share for path {unc}: {e}",))
             })
     }
 

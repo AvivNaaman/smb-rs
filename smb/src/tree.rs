@@ -5,7 +5,8 @@ use maybe_async::*;
 use crate::connection::connection_info::ConnectionInfo;
 use crate::packets::fscc::FileAttributes;
 use crate::packets::smb2::{
-    CreateOptions, FileId, FsctlRequest, IoctlRequest, IoctlRequestFlags, NetworkInterfaceInfo, QueryNetworkInterfaceInfoRequest, RequestContent, ShareFlags, ShareType
+    CreateOptions, FileId, FsctlRequest, IoctlRequest, IoctlRequestFlags, NetworkInterfaceInfo,
+    QueryNetworkInterfaceInfoRequest, RequestContent, ShareFlags, ShareType,
 };
 use crate::resource::FileCreateArgs;
 use crate::sync_helpers::*;
@@ -229,7 +230,6 @@ impl Tree {
 
         Ok(interface_info.into())
     }
-
 
     #[maybe_async]
     pub(crate) async fn fsctl_with_options<T: FsctlRequest>(

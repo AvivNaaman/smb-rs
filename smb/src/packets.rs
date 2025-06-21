@@ -1,5 +1,4 @@
 pub mod binrw_util;
-pub mod smbd;
 pub mod dfsc;
 pub mod fscc;
 pub mod guid;
@@ -8,5 +7,6 @@ pub mod rpc;
 pub mod security;
 pub mod smb1;
 pub mod smb2;
+pub mod smbd;
 pub mod transport;
 pub mod util;

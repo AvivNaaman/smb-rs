@@ -175,9 +175,7 @@ where
     for<'b> <T as BinWrite>::Args<'b>: Default,
 {
     fn default() -> Self {
-        Self {
-            values: Vec::new(),
-        }
+        Self { values: Vec::new() }
     }
 }
 

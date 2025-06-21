@@ -4,10 +4,10 @@ use super::TransportConfig;
 
 pub mod netbios;
 pub mod quic;
+pub mod rdma;
 pub mod tcp;
 pub mod traits;
 pub mod utils;
-mod rdma;
 
 pub use traits::*;
 
