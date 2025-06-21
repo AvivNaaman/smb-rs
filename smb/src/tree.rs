@@ -4,7 +4,9 @@ use maybe_async::*;
 
 use crate::connection::connection_info::ConnectionInfo;
 use crate::packets::fscc::FileAttributes;
-use crate::packets::smb2::{CreateOptions, ShareFlags, ShareType};
+use crate::packets::smb2::{
+    CreateOptions, FileId, FsctlRequest, IoctlRequest, IoctlRequestFlags, NetworkInterfaceInfo, QueryNetworkInterfaceInfoRequest, RequestContent, ShareFlags, ShareType
+};
 use crate::resource::FileCreateArgs;
 use crate::sync_helpers::*;
 
@@ -207,6 +209,49 @@ impl Tree {
             return Err(Error::InvalidState("Tree is not a DFS tree".to_string()));
         }
         Ok(DfsRootTreeRef::new(self))
+    }
+
+    #[maybe_async]
+    pub async fn query_network_interfaces(&self) -> crate::Result<Vec<NetworkInterfaceInfo>> {
+        if self.handler.connect_info.get().map(|i| i.share_type) != Some(ShareType::Pipe) {
+            return Err(Error::InvalidState(
+                "Network interfaces can only be queried on IPC shares".to_string(),
+            ));
+        }
+
+        const QUERY_NETOWKR_INTERFACE_MAX_OUTPUT: u32 = 2u32.pow(16);
+        let interface_info = self
+            .fsctl_with_options(
+                QueryNetworkInterfaceInfoRequest(()),
+                QUERY_NETOWKR_INTERFACE_MAX_OUTPUT,
+            )
+            .await?;
+
+        Ok(interface_info.into())
+    }
+
+
+    #[maybe_async]
+    pub(crate) async fn fsctl_with_options<T: FsctlRequest>(
+        &self,
+        request: T,
+        max_output_response: u32,
+    ) -> crate::Result<T::Response> {
+        const NO_INPUT_IN_RESPONSE: u32 = 0;
+        self.handler
+            .send_recv(RequestContent::Ioctl(IoctlRequest {
+                ctl_code: T::FSCTL_CODE as u32,
+                file_id: FileId::FULL,
+                max_input_response: NO_INPUT_IN_RESPONSE,
+                max_output_response,
+                flags: IoctlRequestFlags::new().with_is_fsctl(true),
+                buffer: request.into(),
+            }))
+            .await?
+            .message
+            .content
+            .to_ioctl()?
+            .parse_fsctl::<T::Response>()
     }
 }
 

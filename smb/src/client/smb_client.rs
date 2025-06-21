@@ -107,6 +107,17 @@ impl Client {
         Ok(())
     }
 
+    /// Retrieves an open share for the given UNC path.
+    pub fn get_share(&self, unc: &UncPath) -> crate::Result<&Tree> {
+        self.get_opened_conn_for_path(unc)
+            .map(|info| &info.tree)
+            .map_err(|e| {
+                crate::Error::InvalidArgument(format!(
+                    "Failed to get share for path {unc}: {e}",
+                ))
+            })
+    }
+
     fn get_opened_conn_for_path(&self, unc: &UncPath) -> crate::Result<&OpenedConnectionInfo> {
         if let Some(cst) = self.connections.get(&unc.clone().with_no_path()) {
             Ok(cst)

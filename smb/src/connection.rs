@@ -310,6 +310,17 @@ impl Connection {
                     ),
                 });
             }
+            // TODO: Add to config
+            if cfg!(feature = "rdma") {
+                ctx_list.push(NegotiateContext {
+                    context_type: NegotiateContextType::RdmaTransformCapabilities,
+                    data: NegotiateContextValue::RdmaTransformCapabilities(
+                        RdmaTransformCapabilities {
+                            transforms: vec![RdmaTransformId::None],
+                        },
+                    ),
+                });
+            }
             Some(ctx_list)
         } else {
             None
@@ -323,7 +334,7 @@ impl Connection {
                 .with_dfs(true)
                 .with_leasing(true)
                 .with_large_mtu(true)
-                .with_multi_channel(false)
+                .with_multi_channel(true)
                 .with_persistent_handles(false)
                 .with_directory_leasing(true);
 

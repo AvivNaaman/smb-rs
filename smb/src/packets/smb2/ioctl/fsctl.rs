@@ -1,19 +1,21 @@
 //! FSCTL codes and structs.
-use crate::packets::binrw_util::prelude::*;
+use crate::packets::{binrw_util::prelude::*, fscc::ChainedItemList};
 use binrw::{io::TakeSeekExt, prelude::*, NullWideString};
 use modular_bitfield::prelude::*;
 
 use crate::packets::{
     binrw_util::prelude::{FileTime, PosMarker},
     dfsc::{ReqGetDfsReferral, ReqGetDfsReferralEx, RespGetDfsReferral},
-    fscc::ChainedItem,
     guid::Guid,
     smb2::{Dialect, NegotiateSecurityMode},
 };
 
 use super::common::IoctlRequestContent;
 use crate::packets::smb2::IoctlBuffer;
-use std::ops::{Deref, DerefMut};
+use std::{
+    net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6},
+    ops::{Deref, DerefMut},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
@@ -244,13 +246,13 @@ pub struct SrvHashRetrieveFileBased {
     pub buffer: Vec<u8>,
 }
 
-pub type NetworkInterfaceInfo = ChainedItem<NetworkInterfaceInfoContent>;
+pub type NetworkInterfacesInfo = ChainedItemList<NetworkInterfaceInfo>;
 
-impl_fsctl_response!(QueryNetworkInterfaceInfo, NetworkInterfaceInfo);
+impl_fsctl_response!(QueryNetworkInterfaceInfo, NetworkInterfacesInfo);
 
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
-pub struct NetworkInterfaceInfoContent {
+pub struct NetworkInterfaceInfo {
     pub if_index: u32,
     pub capability: NetworkInterfaceCapability,
     #[bw(calc = 0)]
@@ -278,26 +280,52 @@ pub enum SocketAddrStorage {
     V6(SocketAddrStorageV6),
 }
 
+impl Into<SocketAddr> for SocketAddrStorage {
+    fn into(self) -> SocketAddr {
+        match self {
+            SocketAddrStorage::V4(v4) => SocketAddr::V4(v4.into()),
+            SocketAddrStorage::V6(v6) => SocketAddr::V6(v6.into()),
+        }
+    }
+}
+
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[brw(magic(b"\x02\x00"))] // InterNetwork
 pub struct SocketAddrStorageV4 {
-    pub port: u16,
-    pub address: u32,
+    port: u16,
+    address: u32,
+    #[bw(calc = [0; 128 - (2 + 2 + 4)])]
     _reserved: [u8; 128 - (2 + 2 + 4)],
+}
+
+impl Into<SocketAddrV4> for SocketAddrStorageV4 {
+    fn into(self) -> SocketAddrV4 {
+        SocketAddrV4::new(Ipv4Addr::from(self.address), self.port)
+    }
 }
 
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[brw(magic(b"\x17\x00"))] // InterNetworkV6
 pub struct SocketAddrStorageV6 {
-    pub port: u16,
-    #[bw(calc = 0)]
-    _flow_info: u32,
-    pub address: u128,
-    #[bw(calc = 0)]
-    _scope_id: u32,
-    _reserved: [u8; 128 - (2 + 4 + 16 + 4)],
+    port: u16,
+    flow_info: u32,
+    address: u128,
+    scope_id: u32,
+    #[bw(calc = [0; 128 - (2 + 2 + 4 + 16 + 4)])]
+    _reserved: [u8; 128 - (2 + 2 + 4 + 16 + 4)],
+}
+
+impl Into<SocketAddrV6> for SocketAddrStorageV6 {
+    fn into(self) -> SocketAddrV6 {
+        SocketAddrV6::new(
+            Ipv6Addr::from(self.address),
+            self.port,
+            self.flow_info,
+            self.scope_id,
+        )
+    }
 }
 
 #[binrw::binrw]
@@ -788,6 +816,59 @@ mod tests {
                     },
                 ],
             }
+        );
+    }
+
+    #[test]
+    fn test_fsctl_query_network_interfaces_response_parse() {
+        let data = [
+            0x98, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0xca, 0x9a, 0x3b, 0x0, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0xac, 0x10, 0xcc, 0x84, 0x0,
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0xca, 0x9a, 0x3b, 0x0, 0x0, 0x0, 0x0, 0x17, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xfe,
+            0x80, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2, 0xc, 0x29, 0xff, 0xfe, 0x9f, 0x8b, 0xf3, 0x0,
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0,
+        ];
+
+        let mut cursor = std::io::Cursor::new(data);
+        let res = NetworkInterfacesInfo::read_le(&mut cursor).unwrap();
+        assert_eq!(
+            NetworkInterfacesInfo::from(vec![
+                NetworkInterfaceInfo {
+                    if_index: 2,
+                    capability: NetworkInterfaceCapability::new().with_rdma(true),
+                    link_speed: 1000000000,
+                    sockaddr: SocketAddrStorage::V4(SocketAddrStorageV4 {
+                        port: 0,
+                        address: 0xac10cc84u32.to_be(),
+                    })
+                },
+                NetworkInterfaceInfo {
+                    if_index: 2,
+                    capability: NetworkInterfaceCapability::new().with_rdma(true),
+                    link_speed: 1000000000,
+                    sockaddr: SocketAddrStorage::V6(SocketAddrStorageV6 {
+                        port: 0,
+                        flow_info: 0,
+                        address: 0xfe80000000000000020c29fffe9f8bf3u128.to_be(),
+                        scope_id: 0,
+                    })
+                },
+            ]),
+            res
         );
     }
 }

@@ -3,11 +3,11 @@ use std::time::Duration;
 use super::TransportConfig;
 
 pub mod netbios;
-#[cfg(feature = "quic")]
 pub mod quic;
 pub mod tcp;
 pub mod traits;
 pub mod utils;
+mod rdma;
 
 pub use traits::*;
 

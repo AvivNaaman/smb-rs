@@ -1,3 +1,4 @@
+#![cfg(feature = "quic")]
 //! QUIC transport implementation for SMB.
 //!
 //! This module uses the [quinn](https://docs.rs/quinn/latest/quinn/) crate to implement the QUIC transport protocol for SMB.
