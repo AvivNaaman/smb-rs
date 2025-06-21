@@ -21,6 +21,9 @@ pub struct Cli {
     /// Disables DFS referral resolution.
     #[arg(long)]
     pub no_dfs: bool,
+    /// Enables multichannel support.
+    #[arg(long)]
+    pub multichannel: bool,
 
     /// Opts-in to use SMB compression if the server supports it.
     #[arg(long)]
@@ -88,6 +91,10 @@ impl Cli {
                 },
                 allow_unsigned_guest_access: self.disable_message_signing,
                 compression_enabled: self.compress,
+                multichannel: smb::connection::MultiChannelConfig {
+                    enabled: self.multichannel,
+                    rdma: Some(smb::connection::RdmaConfig {}),
+                },
                 ..Default::default()
             },
         }

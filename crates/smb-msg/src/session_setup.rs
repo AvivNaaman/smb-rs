@@ -12,7 +12,8 @@ pub struct SessionSetupRequest {
     pub flags: SetupRequestFlags,
     pub security_mode: SessionSecurityMode,
     pub capabilities: NegotiateCapabilities,
-    pub channel: u32,
+    #[bw(calc = 0)]
+    _channel: u32,
     #[bw(calc = PosMarker::default())]
     __security_buffer_offset: PosMarker<u16>,
     #[bw(calc = u16::try_from(buffer.len()).unwrap())]
@@ -55,12 +56,15 @@ pub struct NegotiateCapabilities {
 }
 
 impl SessionSetupRequest {
-    pub fn new(buffer: Vec<u8>, security_mode: SessionSecurityMode) -> SessionSetupRequest {
+    pub fn new(
+        buffer: Vec<u8>,
+        security_mode: SessionSecurityMode,
+        flags: SetupRequestFlags,
+    ) -> SessionSetupRequest {
         SessionSetupRequest {
-            flags: SetupRequestFlags::new(),
+            flags,
             security_mode,
             capabilities: NegotiateCapabilities::new().with_dfs(true),
-            channel: 0,
             previous_session_id: 0,
             buffer,
         }
@@ -142,6 +146,7 @@ mod tests {
                 ]
                 .to_vec(),
                 SessionSecurityMode::new().with_signing_enabled(true),
+                SetupRequestFlags::new(),
             )
             .into(),
         );

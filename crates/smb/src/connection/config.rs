@@ -1,6 +1,6 @@
 //! Connection configuration settings.
 
-use std::time::Duration;
+use std::{net::SocketAddr, time::Duration};
 
 use smb_dtyp::Guid;
 use smb_msg::Dialect;
@@ -26,15 +26,33 @@ pub enum TransportConfig {
     Tcp,
     /// Use NetBIOS over TCP transport protocol.
     NetBios,
+    #[cfg(feature = "quic")]
     /// Use SMB over QUIC transport protocol.
     /// Note that this is only suported in dialects 3.1.1 and above.
     Quic(QuicConfig),
 }
 
+#[cfg(feature = "quic")]
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct QuicConfig {
-    pub local_address: Option<String>,
+    pub local_address: Option<SocketAddr>,
     pub cert_validation: QuicCertValidationOptions,
+}
+
+#[cfg(feature = "rdma")]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct RdmaConfig {}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct MultiChannelConfig {
+    /// Whether to enable multichannel support.
+    /// This is enabled by default.
+    pub enabled: bool,
+
+    /// Specified configuration for possible RDMA transport.
+    /// If this is set, the client will attempt to use RDMA transport if available.
+    #[cfg(feature = "rdma")]
+    pub rdma: Option<RdmaConfig>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -121,6 +139,9 @@ pub struct ConnectionConfig {
     /// would not be available. *The compression feature is enabled by default.*
     pub compression_enabled: bool,
 
+    /// Multi-channel configuration
+    pub multichannel: MultiChannelConfig,
+
     /// Specifies the client host name to be used in the SMB2 negotiation & session setup.
     pub client_name: Option<String>,
 
@@ -164,6 +185,7 @@ impl ConnectionConfig {
             }
         }
         // Make sure transport is supported by the dialects.
+        #[cfg(feature = "quic")]
         if let Some(min) = self.min_dialect {
             if min < Dialect::Smb0311 && matches!(self.transport, TransportConfig::Quic(_)) {
                 return Err(crate::Error::InvalidConfiguration(

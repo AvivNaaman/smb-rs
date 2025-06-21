@@ -71,8 +71,9 @@ impl Session {
                 ));
             }
         };
-        let request =
-            OutgoingMessage::new(SessionSetupRequest::new(next_buf, req_security_mode).into());
+        let request = OutgoingMessage::new(
+            SessionSetupRequest::new(next_buf, req_security_mode, SetupRequestFlags::new()).into(),
+        );
 
         // response hash is processed later, in the loop.
         let init_response = upstream
@@ -158,7 +159,12 @@ impl Session {
                     // We'd like to update preauth hash with the last request before accept.
                     // therefore we update it here for the PREVIOUS repsponse, assuming that we get an empty request when done.
                     let mut request = OutgoingMessage::new(
-                        SessionSetupRequest::new(next_buf, req_security_mode).into(),
+                        SessionSetupRequest::new(
+                            next_buf,
+                            req_security_mode,
+                            SetupRequestFlags::new(),
+                        )
+                        .into(),
                     );
                     request.finalize_preauth_hash = is_auth_done;
                     let result = handler.sendo(request).await?;
@@ -230,6 +236,28 @@ impl Session {
         flags.ok_or(Error::InvalidState(
             "Failed to complete authentication properly.".to_string(),
         ))
+    }
+
+    #[maybe_async]
+    async fn bind(
+        primary: &Session,
+        handler: &HandlerReference<SessionMessageHandler>,
+        conn_info: &Arc<ConnectionInfo>,
+    ) -> crate::Result<Session> {
+        let rebind_setup_request = OutgoingMessage::new(
+            SessionSetupRequest::new(
+                vec![],
+                SessionSecurityMode::new().with_signing_enabled(true),
+                SetupRequestFlags::new().with_binding(true),
+            )
+            .into(),
+        );
+        let signer = {
+            let session_state = primary.handler.session_state.lock().await?;
+            session_state.signer()?.clone()
+        };
+
+        Ok(())
     }
 
     /// Connects to the specified tree using the current session.

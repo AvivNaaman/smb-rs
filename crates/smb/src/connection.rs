@@ -21,6 +21,7 @@ use smb_dtyp::*;
 use smb_msg::{Command, Response, negotiate::*, plain::*, smb1::SMB1NegotiateMessage};
 use std::cmp::max;
 use std::collections::HashMap;
+use std::net::SocketAddr;
 #[cfg(feature = "multi_threaded")]
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
@@ -43,7 +44,7 @@ pub struct Connection {
 impl Connection {
     /// Creates a new SMB connection, specifying a server configuration, without connecting to a server.
     /// Use the [`connect`](Connection::connect) method to establish a connection.
-    pub fn build(server: &str, config: ConnectionConfig) -> crate::Result<Connection> {
+    pub fn build(server: String, config: ConnectionConfig) -> crate::Result<Self> {
         config.validate()?;
         let client_guid = config.client_guid.unwrap_or_else(Guid::generate);
         Ok(Connection {
@@ -54,6 +55,33 @@ impl Connection {
             config,
             server: server.to_string(),
         })
+    }
+
+    /// Creates a SMB connection for an alternate channel,
+    /// for the specified existing, primary connection.
+    #[maybe_async]
+    pub async fn build_alternate<T: SmbTransport + 'static>(
+        primary: &Connection,
+        primary_session: &Session,
+        target: SocketAddr,
+        user_name: &str,
+        password: String,
+        mut transport: T,
+    ) -> crate::Result<(Self, Session)> {
+        log::info!("Connecting alternate connection: {}", target);
+        transport.connect(target.to_string().as_str()).await?;
+        log::debug!("Connected to alternate connection: {}", target);
+        let mut result = Connection::build(primary.server.clone(), primary.config.clone())?;
+        const PRIMARY_USES_SMB2: bool = true;
+        result
+            .negotiate(Box::from(transport), PRIMARY_USES_SMB2)
+            .await?;
+        let session = Session::bind(
+            primary_session,
+            &result.handler,
+            result.handler.conn_info.get().unwrap(),
+        ).await?;
+        Ok(result)
     }
 
     /// Connects to the specified server, if it is not already connected, and negotiates the connection.
@@ -338,11 +366,23 @@ impl Connection {
                 },
             ];
             // QUIC
+            #[cfg(feature = "quic")]
             if matches!(self.config.transport, TransportConfig::Quic(_)) {
                 ctx_list.push(NegotiateContext {
                     context_type: NegotiateContextType::TransportCapabilities,
                     data: NegotiateContextValue::TransportCapabilities(
                         TransportCapabilities::new().with_accept_transport_layer_security(true),
+                    ),
+                });
+            }
+            // TODO: Add to config
+            if cfg!(feature = "rdma") {
+                ctx_list.push(NegotiateContext {
+                    context_type: NegotiateContextType::RdmaTransformCapabilities,
+                    data: NegotiateContextValue::RdmaTransformCapabilities(
+                        RdmaTransformCapabilities {
+                            transforms: vec![RdmaTransformId::None],
+                        },
                     ),
                 });
             }
@@ -359,7 +399,7 @@ impl Connection {
                 .with_dfs(true)
                 .with_leasing(true)
                 .with_large_mtu(true)
-                .with_multi_channel(false)
+                .with_multi_channel(self.config.multichannel.enabled)
                 .with_persistent_handles(false)
                 .with_directory_leasing(true);
 
@@ -458,6 +498,10 @@ impl Connection {
             .await?
             .insert(session.session_id(), session_handler);
         Ok(session)
+    }
+
+    pub fn conn_info(&self) -> Option<&ConnectionInfo> {
+        self.handler.conn_info.get().map(|info| info.as_ref())
     }
 }
 

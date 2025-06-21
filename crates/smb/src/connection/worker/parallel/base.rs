@@ -1,5 +1,5 @@
 use crate::connection::transformer::Transformer;
-use crate::connection::transport::{SmbTransport, SmbTransportWrite};
+use crate::connection::transport::{SmbTransport, SmbTransportWrite, TransportError};
 use crate::connection::worker::Worker;
 use crate::msg_handler::ReceiveOptions;
 use crate::sync_helpers::*;
@@ -97,7 +97,7 @@ where
     #[maybe_async]
     pub(crate) async fn incoming_data_callback(
         self: &Arc<Self>,
-        message: crate::Result<Vec<u8>>,
+        message: Result<Vec<u8>, TransportError>,
     ) -> crate::Result<()> {
         log::trace!("Received message from server.");
         let message = message?;
@@ -256,6 +256,8 @@ where
 
     #[maybe_async]
     async fn send(&self, msg: OutgoingMessage) -> crate::Result<SendMessageResult> {
+        log::trace!("ParallelWorker::send({msg:?}) called");
+
         let finalize_preauth_hash = msg.finalize_preauth_hash;
         let id = msg.message.header.message_id;
         let message = { self.transformer.transform_outgoing(msg).await? };
@@ -265,7 +267,7 @@ where
             false => None,
         };
 
-        log::trace!("Message with ID {id} is passed to the worker for sending.",);
+        log::trace!("Message with ID {id} is passed to the worker for sending",);
 
         let message = T::wrap_msg_to_send(message);
 
@@ -306,7 +308,11 @@ where
         };
 
         let timeout = { *self.timeout.read().await? };
-        T::wait_on_waiter(wait_for_receive, timeout).await
+        let result = T::wait_on_waiter(wait_for_receive, timeout).await?;
+
+        log::trace!("Received message {result:?}");
+
+        Ok(result)
     }
 
     fn transformer(&self) -> &Transformer {

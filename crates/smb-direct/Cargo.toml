@@ -1,0 +1,30 @@
+[package]
+name = "smb-direct"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+
+[dependencies]
+smb-transport = { path = "../smb-transport" }
+async-rdma = { git = "https://github.com/AvivNaaman/async-rdma.git", rev = "b6f23d21806cfee5583b77f5f68f5e8184d50891", features = [
+    "cm",
+    "raw",
+], optional = true }
+
+binrw = { workspace = true }
+modular-bitfield = { workspace = true }
+time = { workspace = true }
+paste = { workspace = true }
+maybe-async = { workspace = true }
+thiserror = { workspace = true }
+
+[features]
+default = []
+is_sync = ["maybe-async/is_sync"]

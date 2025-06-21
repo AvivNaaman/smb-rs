@@ -36,11 +36,16 @@ impl UncPath {
         })
     }
 
+    pub const SMB_IPC_SHARE: &'static str = "IPC$";
+
     /// Creates a new [UncPath] with the IPC$ share,
     /// and with no path set.
     pub fn ipc_share(server: &str) -> crate::Result<Self> {
-        const SMB_IPC_SHARE: &str = "IPC$";
-        Ok(Self::new(server)?.with_share(SMB_IPC_SHARE).unwrap())
+        Ok(Self::new(server)?.with_share(Self::SMB_IPC_SHARE).unwrap())
+    }
+
+    pub fn is_ipc_share(&self) -> bool {
+        self.share.as_deref() == Some(Self::SMB_IPC_SHARE)
     }
 
     /// Returns the current [UncPath] with a different share name.

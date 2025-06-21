@@ -411,6 +411,69 @@ impl Client {
             )),
         }
     }
+
+
+    #[maybe_async]
+    async fn _setup_multi_channel(
+        &mut self,
+        unc: &UncPath,
+        user_name: &str,
+        password: String,
+    ) -> crate::Result<()> {
+        {
+            let opened_conn_info = self.get_opened_conn_for_path(unc)?;
+            if !opened_conn_info
+                .conn
+                .conn_info()
+                .unwrap()
+                .negotiation
+                .caps
+                .multi_channel()
+            {
+                log::debug!(
+                    "Multi-channel is not enabled for connection to {unc}. Skipping setup."
+                );
+                return Ok(());
+            }
+        }
+
+        log::debug!(
+            "Multi-channel is enabled for connection to {unc}. Scanning for alternate channels."
+        );
+        // Connect IPC and query network interfaces.
+        if !unc.is_ipc_share() {
+            log::debug!("Connecting to IPC$ share for {unc} to scan for alternate channels.");
+            self.ipc_connect(unc.server(), user_name, password.clone()).await?;
+        }
+
+        let ipc_share = UncPath::ipc_share(unc.server().clone());
+        let ipc_conn_info = self.get_opened_conn_for_path(&ipc_share)?;
+        let network_interfaces = ipc_conn_info.tree.query_network_interfaces().await?;
+
+        // TODO: Improve this algorithm
+        let first_rdma_interface = network_interfaces
+            .iter()
+            .find(|iface| iface.capability.rdma());
+        if first_rdma_interface.is_none() {
+            log::debug!("No RDMA-capable interface found for multi-channel.");
+            return Ok(());
+        }
+        let first_rdma_interface = first_rdma_interface.unwrap();
+
+        sleep(std::time::Duration::from_secs(5)).await; // Allow some time for the connection to stabilize.
+        let opened_conn_info = self.get_opened_conn_for_path(unc)?;
+        Connection::build_alternate(
+            &opened_conn_info.conn,
+            &opened_conn_info.session,
+            first_rdma_interface.sockaddr.socket_addr(),
+            user_name,
+            password,
+            RdmaTransport::new(),
+        )
+        .await?;
+
+        Ok(())
+    }
 }
 
 impl Default for Client {

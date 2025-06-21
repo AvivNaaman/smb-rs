@@ -16,6 +16,7 @@ smb-msg = { path = "../smb-msg" }
 smb-dtyp = { path = "../smb-dtyp" }
 smb-rpc = { path = "../smb-rpc" }
 smb-fscc = { path = "../smb-fscc" }
+smb-direct = { path = "../smb-direct", optional = true }
 
 # Encoding/Decoding
 binrw = { workspace = true }
@@ -100,6 +101,7 @@ sign = ["sign_gmac", "sign_cmac", "sign_hmac"]
 
 # Transport
 quic = ["dep:quinn", "dep:rustls", "dep:rustls-platform-verifier"]
+rdma = ["dep:smb-direct"]
 
 # Kerberos requires reqwest for HTTP transport, for kerberos
 kerberos = ["reqwest", "dep:byteorder"]

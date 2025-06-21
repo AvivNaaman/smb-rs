@@ -417,7 +417,16 @@ pub struct RdmaTransformCapabilities {
     reserved2: u32,
 
     #[br(count = transform_count)]
-    pub transforms: Vec<u16>,
+    pub transforms: Vec<RdmaTransformId>,
+}
+
+#[binrw::binrw]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[brw(repr(u16))]
+pub enum RdmaTransformId {
+    None = 0x0000,
+    Encryption = 0x0001,
+    Signing = 0x0002,
 }
 
 #[binrw::binrw]
@@ -518,7 +527,7 @@ mod tests {
                     })
                     .into(),
                     NegotiateContextValue::RdmaTransformCapabilities(RdmaTransformCapabilities {
-                        transforms: vec![0x0001, 0x0002]
+                        transforms: vec![RdmaTransformId::Encryption, RdmaTransformId::Signing]
                     })
                     .into(),
                     NegotiateContextValue::CompressionCapabilities(CompressionCapabilities {
