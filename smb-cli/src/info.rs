@@ -34,8 +34,7 @@ pub async fn info(cmd: &InfoCmd, cli: &Cli) -> Result<(), Box<dyn Error>> {
         let interfaces = tree.query_network_interfaces().await?;
         dbg!(interfaces);
         use smb::connection::transport::rdma::*;
-        let transport = RdmaTransport::new().await?;
-        transport.neogitate().await?;
+        RdmaTransport::new().connect_and_negotiate().await?;
 
         // let shares_info = client.list_shares(&cmd.path.server).await?;
         // log::info!("Available shares on {}: ", cmd.path.server);

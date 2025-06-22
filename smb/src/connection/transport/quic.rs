@@ -4,7 +4,10 @@
 //! This module uses the [quinn](https://docs.rs/quinn/latest/quinn/) crate to implement the QUIC transport protocol for SMB.
 //! Therefore, it should only be used when async features are enabled.
 
-use std::sync::Arc;
+use std::{
+    net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    sync::Arc,
+};
 
 use crate::connection::QuicConfig;
 
@@ -17,6 +20,7 @@ use futures_util::FutureExt;
 use quinn::{crypto::rustls::QuicClientConfig, Endpoint};
 use rustls::pki_types::CertificateDer;
 use rustls_platform_verifier::ConfigVerifierExt;
+use thiserror::Error;
 
 pub struct QuicTransport {
     recv_stream: Option<quinn::RecvStream>,
@@ -25,14 +29,15 @@ pub struct QuicTransport {
     endpoint: Endpoint,
 }
 
+const LOCALHOST_V4: SocketAddr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 0));
+
 impl QuicTransport {
-    pub fn new(quic_config: &QuicConfig) -> crate::Result<Self> {
+    pub fn new(quic_config: &QuicConfig) -> Result<Self> {
         rustls::crypto::ring::default_provider()
             .install_default()
             .expect("Failed to install rustls crypto provider");
 
-        let local_address = quic_config.local_address.as_deref().unwrap_or("0.0.0.0:0");
-        let client_addr = TransportUtils::parse_socket_address(local_address)?;
+        let client_addr = quic_config.local_address.unwrap_or(LOCALHOST_V4);
         let mut endpoint = Endpoint::client(client_addr)?;
         endpoint.set_default_client_config(Self::make_client_config(quic_config)?);
         Ok(Self {
@@ -42,7 +47,22 @@ impl QuicTransport {
         })
     }
 
-    fn make_client_config(quic_config: &QuicConfig) -> crate::Result<quinn::ClientConfig> {
+    fn _connect(
+        &mut self,
+        server_addr: SocketAddr,
+        server_name: String,
+    ) -> BoxFuture<'_, Result<()>> {
+        async move {
+            let connection = self.endpoint.connect(server_addr, &server_name)?;
+            let (send, recv) = connection.await?.open_bi().await?;
+            self.send_stream = Some(send);
+            self.recv_stream = Some(recv);
+            Ok(())
+        }
+        .boxed()
+    }
+
+    fn make_client_config(quic_config: &QuicConfig) -> Result<quinn::ClientConfig> {
         let mut quic_client_config = match &quic_config.cert_validation {
             crate::connection::QuicCertValidationOptions::PlatformVerifier => {
                 rustls::ClientConfig::with_platform_verifier()
@@ -81,46 +101,40 @@ impl QuicTransport {
         self.send_stream.is_some()
     }
 
-    async fn send_raw(&mut self, buf: &[u8]) -> crate::Result<()> {
-        let send_stream = self
-            .send_stream
-            .as_mut()
-            .ok_or(crate::Error::NotConnected)?;
+    async fn send_raw(&mut self, buf: &[u8]) -> Result<()> {
+        let send_stream = self.send_stream.as_mut().ok_or(QuicError::NotConnected)?;
         send_stream.write_all(buf).await?;
         Ok(())
     }
 
-    async fn receive_exact(&mut self, out_buf: &mut [u8]) -> crate::Result<()> {
-        let recv_stream = self
-            .recv_stream
-            .as_mut()
-            .ok_or(crate::Error::NotConnected)?;
+    async fn receive_exact(&mut self, out_buf: &mut [u8]) -> Result<()> {
+        let recv_stream = self.recv_stream.as_mut().ok_or(QuicError::NotConnected)?;
         recv_stream.read_exact(out_buf).await?;
         Ok(())
     }
 }
 
 impl SmbTransport for QuicTransport {
-    fn connect<'a>(&'a mut self, server: &'a str) -> BoxFuture<'a, crate::Result<()>> {
-        async {
+    fn connect<'a>(&'a mut self, server: &'a str) -> BoxFuture<'a, super::error::Result<()>> {
+        async move {
+            if self.can_read() || self.can_write() {
+                return Err(super::TransportError::AlreadyConnected);
+            }
+
             let server_addr = TransportUtils::parse_socket_address(server)?;
             let server_name = TransportUtils::get_server_name(server)?;
-            let connection = self.endpoint.connect(server_addr, &server_name)?;
-            let (send, recv) = connection.await?.open_bi().await?;
-            self.send_stream = Some(send);
-            self.recv_stream = Some(recv);
-            Ok(())
+            self._connect(server_addr, server_name)
+                .await
+                .map_err(|e| e.into())
         }
         .boxed()
     }
 
     fn split(
         mut self: Box<Self>,
-    ) -> crate::Result<(Box<dyn SmbTransportRead>, Box<dyn SmbTransportWrite>)> {
+    ) -> super::error::Result<(Box<dyn SmbTransportRead>, Box<dyn SmbTransportWrite>)> {
         if !self.can_read() || !self.can_write() {
-            return Err(crate::Error::InvalidState(
-                "Cannot split a non-connected client.".into(),
-            ));
+            return Err(super::TransportError::NotConnected);
         }
         let (recv_stream, send_stream) = (
             self.recv_stream.take().unwrap(),
@@ -151,22 +165,47 @@ impl SmbTransport for QuicTransport {
 
 impl SmbTransportWrite for QuicTransport {
     #[cfg(feature = "async")]
-    fn send_raw<'a>(&'a mut self, buf: &'a [u8]) -> BoxFuture<'a, crate::Result<()>> {
-        self.send_raw(buf).boxed()
+    fn send_raw<'a>(&'a mut self, buf: &'a [u8]) -> BoxFuture<'a, super::error::Result<()>> {
+        async { Ok(self.send_raw(buf).await?) }.boxed()
     }
     #[cfg(not(feature = "async"))]
-    fn send_raw(&mut self, buf: &[u8]) -> crate::Result<()> {
+    fn send_raw(&mut self, buf: &[u8]) -> Result<()> {
         self.send_raw(buf)
     }
 }
 
 impl SmbTransportRead for QuicTransport {
     #[cfg(feature = "async")]
-    fn receive_exact<'a>(&'a mut self, out_buf: &'a mut [u8]) -> BoxFuture<'a, crate::Result<()>> {
-        self.receive_exact(out_buf).boxed()
+    fn receive_exact<'a>(
+        &'a mut self,
+        out_buf: &'a mut [u8],
+    ) -> BoxFuture<'a, super::error::Result<()>> {
+        async { Ok(self.receive_exact(out_buf).await?) }.boxed()
     }
     #[cfg(not(feature = "async"))]
-    fn receive_exact(&mut self, out_buf: &mut [u8]) -> crate::Result<Vec<u8>> {
+    fn receive_exact(&mut self, out_buf: &mut [u8]) -> Result<Vec<u8>> {
         self.receive(out_buf)
     }
 }
+
+#[derive(Error, Debug)]
+pub enum QuicError {
+    #[error("QUIC not connected")]
+    NotConnected,
+    #[error("QUIC start connect error: {0}")]
+    ConnectError(#[from] quinn::ConnectError),
+    #[error("QUIC connection error: {0}")]
+    ConnectionError(#[from] quinn::ConnectionError),
+    #[error("QUIC write error: {0}")]
+    WriteError(#[from] quinn::WriteError),
+    #[error("QUIC read error: {0}")]
+    ReadError(#[from] quinn::ReadExactError),
+    #[error("QUIC IO error: {0}")]
+    IoError(#[from] std::io::Error),
+    #[error("TLS error: {0}")]
+    TlsError(#[from] rustls::Error),
+    #[error("No cipher suites found")]
+    NoCipherSuitesFound(#[from] quinn::crypto::rustls::NoInitialCipherSuite),
+}
+
+type Result<T> = std::result::Result<T, QuicError>;

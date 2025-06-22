@@ -302,6 +302,7 @@ impl Connection {
                 },
             ];
             // QUIC
+            #[cfg(feature = "quic")]
             if matches!(self.config.transport, TransportConfig::Quic(_)) {
                 ctx_list.push(NegotiateContext {
                     context_type: NegotiateContextType::TransportCapabilities,

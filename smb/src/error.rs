@@ -3,7 +3,7 @@ use std::{num::TryFromIntError, sync::PoisonError};
 use thiserror::Error;
 
 use crate::{
-    connection::TransformError,
+    connection::{transport::TransportError, TransformError},
     packets::smb2::{Command, ErrorResponse, NegotiateDialect, Status},
     sync_helpers::AcquireError,
     UncPath,
@@ -89,25 +89,8 @@ pub enum Error {
     #[error("Unable to connect to DFS referrals for: {0}")]
     DfsReferralConnectionFail(UncPath),
 
-    // -- QUIC --
-    #[cfg(feature = "quic")]
-    #[error("QUIC start connect error: {0}")]
-    QuicConnectError(#[from] quinn::ConnectError),
-    #[cfg(feature = "quic")]
-    #[error("QUIC connection error: {0}")]
-    QuicConnectionError(#[from] quinn::ConnectionError),
-    #[cfg(feature = "quic")]
-    #[error("QUIC write error: {0}")]
-    QuicWriteError(#[from] quinn::WriteError),
-    #[cfg(feature = "quic")]
-    #[error("QUIC read error: {0}")]
-    QuicReadError(#[from] quinn::ReadExactError),
-    #[cfg(feature = "quic")]
-    #[error("TLS error: {0}")]
-    TlsError(#[from] rustls::Error),
-    #[cfg(feature = "quic")]
-    #[error("No cipher suites found")]
-    NoCipherSuitesFound(#[from] quinn::crypto::rustls::NoInitialCipherSuite),
+    #[error("Transport error: {0}")]
+    TransportError(#[from] TransportError),
 }
 
 impl<T> From<PoisonError<T>> for Error {

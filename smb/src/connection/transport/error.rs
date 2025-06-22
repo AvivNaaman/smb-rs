@@ -1,0 +1,29 @@
+use thiserror::Error;
+
+#[cfg(feature = "quic")]
+use crate::connection::transport::quic::QuicError;
+
+/// Transport-related errors.
+#[derive(Error, Debug)]
+pub enum TransportError {
+    #[error("Already connected")]
+    AlreadyConnected,
+    #[error("Invalid transport message")]
+    InvalidMessage,
+    #[error("Failed to parse transport message {0}")]
+    ParseError(#[from] binrw::Error),
+    #[error("Not connected")]
+    NotConnected,
+    #[error("Timed out after {}s", .0.as_secs())]
+    Timeout(std::time::Duration),
+    #[error("Invalid address: {0}")]
+    InvalidAddress(String),
+    #[error("IO Error: {0}")]
+    IoError(#[from] std::io::Error),
+
+    #[cfg(feature = "quic")]
+    #[error("QUIC error: {0}")]
+    QuicError(#[from] QuicError),
+}
+
+pub type Result<T> = std::result::Result<T, TransportError>;

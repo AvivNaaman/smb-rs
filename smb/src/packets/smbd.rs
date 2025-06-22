@@ -1,13 +1,17 @@
+///! SMB-Direct (SMBD) packets & structures
+///
+/// [MS-SMBD](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-smbd/b25587c4-2507-47a4-aa89-e5d3f04f7197)
 use std::io::SeekFrom;
 
 use binrw::io::TakeSeekExt;
-///! SMB-Direct packets
 use binrw::prelude::*;
+use modular_bitfield::prelude::*;
 
 use crate::packets::{binrw_util::prelude::PosMarker, smb2::Status};
 
 const SMBD_VERSION: u16 = 0x100; // SMBD v1.0
 
+/// MS-SMBD 2.2.1
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[brw(little)]
@@ -32,6 +36,7 @@ impl SmbdNegotiateRequest {
     pub const ENCODED_SIZE: usize = size_of::<u16>() * 4 + size_of::<u32>() * 3;
 }
 
+/// MS-SMBD 2.2.2
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[brw(little)]
@@ -65,6 +70,7 @@ impl SmbdNegotiateResponse {
 
 const DATA_ALIGNMENT: u32 = 8;
 
+/// MS-SMBD 2.2.3
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[brw(little)]
@@ -89,4 +95,34 @@ pub struct SmbdDataTransfer {
     #[bw(align_before = DATA_ALIGNMENT as usize)]
     #[bw(write_with = PosMarker::write_aoff, args(&data_offset))]
     data: Vec<u8>,
+}
+
+#[bitfield]
+#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
+pub struct SmbdDataTransferFlags {
+    /// The peer is requested to promptly send a message in response. This value is used for keep alives.
+    pub response_requested: bool,
+    #[skip]
+    __: B31,
+}
+
+/// MS-SMBD 2.2.3.1
+///
+/// Represents a registered RDMA buffer and is
+/// used to Advertise the source and destination of RDMA Read and RDMA Write operations,
+/// respectively. The upper layer optionally embeds one or more of these structures in its payload when
+/// requesting RDMA direct placement of peer data via the protocol.
+#[binrw::binrw]
+#[derive(Debug, PartialEq, Eq)]
+#[brw(little)]
+pub struct BufferDescriptorV1 {
+    /// The RDMA provider-specific offset, in bytes, identifying the first byte of data to be
+    /// transferred to or from the registered buffer
+    pub offset: u64,
+    /// An RDMA provider-assigned Steering Tag for accessing the registered buffer.
+    pub token: u32,
+    /// The size, in bytes, of the data to be transferred to or from the registered buffer.
+    pub length: u32,
 }

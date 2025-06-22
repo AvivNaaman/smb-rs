@@ -1,5 +1,5 @@
 use crate::connection::transformer::Transformer;
-use crate::connection::transport::{SmbTransport, SmbTransportWrite};
+use crate::connection::transport::{SmbTransport, SmbTransportWrite, TransportError};
 use crate::connection::worker::Worker;
 use crate::msg_handler::ReceiveOptions;
 use crate::packets::smb2::ResponseContent;
@@ -96,7 +96,7 @@ where
     #[maybe_async]
     pub(crate) async fn incoming_data_callback(
         self: &Arc<Self>,
-        message: crate::Result<Vec<u8>>,
+        message: Result<Vec<u8>, TransportError>,
     ) -> crate::Result<()> {
         log::trace!("Received message from server.");
         let message = message?;

@@ -1,6 +1,6 @@
 //! Connection configuration settings.
 
-use std::time::Duration;
+use std::{net::SocketAddr, time::Duration};
 
 use crate::packets::{guid::Guid, smb2::Dialect};
 
@@ -25,14 +25,19 @@ pub enum TransportConfig {
     Tcp,
     /// Use NetBIOS over TCP transport protocol.
     NetBios,
+    #[cfg(feature = "quic")]
     /// Use SMB over QUIC transport protocol.
     /// Note that this is only suported in dialects 3.1.1 and above.
     Quic(QuicConfig),
+    #[cfg(feature = "rdma")]
+    /// Use RDMA transport protocol.
+    Rdma,
 }
 
+#[cfg(feature = "quic")]
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct QuicConfig {
-    pub local_address: Option<String>,
+    pub local_address: Option<SocketAddr>,
     pub cert_validation: QuicCertValidationOptions,
 }
 
@@ -159,6 +164,7 @@ impl ConnectionConfig {
             }
         }
         // Make sure transport is supported by the dialects.
+        #[cfg(feature = "quic")]
         if let Some(min) = self.min_dialect {
             if min < Dialect::Smb0311 && matches!(self.transport, TransportConfig::Quic(_)) {
                 return Err(crate::Error::InvalidConfiguration(
