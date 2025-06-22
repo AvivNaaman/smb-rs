@@ -34,6 +34,10 @@ impl UncPath {
         Self::new(server).with_share(SMB_IPC_SHARE.to_string())
     }
 
+    pub fn is_ipc_share(&self) -> bool {
+        self.share.as_deref() == Some("IPC$")
+    }
+
     pub fn with_share(self, share: String) -> Self {
         UncPath {
             server: self.server,

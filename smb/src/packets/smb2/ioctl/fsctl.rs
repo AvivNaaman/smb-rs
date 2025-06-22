@@ -280,11 +280,11 @@ pub enum SocketAddrStorage {
     V6(SocketAddrStorageV6),
 }
 
-impl Into<SocketAddr> for SocketAddrStorage {
-    fn into(self) -> SocketAddr {
+impl SocketAddrStorage {
+    pub fn socket_addr(&self) -> SocketAddr {
         match self {
-            SocketAddrStorage::V4(v4) => SocketAddr::V4(v4.into()),
-            SocketAddrStorage::V6(v6) => SocketAddr::V6(v6.into()),
+            SocketAddrStorage::V4(v4) => SocketAddr::V4(v4.to_addr()),
+            SocketAddrStorage::V6(v6) => SocketAddr::V6(v6.to_addr()),
         }
     }
 }
@@ -299,9 +299,9 @@ pub struct SocketAddrStorageV4 {
     _reserved: [u8; 128 - (2 + 2 + 4)],
 }
 
-impl Into<SocketAddrV4> for SocketAddrStorageV4 {
-    fn into(self) -> SocketAddrV4 {
-        SocketAddrV4::new(Ipv4Addr::from(self.address), self.port)
+impl SocketAddrStorageV4 {
+    fn to_addr(&self) -> SocketAddrV4 {
+        SocketAddrV4::new(Ipv4Addr::from(self.address.to_be()), self.port)
     }
 }
 
@@ -317,10 +317,10 @@ pub struct SocketAddrStorageV6 {
     _reserved: [u8; 128 - (2 + 2 + 4 + 16 + 4)],
 }
 
-impl Into<SocketAddrV6> for SocketAddrStorageV6 {
-    fn into(self) -> SocketAddrV6 {
+impl SocketAddrStorageV6 {
+    fn to_addr(&self) -> SocketAddrV6 {
         SocketAddrV6::new(
-            Ipv6Addr::from(self.address),
+            Ipv6Addr::from(self.address.to_be()),
             self.port,
             self.flow_info,
             self.scope_id,

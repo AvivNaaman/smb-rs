@@ -3,6 +3,7 @@ use std::{collections::HashMap, str::FromStr};
 use maybe_async::maybe_async;
 
 use crate::{
+    connection::transport::rdma::RdmaTransport,
     packets::{
         dfsc::{ReferralEntry, ReferralEntryValue},
         rpc::interface::{ShareInfo1, SrvSvc},
@@ -22,7 +23,7 @@ pub struct Client {
 }
 
 struct OpenedConnectionInfo {
-    _conn: Connection,
+    conn: Connection,
     _session: Session,
     tree: Tree,
     creds: Option<(String, String)>,
@@ -52,7 +53,7 @@ impl Client {
         password: String,
     ) -> crate::Result<()> {
         let ipc_share = UncPath::ipc_share(server.to_string());
-        self.share_connect(&ipc_share, user_name, password).await
+        self._share_connect(&ipc_share, user_name, password).await
     }
 
     #[maybe_async]
@@ -67,6 +68,19 @@ impl Client {
 
     #[maybe_async]
     pub async fn share_connect(
+        &mut self,
+        unc: &UncPath,
+        user_name: &str,
+        password: String,
+    ) -> crate::Result<()> {
+        self._share_connect(unc, user_name, password.clone())
+            .await?;
+        self._setup_multi_channel(unc, user_name, password).await?;
+
+        Ok(())
+    }
+
+    async fn _share_connect(
         &mut self,
         unc: &UncPath,
         user_name: &str,
@@ -91,18 +105,76 @@ impl Client {
         let tree = session.tree_connect(&share_unc.to_string()).await?;
 
         let mut opened_conn_info = OpenedConnectionInfo {
-            _conn: conn,
+            conn: conn,
             _session: session,
             tree,
             creds: None,
         };
 
         if self.config.dfs {
-            opened_conn_info.creds = Some((user_name.to_string(), password));
+            opened_conn_info.creds = Some((user_name.to_string(), password.clone()));
         }
 
         log::debug!("Connected to share {share_unc} with user {user_name}");
         self.connections.insert(share_unc, opened_conn_info);
+
+        Ok(())
+    }
+
+    #[maybe_async]
+    async fn _setup_multi_channel(
+        &mut self,
+        unc: &UncPath,
+        user_name: &str,
+        password: String,
+    ) -> crate::Result<()> {
+        {
+            let opened_conn_info = self.get_opened_conn_for_path(unc)?;
+            if !opened_conn_info
+                .conn
+                .conn_info()
+                .unwrap()
+                .negotiation
+                .caps
+                .multi_channel()
+            {
+                log::debug!(
+                    "Multi-channel is not enabled for connection to {unc}. Skipping setup."
+                );
+                return Ok(());
+            }
+        }
+
+        log::debug!(
+            "Multi-channel is enabled for connection to {unc}. Scanning for alternate channels."
+        );
+        // Connect IPC and query network interfaces.
+        if !unc.is_ipc_share() {
+            log::debug!("Connecting to IPC$ share for {unc} to scan for alternate channels.");
+            self.ipc_connect(&unc.server, &user_name, password).await?;
+        }
+
+        let ipc_share = UncPath::ipc_share(unc.server.clone());
+        let ipc_conn_info = self.get_opened_conn_for_path(&ipc_share)?;
+        let network_interfaces = ipc_conn_info.tree.query_network_interfaces().await?;
+
+        // TODO: Improve this algorithm
+        let first_rdma_interface = network_interfaces
+            .iter()
+            .find(|iface| iface.capability.rdma());
+        if first_rdma_interface.is_none() {
+            log::debug!("No RDMA-capable interface found for multi-channel.");
+            return Ok(());
+        }
+        let first_rdma_interface = first_rdma_interface.unwrap();
+
+        let opened_conn_info = self.get_opened_conn_for_path(unc)?;
+        Connection::build_alternate(
+            &opened_conn_info.conn,
+            first_rdma_interface.sockaddr.socket_addr(),
+            RdmaTransport::new(),
+        )
+        .await?;
 
         Ok(())
     }

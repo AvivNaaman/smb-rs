@@ -219,6 +219,12 @@ impl Tree {
                 "Network interfaces can only be queried on IPC shares".to_string(),
             ));
         }
+        if !self.conn_info.config.multichannel.enabled {
+            // Server might decline + this is irrelevant!
+            return Err(Error::InvalidState(
+                "Network interfaces can only be queried when multi-channel is enabled".to_string(),
+            ));
+        }
 
         const QUERY_NETOWKR_INTERFACE_MAX_OUTPUT: u32 = 2u32.pow(16);
         let interface_info = self

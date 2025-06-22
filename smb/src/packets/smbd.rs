@@ -1,13 +1,10 @@
 ///! SMB-Direct (SMBD) packets & structures
 ///
 /// [MS-SMBD](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-smbd/b25587c4-2507-47a4-aa89-e5d3f04f7197)
-use std::io::SeekFrom;
-
-use binrw::io::TakeSeekExt;
 use binrw::prelude::*;
 use modular_bitfield::prelude::*;
 
-use crate::packets::{binrw_util::prelude::PosMarker, smb2::Status};
+use crate::packets::smb2::Status;
 
 const SMBD_VERSION: u16 = 0x100; // SMBD v1.0
 
@@ -38,7 +35,7 @@ impl SmbdNegotiateRequest {
 
 /// MS-SMBD 2.2.2
 #[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 #[brw(little)]
 pub struct SmbdNegotiateResponse {
     #[bw(calc = SMBD_VERSION)]
@@ -71,30 +68,23 @@ impl SmbdNegotiateResponse {
 const DATA_ALIGNMENT: u32 = 8;
 
 /// MS-SMBD 2.2.3
+///
+/// _Note:_ This is just the header of the data transfer.
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[brw(little)]
-pub struct SmbdDataTransfer {
-    credits_requested: u16,
-    credits_granted: u16,
-    flags: u16,
+pub struct SmbdDataTransferHeader {
+    pub credits_requested: u16,
+    pub credits_granted: u16,
+    pub flags: u16,
 
     #[bw(calc = 0)]
     _reserved: u16,
 
-    remaining_data_length: u32,
-    #[bw(calc = PosMarker::default())]
-    #[br(assert(data_offset.value % DATA_ALIGNMENT == 0))]
-    data_offset: PosMarker<u32>,
-    #[bw(calc = data.len() as u32)]
-    data_length: u32,
-
-    #[br(seek_before = SeekFrom::Start(data_offset.value as u64),
-        parse_with = binrw::helpers::until_eof,
-        map_stream = |s| s.take_seek(data_length as u64))]
-    #[bw(align_before = DATA_ALIGNMENT as usize)]
-    #[bw(write_with = PosMarker::write_aoff, args(&data_offset))]
-    data: Vec<u8>,
+    pub remaining_data_length: u32,
+    #[br(assert(data_offset % DATA_ALIGNMENT == 0))]
+    pub data_offset: u32,
+    pub data_length: u32,
 }
 
 #[bitfield]

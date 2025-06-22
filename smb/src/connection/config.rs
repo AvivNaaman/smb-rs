@@ -29,9 +29,6 @@ pub enum TransportConfig {
     /// Use SMB over QUIC transport protocol.
     /// Note that this is only suported in dialects 3.1.1 and above.
     Quic(QuicConfig),
-    #[cfg(feature = "rdma")]
-    /// Use RDMA transport protocol.
-    Rdma,
 }
 
 #[cfg(feature = "quic")]
@@ -39,6 +36,22 @@ pub enum TransportConfig {
 pub struct QuicConfig {
     pub local_address: Option<SocketAddr>,
     pub cert_validation: QuicCertValidationOptions,
+}
+
+#[cfg(feature = "rdma")]
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct RdmaConfig {}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct MultiChannelConfig {
+    /// Whether to enable multichannel support.
+    /// This is enabled by default.
+    pub enabled: bool,
+
+    /// Specified configuration for possible RDMA transport.
+    /// If this is set, the client will attempt to use RDMA transport if available.
+    #[cfg(feature = "rdma")]
+    pub rdma: Option<RdmaConfig>,
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -124,6 +137,9 @@ pub struct ConnectionConfig {
     /// Note: you must also have compression features enabled when building the crate, otherwise compression
     /// would not be available. *The compression feature is enabled by default.*
     pub compression_enabled: bool,
+
+    /// Multi-channel configuration
+    pub multichannel: MultiChannelConfig,
 
     /// Specifies the client host name to be used in the SMB2 negotiation & session setup.
     pub client_name: Option<String>,

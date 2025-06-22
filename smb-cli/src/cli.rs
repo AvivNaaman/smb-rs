@@ -21,6 +21,9 @@ pub struct Cli {
     /// Disables DFS referral resolution.
     #[arg(long)]
     pub no_dfs: bool,
+    /// Enables multichannel support.
+    #[arg(long)]
+    pub multichannel: bool,
 
     /// Disables NTLM authentication.
     #[arg(long)]
@@ -83,6 +86,10 @@ impl Cli {
                     kerberos: !self.no_kerberos,
                 },
                 allow_unsigned_guest_access: self.disable_message_signing,
+                multichannel: smb::connection::MultiChannelConfig {
+                    enabled: self.multichannel,
+                    rdma: Some(smb::connection::RdmaConfig {}),
+                },
                 ..Default::default()
             },
         }

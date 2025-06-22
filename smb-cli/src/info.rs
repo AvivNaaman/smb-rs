@@ -30,17 +30,12 @@ pub async fn info(cmd: &InfoCmd, cli: &Cli) -> Result<(), Box<dyn Error>> {
             .await?;
 
         let ipc_share = UncPath::ipc_share(cmd.path.server.to_string());
-        let tree = client.get_share(&ipc_share)?;
-        let interfaces = tree.query_network_interfaces().await?;
-        dbg!(interfaces);
-        use smb::connection::transport::rdma::*;
-        RdmaTransport::new().connect_and_negotiate().await?;
 
-        // let shares_info = client.list_shares(&cmd.path.server).await?;
-        // log::info!("Available shares on {}: ", cmd.path.server);
-        // for share in shares_info {
-        //     log::info!("  - {}", **share.netname.as_ref().unwrap());
-        // }
+        let shares_info = client.list_shares(&cmd.path.server).await?;
+        log::info!("Available shares on {}: ", cmd.path.server);
+        for share in shares_info {
+            log::info!("  - {}", **share.netname.as_ref().unwrap());
+        }
         return Ok(());
     }
 

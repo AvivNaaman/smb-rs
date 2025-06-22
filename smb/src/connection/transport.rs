@@ -21,8 +21,6 @@ pub fn make_transport(
         TransportConfig::Tcp => Ok(Box::new(tcp::TcpTransport::new(timeout))),
         #[cfg(feature = "quic")]
         TransportConfig::Quic(quic_config) => Ok(Box::new(quic::QuicTransport::new(quic_config)?)),
-        #[cfg(feature = "rdma")]
-        TransportConfig::Rdma => Ok(Box::new(rdma::RdmaTransport::new())),
         TransportConfig::NetBios => Ok(Box::new(netbios::NetBiosTransport::new(timeout))),
     }
 }

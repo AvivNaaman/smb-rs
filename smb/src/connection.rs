@@ -28,6 +28,7 @@ use rand::rngs::OsRng;
 use rand::Rng;
 use std::cmp::max;
 use std::collections::HashMap;
+use std::net::SocketAddr;
 #[cfg(feature = "multi_threaded")]
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
@@ -47,7 +48,7 @@ pub struct Connection {
 impl Connection {
     /// Creates a new SMB connection, specifying a server configuration, without connecting to a server.
     /// Use the [`connect`](Connection::connect) method to establish a connection.
-    pub fn build(server: String, config: ConnectionConfig) -> crate::Result<Connection> {
+    pub fn build(server: String, config: ConnectionConfig) -> crate::Result<Self> {
         config.validate()?;
         let client_guid = config.client_guid.unwrap_or_else(Guid::gen);
         Ok(Connection {
@@ -55,6 +56,25 @@ impl Connection {
             config,
             server,
         })
+    }
+
+    /// Creates a SMB connection for an alternate channel,
+    /// for the specified existing, primary connection.
+    #[maybe_async]
+    pub async fn build_alternate<T: SmbTransport + 'static>(
+        primary: &Connection,
+        target: SocketAddr,
+        mut transport: T,
+    ) -> crate::Result<Self> {
+        log::info!("Connecting alternate connection: {}", target);
+        transport.connect(target.to_string().as_str()).await?;
+        log::debug!("Connected to alternate connection: {}", target);
+        let mut result = Connection::build(primary.server.clone(), primary.config.clone())?;
+        const PRIMARY_USES_SMB2: bool = true;
+        result
+            .negotiate(Box::from(transport), PRIMARY_USES_SMB2)
+            .await?;
+        Ok(result)
     }
 
     /// Sets operations timeout for the connection.
@@ -335,7 +355,7 @@ impl Connection {
                 .with_dfs(true)
                 .with_leasing(true)
                 .with_large_mtu(true)
-                .with_multi_channel(true)
+                .with_multi_channel(self.config.multichannel.enabled)
                 .with_persistent_handles(false)
                 .with_directory_leasing(true);
 
@@ -430,6 +450,10 @@ impl Connection {
             .await?
             .insert(session.session_id(), session_handler);
         Ok(session)
+    }
+
+    pub fn conn_info(&self) -> Option<&ConnectionInfo> {
+        self.handler.conn_info.get().map(|info| info.as_ref())
     }
 }
 
