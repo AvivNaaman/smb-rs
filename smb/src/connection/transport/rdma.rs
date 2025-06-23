@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use super::traits::*;
 use crate::connection::transport::TransportError;
-use crate::packets::smbd::SmbdDataTransferHeader;
+use crate::packets::smbd::{SmbdDataTransferFlags, SmbdDataTransferHeader};
 use crate::sync_helpers::*;
 use crate::{
     connection::transport::{SmbTransport, SmbTransportRead},
@@ -39,8 +39,7 @@ pub enum RdmaError {
 type Result<T> = std::result::Result<T, RdmaError>;
 
 #[derive(Debug)]
-struct RdmaRunning {
-    rdma: Arc<Rdma>,
+struct RdmaRunningRo {
     receive: mpsc::Receiver<LocalMr>,
 
     max_rw_size: u32,
@@ -52,9 +51,18 @@ struct RdmaRunning {
 }
 
 #[derive(Debug)]
+struct RdmaRunningWo {
+    rdma: Arc<Rdma>,
+    max_rw_size: u32,
+    max_fragmented_size: u32,
+}
+
+#[derive(Debug)]
 enum RdmaTransportState {
     Init,
-    Running(RdmaRunning),
+    RunningRw((RdmaRunningRo, RdmaRunningWo)),
+    RunningWo(RdmaRunningWo),
+    RunningRo(RdmaRunningRo),
     Disconnected,
 }
 
@@ -71,21 +79,23 @@ impl RdmaTransport {
     }
 
     pub async fn stop(&mut self) -> std::result::Result<(), RdmaError> {
-        unimplemented!()
+        self.state = RdmaTransportState::Disconnected;
+        // TODO: Properly stop the worker and cancel the receive channel.
+        Ok(())
     }
 
-    #[inline]
-    fn _get_running(&self) -> std::result::Result<&RdmaRunning, RdmaError> {
-        match &self.state {
-            RdmaTransportState::Running(r) => Ok(r),
+    fn _get_read(&mut self) -> std::result::Result<&mut RdmaRunningRo, RdmaError> {
+        match &mut self.state {
+            RdmaTransportState::RunningRw((ro, _)) => Ok(ro),
+            RdmaTransportState::RunningRo(ro) => Ok(ro),
             _ => Err(RdmaError::NotConnected),
         }
     }
 
-    #[inline]
-    fn _get_running_mut(&mut self) -> std::result::Result<&mut RdmaRunning, RdmaError> {
+    fn _get_write(&mut self) -> std::result::Result<&mut RdmaRunningWo, RdmaError> {
         match &mut self.state {
-            RdmaTransportState::Running(ref mut r) => Ok(r),
+            RdmaTransportState::RunningWo(wo) => Ok(wo),
+            RdmaTransportState::RunningRw((_, wo)) => Ok(wo),
             _ => Err(RdmaError::NotConnected),
         }
     }
@@ -124,14 +134,20 @@ impl RdmaTransport {
             })
         };
 
-        self.state = RdmaTransportState::Running(RdmaRunning {
-            rdma: rdma.clone(),
-            receive: rx,
-            max_rw_size: negotiate_result.max_read_write_size,
-            max_fragmented_size: negotiate_result.max_fragmented_size,
-            worker,
-            cancel,
-        });
+        self.state = RdmaTransportState::RunningRw((
+            RdmaRunningRo {
+                receive: rx,
+                max_rw_size: negotiate_result.max_read_write_size,
+                max_fragmented_size: negotiate_result.max_fragmented_size,
+                worker,
+                cancel,
+            },
+            RdmaRunningWo {
+                rdma,
+                max_rw_size: negotiate_result.max_read_write_size,
+                max_fragmented_size: negotiate_result.max_fragmented_size,
+            },
+        ));
 
         Ok(())
     }
@@ -170,6 +186,12 @@ impl RdmaTransport {
         if neg_res.status != crate::packets::smb2::Status::Success {
             return Err(RdmaError::NegotiateError(
                 "Negotiation failed - non-success status".to_string(),
+            ));
+        }
+
+        if neg_res.max_read_write_size <= SmbdDataTransferHeader::ENCODED_SIZE as u32 {
+            return Err(RdmaError::NegotiateError(
+                "Negotiation failed - max read/write size too small".to_string(),
             ));
         }
 
@@ -227,13 +249,12 @@ impl RdmaTransport {
     }
 
     async fn _receive_fragmented_data(&mut self) -> std::result::Result<Vec<u8>, RdmaError> {
-        let running = self._get_running_mut()?;
+        let running = self._get_read()?;
 
         let mut result = Vec::with_capacity(0);
         loop {
             let mr = select! {
                 mr = running.receive.recv() => {
-                    const BEGINNING: usize = 0;
                     match mr {
                         Some(mr) => mr,
                         None => return Err(RdmaError::NotConnected),
@@ -296,6 +317,80 @@ impl RdmaTransport {
 
         Ok(result)
     }
+
+    async fn _send_fragmented_data(
+        &mut self,
+        message: &[u8],
+    ) -> std::result::Result<(), RdmaError> {
+        log::trace!(
+            "RdmaTransport _send_fragmented_data called with message length: {}",
+            message.len()
+        );
+        let running = self._get_write()?;
+
+        if message.len() > running.max_fragmented_size as usize {
+            return Err(RdmaError::RequestTooLarge(
+                message.len(),
+                running.max_fragmented_size as usize,
+            ));
+        }
+
+        let total_data_to_send = message.len() as u32;
+        let mut data_sent: u32 = 0;
+        let mut fragment_num = 0;
+        while data_sent < total_data_to_send {
+            /// The offset must be 8-byte aligned.
+            const OFFSET: u32 = (SmbdDataTransferHeader::ENCODED_SIZE as u32)
+                .div_ceil(SmbdDataTransferHeader::DATA_ALIGNMENT)
+                * SmbdDataTransferHeader::DATA_ALIGNMENT;
+
+            let remaining = total_data_to_send - data_sent;
+            let data_sending = remaining.min(running.max_rw_size - OFFSET);
+
+            let header = SmbdDataTransferHeader {
+                data_length: data_sending,
+                remaining_data_length: remaining - data_sending,
+                data_offset: OFFSET,
+                flags: SmbdDataTransferFlags::new(),
+                credits_requested: 1,
+                credits_granted: 0x10,
+            };
+
+            let data_end = OFFSET as usize + data_sending as usize;
+            let mut local_mr = running
+                .rdma
+                .alloc_local_mr(Layout::from_size_align(data_end, 1).unwrap())?;
+
+            {
+                let mut mr_data = local_mr.as_mut_slice();
+                let mut cursor = std::io::Cursor::new(mr_data.as_mut());
+                header.write(&mut cursor)?;
+
+                mr_data[OFFSET as usize..data_end].copy_from_slice(
+                    &message[data_sent as usize..data_sent as usize + data_sending as usize],
+                );
+
+                log::trace!(
+                    "Prepared fragment {fragment_num}: header: {:?}, data: {:?}",
+                    header,
+                    &mr_data[..data_end]
+                );
+            }
+
+            running.rdma.send_raw(&local_mr).await?;
+
+            log::trace!(
+                "Sent fragment {fragment_num}: {} bytes, remaining: {}",
+                data_sending,
+                remaining - data_sending
+            );
+
+            data_sent += data_sending;
+            fragment_num += 1;
+        }
+
+        Ok(())
+    }
 }
 
 impl SmbTransport for RdmaTransport {
@@ -313,10 +408,18 @@ impl SmbTransport for RdmaTransport {
     fn split(
         self: Box<Self>,
     ) -> super::error::Result<(Box<dyn SmbTransportRead>, Box<dyn SmbTransportWrite>)> {
-        match self.state {
-            RdmaTransportState::Running(_) => Ok((self, self)),
-            _ => Err(TransportError::NotConnected),
-        }
+        let (ro, wo) = match self.state {
+            RdmaTransportState::RunningRw((ro, wo)) => (ro, wo),
+            _ => return Err(TransportError::AlreadySplit),
+        };
+        Ok((
+            Box::new(Self {
+                state: RdmaTransportState::RunningRo(ro),
+            }),
+            Box::new(Self {
+                state: RdmaTransportState::RunningWo(wo),
+            }),
+        ))
     }
 }
 
@@ -340,8 +443,15 @@ impl SmbTransportRead for RdmaTransport {
 impl super::SmbTransportWrite for RdmaTransport {
     fn send_raw<'a>(
         &'a mut self,
-        buf: &'a [u8],
+        _buf: &'a [u8],
     ) -> futures_core::future::BoxFuture<'a, super::error::Result<()>> {
-        todo!()
+        unimplemented!("RdmaTransport does not support send_raw directly. Use send instead.");
+    }
+
+    fn send<'a>(
+        &'a mut self,
+        message: &'a [u8],
+    ) -> futures_core::future::BoxFuture<'a, super::error::Result<()>> {
+        async { Ok(self._send_fragmented_data(message).await?) }.boxed()
     }
 }

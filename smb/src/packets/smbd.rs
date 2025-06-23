@@ -65,8 +65,6 @@ impl SmbdNegotiateResponse {
     pub const ENCODED_SIZE: usize = size_of::<u16>() * 6 + size_of::<u32>() * 5;
 }
 
-const DATA_ALIGNMENT: u32 = 8;
-
 /// MS-SMBD 2.2.3
 ///
 /// _Note:_ This is just the header of the data transfer.
@@ -76,15 +74,24 @@ const DATA_ALIGNMENT: u32 = 8;
 pub struct SmbdDataTransferHeader {
     pub credits_requested: u16,
     pub credits_granted: u16,
-    pub flags: u16,
+    pub flags: SmbdDataTransferFlags,
 
     #[bw(calc = 0)]
     _reserved: u16,
 
     pub remaining_data_length: u32,
-    #[br(assert(data_offset % DATA_ALIGNMENT == 0))]
+    #[brw(assert(data_offset % Self::DATA_ALIGNMENT == 0))]
     pub data_offset: u32,
     pub data_length: u32,
+}
+
+impl SmbdDataTransferHeader {
+    /// The size of the header after encoding, in bytes.
+    /// This does NOT include any padding between the end of the header, and the actual data,
+    /// as well as the data.
+    pub const ENCODED_SIZE: usize = size_of::<u16>() * 4 + size_of::<u32>() * 3;
+    /// The required alignment of the data offset, in bytes.
+    pub const DATA_ALIGNMENT: u32 = 8;
 }
 
 #[bitfield]

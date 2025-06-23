@@ -6,3 +6,5 @@ rdma link add rxe_ens160 type rxe netdev ens160
 # Start ksmbd
 modprobe ksmbd
 ksmbd.mountd
+ksmbd.control --debug all
+ksmbd.control --reload

@@ -16,6 +16,8 @@ pub enum TransportError {
     ParseError(#[from] binrw::Error),
     #[error("Not connected")]
     NotConnected,
+    #[error("Connection already split")]
+    AlreadySplit,
     #[error("Timed out after {}s", .0.as_secs())]
     Timeout(std::time::Duration),
     #[error("Invalid address: {0}")]
