@@ -112,15 +112,15 @@ impl RdmaTransport {
         let node = dbg!(endpoint_parts[0].to_owned()) + "\0";
         let service = "445\0";
 
-        log::info!("RdmaTransport connecting...");
+        log::info!("RDMA connecting...");
         let rdma = RdmaBuilder::default()
             .set_conn_type(ConnectionType::RCCM)
             .set_raw(true)
             .cm_connect(&node, &service)
             .await?;
-        log::info!("RdmaTransport connected");
+        log::info!("RDMA connected");
         let negotiate_result = Self::negotiate_rdma(&rdma).await?;
-        log::info!("RdmaTransport negotiated");
+        log::info!("RDMA negotiated");
         let rdma = Arc::new(rdma);
         let cancel = CancellationToken::new();
 
@@ -172,7 +172,7 @@ impl RdmaTransport {
             req.write(&mut cursor).unwrap();
         }
 
-        log::info!("Sending negotiate request: {:?}", req);
+        log::debug!("Sending negotiate request: {:?}", req);
         rdma.send_raw(&neg_req_data).await?;
 
         let neg_res_data = rdma
@@ -196,7 +196,7 @@ impl RdmaTransport {
         }
 
         // TODO: Check and use params!
-        log::info!("Received negotiate response: {:?}", neg_res);
+        log::debug!("Received negotiate response: {:?}", neg_res);
 
         Ok(neg_res)
     }
@@ -217,7 +217,7 @@ impl RdmaTransport {
         negotiate_result: SmbdNegotiateResponse,
         cancel: CancellationToken,
     ) {
-        log::info!("RdmaTransport receive worker started");
+        log::info!("RDMA receive worker started");
         let receive_layout =
             Layout::from_size_align(negotiate_result.max_read_write_size as usize, 1).unwrap();
         loop {
@@ -240,12 +240,12 @@ impl RdmaTransport {
                     }
                 },
                 _ = cancel.cancelled() => {
-                    log::info!("RdmaTransport receive worker cancelled");
+                    log::info!("RDMA receive worker cancelled");
                     break;
                 }
             }
         }
-        log::info!("RdmaTransport receive worker stopped");
+        log::info!("RDMA receive worker stopped");
     }
 
     async fn _receive_fragmented_data(&mut self) -> std::result::Result<Vec<u8>, RdmaError> {
@@ -323,7 +323,7 @@ impl RdmaTransport {
         message: &[u8],
     ) -> std::result::Result<(), RdmaError> {
         log::trace!(
-            "RdmaTransport _send_fragmented_data called with message length: {}",
+            "RDMA _send_fragmented_data called with message length: {}",
             message.len()
         );
         let running = self._get_write()?;
@@ -428,9 +428,7 @@ impl SmbTransportRead for RdmaTransport {
         &'a mut self,
         _out_buf: &'a mut [u8],
     ) -> futures_core::future::BoxFuture<'a, super::error::Result<()>> {
-        unimplemented!(
-            "RdmaTransport does not support receive_exact directly. Use receive instead."
-        );
+        unimplemented!("RDMA does not support receive_exact directly. Use receive instead.");
     }
 
     fn receive<'a>(
@@ -445,7 +443,7 @@ impl super::SmbTransportWrite for RdmaTransport {
         &'a mut self,
         _buf: &'a [u8],
     ) -> futures_core::future::BoxFuture<'a, super::error::Result<()>> {
-        unimplemented!("RdmaTransport does not support send_raw directly. Use send instead.");
+        unimplemented!("RDMA does not support send_raw directly. Use send instead.");
     }
 
     fn send<'a>(

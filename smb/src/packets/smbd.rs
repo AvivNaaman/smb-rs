@@ -102,7 +102,7 @@ pub struct SmbdDataTransferFlags {
     /// The peer is requested to promptly send a message in response. This value is used for keep alives.
     pub response_requested: bool,
     #[skip]
-    __: B31,
+    __: B15,
 }
 
 /// MS-SMBD 2.2.3.1
