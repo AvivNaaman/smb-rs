@@ -63,9 +63,12 @@ impl Connection {
     #[maybe_async]
     pub async fn build_alternate<T: SmbTransport + 'static>(
         primary: &Connection,
+        primary_session: &Session,
         target: SocketAddr,
+        user_name: &str,
+        password: String,
         mut transport: T,
-    ) -> crate::Result<Self> {
+    ) -> crate::Result<(Self, Session)> {
         log::info!("Connecting alternate connection: {}", target);
         transport.connect(target.to_string().as_str()).await?;
         log::debug!("Connected to alternate connection: {}", target);
@@ -74,6 +77,11 @@ impl Connection {
         result
             .negotiate(Box::from(transport), PRIMARY_USES_SMB2)
             .await?;
+        let session = Session::bind(
+            primary_session,
+            &result.handler,
+            result.handler.conn_info.get().unwrap(),
+        ).await?;
         Ok(result)
     }
 

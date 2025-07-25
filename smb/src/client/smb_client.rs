@@ -1,6 +1,7 @@
 use std::{collections::HashMap, str::FromStr};
 
 use maybe_async::maybe_async;
+use tokio::time::sleep;
 
 use crate::{
     connection::transport::rdma::RdmaTransport,
@@ -24,7 +25,7 @@ pub struct Client {
 
 struct OpenedConnectionInfo {
     conn: Connection,
-    _session: Session,
+    session: Session,
     tree: Tree,
     creds: Option<(String, String)>,
 }
@@ -106,7 +107,7 @@ impl Client {
 
         let mut opened_conn_info = OpenedConnectionInfo {
             conn: conn,
-            _session: session,
+            session,
             tree,
             creds: None,
         };
@@ -151,7 +152,7 @@ impl Client {
         // Connect IPC and query network interfaces.
         if !unc.is_ipc_share() {
             log::debug!("Connecting to IPC$ share for {unc} to scan for alternate channels.");
-            self.ipc_connect(&unc.server, &user_name, password).await?;
+            self.ipc_connect(&unc.server, user_name, password.clone()).await?;
         }
 
         let ipc_share = UncPath::ipc_share(unc.server.clone());
@@ -168,10 +169,14 @@ impl Client {
         }
         let first_rdma_interface = first_rdma_interface.unwrap();
 
+        sleep(std::time::Duration::from_secs(5)).await; // Allow some time for the connection to stabilize.
         let opened_conn_info = self.get_opened_conn_for_path(unc)?;
         Connection::build_alternate(
             &opened_conn_info.conn,
+            &opened_conn_info.session,
             first_rdma_interface.sockaddr.socket_addr(),
+            user_name,
+            password,
             RdmaTransport::new(),
         )
         .await?;
