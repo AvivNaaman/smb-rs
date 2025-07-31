@@ -26,7 +26,7 @@ pub use dfs_tree::*;
 
 type Upstream = HandlerReference<SessionMessageHandler>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TreeConnectInfo {
     tree_id: u32,
     share_type: ShareType,
@@ -216,6 +216,7 @@ pub struct TreeMessageHandler {
     tree_name: String,
 
     share_flags: ShareFlags,
+    dropping: bool,
 }
 
 impl TreeMessageHandler {
@@ -230,6 +231,7 @@ impl TreeMessageHandler {
             connect_info: OnceCell::from(info),
             tree_name,
             share_flags,
+            dropping: false,
         })
     }
 
@@ -319,10 +321,28 @@ impl Drop for TreeMessageHandler {
 #[cfg(feature = "async")]
 impl Drop for TreeMessageHandler {
     fn drop(&mut self) {
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                self.disconnect_async().await;
-            })
-        })
+        if self.dropping {
+            return;
+        }
+
+        let connect_info = match self.connect_info.get() {
+            Some(info) => info.clone(),
+            None => return,
+        };
+
+        let mut tree_name = String::new();
+        std::mem::swap(&mut self.tree_name, &mut tree_name);
+
+        let mut handler = TreeMessageHandler {
+            connect_info: OnceCell::from(connect_info),
+            tree_name,
+            upstream: self.upstream.clone(),
+            share_flags: self.share_flags,
+            dropping: true,
+        };
+
+        tokio::task::spawn(async move {
+            handler.disconnect_async().await;
+        });
     }
 }

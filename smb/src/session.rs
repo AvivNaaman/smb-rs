@@ -275,6 +275,7 @@ pub struct SessionMessageHandler {
     upstream: Upstream,
 
     session_state: Arc<Mutex<SessionInfo>>,
+    dropping: bool,
 }
 
 impl SessionMessageHandler {
@@ -287,6 +288,7 @@ impl SessionMessageHandler {
             session_id,
             upstream: upstream.clone(),
             session_state,
+            dropping: false,
         })
     }
 
@@ -330,7 +332,7 @@ impl SessionMessageHandler {
     /// It is used when dropping the session.
     #[cfg(feature = "async")]
     #[maybe_async]
-    pub async fn logoff_async(&mut self) {
+    pub async fn logoff_async(&self) {
         self.logoff().await.unwrap_or_else(|e| {
             log::error!("Failed to logoff: {e}");
         });
@@ -510,10 +512,19 @@ impl Drop for SessionMessageHandler {
 #[cfg(feature = "async")]
 impl Drop for SessionMessageHandler {
     fn drop(&mut self) {
-        tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                self.logoff_async().await;
-            })
-        })
+        if self.dropping {
+            return;
+        }
+
+        let handler = SessionMessageHandler {
+            session_id: self.session_id,
+            upstream: self.upstream.clone(),
+            session_state: self.session_state.clone(),
+            dropping: true,
+        };
+
+        tokio::task::spawn(async move {
+            handler.logoff_async().await;
+        });
     }
 }
