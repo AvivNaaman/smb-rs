@@ -268,6 +268,11 @@ impl Session {
     pub fn handler(&self) -> Weak<SessionMessageHandler> {
         self.handler.weak()
     }
+
+    #[maybe_async]
+    pub async fn close(&self) -> crate::Result<()> {
+        self.handler.logoff().await
+    }
 }
 
 pub struct SessionMessageHandler {
