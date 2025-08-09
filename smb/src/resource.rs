@@ -110,6 +110,12 @@ impl Resource {
             ));
         }
 
+        if name.starts_with("\\") {
+            return Err(Error::InvalidArgument(
+                "Resource name cannot start with a backslash.".to_string(),
+            ));
+        }
+
         let mut msg = OutgoingMessage::new(
             CreateRequest {
                 requested_oplock_level: OplockLevel::None,
@@ -133,7 +139,7 @@ impl Resource {
         let response = upstream.sendo_recv(msg).await?;
 
         let response = response.message.content.to_create()?;
-        log::info!("Created file '{}', ({:?})", name, response.file_id);
+        log::debug!("Created file '{}', ({:?})", name, response.file_id);
 
         let is_dir = response.file_attributes.directory();
 
@@ -644,7 +650,7 @@ impl ResourceHandle {
         log::debug!("Closing handle for {} ({:?})", self.name, self._file_id);
         Self::send_close(self._file_id, &self.handler).await?;
 
-        log::info!("Closed file {}.", self.name);
+        log::debug!("Closed file {}.", self.name);
 
         Ok(())
     }

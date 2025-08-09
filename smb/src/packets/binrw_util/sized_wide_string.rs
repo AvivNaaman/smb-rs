@@ -90,6 +90,8 @@ impl<T> core::ops::DerefMut for BaseSizedString<T> {
 // TODO: Use this everywhere!
 // TODO: implement all the things beyond for it, as well.
 /// A fixed-size ANSI (single-byte) string, as opposed to [`binrw::NullString`].
+///
+/// Note: there's no support for locales in this structure.
 pub type SizedAnsiString = BaseSizedString<u8>;
 
 impl From<&str> for SizedAnsiString {
@@ -113,7 +115,17 @@ impl TryFrom<SizedAnsiString> for String {
     type Error = std::string::FromUtf8Error;
 
     fn try_from(value: SizedAnsiString) -> Result<Self, Self::Error> {
+        // Every ANSI string is valid UTF-8 (ignoring page codes & locales)
         String::from_utf8(value.data)
+    }
+}
+
+impl PartialEq<&str> for SizedAnsiString {
+    fn eq(&self, other: &&str) -> bool {
+        if !other.is_ascii() {
+            return false;
+        }
+        other.as_bytes().iter().eq(self.data.iter())
     }
 }
 
@@ -178,6 +190,12 @@ impl TryFrom<SizedWideString> for String {
     }
 }
 
+impl PartialEq<&str> for SizedWideString {
+    fn eq(&self, other: &&str) -> bool {
+        other.encode_utf16().eq(self.data.iter().copied())
+    }
+}
+
 impl fmt::Display for SizedWideString {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         display_utf16(&self.data, f, core::iter::once)
@@ -201,4 +219,26 @@ fn display_utf16<Transformer: Fn(char) -> O, O: Iterator<Item = char>>(
     char::decode_utf16(input.iter().copied())
         .flat_map(|r| t(r.unwrap_or(char::REPLACEMENT_CHARACTER)))
         .try_for_each(|c| f.write_char(c))
+}
+
+mod tests {
+    macro_rules! make_sized_string_tests {
+        ($name:ident, $type:ty) => {
+            #[test]
+            fn $name() {
+                use super::*;
+                let a = BaseSizedString::<$type>::from("hello");
+                assert_eq!(a, "hello");
+                assert_ne!(a, "hello world");
+                assert_ne!(a, "hel");
+                assert_ne!(a, "hello\0");
+
+                let b: BaseSizedString<$type> = a.clone();
+                assert_eq!(b, a);
+                assert_eq!(b.data, a.data);
+            }
+        };
+    }
+    make_sized_string_tests!(test_ansi_peq, u8);
+    make_sized_string_tests!(test_wide_peq, u16);
 }

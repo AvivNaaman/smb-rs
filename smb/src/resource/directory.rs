@@ -41,12 +41,25 @@ impl Directory {
     /// * A vector of [`QueryDirectoryInfoValue`] objects, containing the results of the query.
     /// * If the query returned [`Status::NoMoreFiles`], an empty vector is returned.
     #[maybe_async]
-    async fn send_query<T>(&self, pattern: &str, restart: bool) -> crate::Result<Vec<T>>
+    async fn send_query<T>(
+        &self,
+        pattern: &str,
+        restart: bool,
+        buffer_size: u32,
+    ) -> crate::Result<Vec<T>>
     where
         T: QueryDirectoryInfoValue,
     {
         if !self.access.list_directory() {
             return Err(Error::MissingPermissions("file_list_directory".to_string()));
+        }
+
+        debug_assert!(buffer_size <= self.conn_info.negotiation.max_transact_size);
+        if buffer_size > self.conn_info.negotiation.max_transact_size {
+            return Err(Error::InvalidArgument(format!(
+                "Buffer size {} exceeds maximum transact size {}",
+                buffer_size, self.conn_info.negotiation.max_transact_size
+            )));
         }
 
         log::debug!("Querying directory {}", self.handle.name());
@@ -59,19 +72,23 @@ impl Directory {
                     flags: QueryDirectoryFlags::new().with_restart_scans(restart),
                     file_index: 0,
                     file_id: self.handle.file_id()?,
-                    output_buffer_length: 0x1000,
+                    output_buffer_length: buffer_size,
                     file_name: pattern.into(),
                 }
                 .into(),
             )
             .await;
 
-        const STATUS_NO_MORE_FILES: u32 = Status::NoMoreFiles as u32;
         let response = match response {
             Ok(res) => res,
-            Err(Error::UnexpectedMessageStatus(STATUS_NO_MORE_FILES)) => {
+            Err(Error::UnexpectedMessageStatus(Status::U32_NO_MORE_FILES)) => {
                 log::debug!("No more files in directory");
                 return Ok(vec![]);
+            }
+            Err(Error::UnexpectedMessageStatus(Status::U32_INFO_LENGTH_MISMATCH)) => {
+                return Err(Error::InvalidArgument(format!(
+                    "Provided query buffer size {buffer_size} is too small to contain directory information"
+                )));
             }
             Err(e) => {
                 log::error!("Error querying directory: {e}");
@@ -85,6 +102,8 @@ impl Directory {
             .to_querydirectory()?
             .read_output()?)
     }
+
+    const QUERY_DIRECTORY_DEFAULT_BUFFER_SIZE: u32 = 0x10000;
 
     /// Asynchronously iterates over the directory contents, using the provided pattern and information type.
     /// # Arguments
@@ -102,14 +121,54 @@ impl Directory {
     /// * You must use [`futures_util::StreamExt`] to consume the stream.
     ///   See [https://tokio.rs/tokio/tutorial/streams] for more information on how to use streams.
     #[cfg(feature = "async")]
-    pub async fn query_directory<'a, T>(
+    pub fn query_directory<'a, T>(
         this: &'a Arc<Self>,
         pattern: &str,
+    ) -> impl Future<Output = crate::Result<iter_stream::QueryDirectoryStream<'a, T>>>
+    where
+        T: QueryDirectoryInfoValue,
+    {
+        Self::query_directory_with_options(this, pattern, Self::QUERY_DIRECTORY_DEFAULT_BUFFER_SIZE)
+    }
+
+    /// Asynchronously iterates over the directory contents, using the provided pattern and information type.
+    /// # Arguments
+    /// * `pattern` - The pattern to match against the file names in the directory. Use wildcards like `*` and `?` to match multiple files.
+    /// * `info` - The information type to query. This is a trait object that implements the [`QueryDirectoryInfoValue`] trait.
+    /// * `buffer_size` - The size of the query buffer, in bytes.
+    /// # Returns
+    /// * An iterator over the directory contents, yielding [`QueryDirectoryInfoValue`] objects.
+    /// # Returns
+    /// [`QueryDirectoryStream`] - Which implements [Stream] and can be used to iterate over the directory contents.
+    /// # Notes
+    /// * **IMPORTANT** Calling this method BLOCKS ANY ADDITIONAL CALLS to this method on THIS structure instance.
+    ///   Hence, you should not call this method on the same instance from multiple threads. This is for thread safety,
+    ///   since SMB2 does not allow multiple queries on the same handle at the same time. Re-open the directory and
+    ///   create a new instance of this structure to query the directory again.
+    /// * You must use [`futures_util::StreamExt`] to consume the stream.
+    ///   See [https://tokio.rs/tokio/tutorial/streams] for more information on how to use streams.
+    /// * The actual buffer size that may be used depends on the negotiated transact size given by the server.
+    ///   In case of `buffer_size` > `max_transact_size`, the function would use the minimum, and log a warning.
+    #[cfg(feature = "async")]
+    pub async fn query_directory_with_options<'a, T>(
+        this: &'a Arc<Self>,
+        pattern: &str,
+        buffer_size: u32,
     ) -> crate::Result<iter_stream::QueryDirectoryStream<'a, T>>
     where
         T: QueryDirectoryInfoValue,
     {
-        iter_stream::QueryDirectoryStream::new(this, pattern.to_string()).await
+        let max_allowed_buffer_size = this.conn_info.negotiation.max_transact_size;
+        if buffer_size > max_allowed_buffer_size {
+            log::warn!(
+                "Buffer size {} is larger than max transact size {}. Using minimum.",
+                buffer_size,
+                max_allowed_buffer_size
+            );
+        }
+        let buffer_size = buffer_size.min(max_allowed_buffer_size);
+
+        iter_stream::QueryDirectoryStream::new(this, pattern.to_string(), buffer_size).await
     }
 
     /// Synchronously iterates over the directory contents, using the provided pattern and information type.
@@ -129,7 +188,28 @@ impl Directory {
     where
         T: QueryDirectoryInfoValue,
     {
-        iter_sync::QueryDirectoryIterator::new(self, pattern.to_string())
+        Self::query_directory_with_options(self, pattern, Self::QUERY_DIRECTORY_DEFAULT_BUFFER_SIZE)
+    }
+
+    /// Synchronously iterates over the directory contents, using the provided pattern and information type.
+    /// # Arguments
+    /// * `pattern` - The pattern to match against the file names in the directory. Use wildcards like `*` and `?` to match multiple files.
+    /// # Returns
+    /// * An iterator over the directory contents, yielding [`QueryDirectoryInfoValue`] objects.
+    /// # Notes
+    /// * **IMPORTANT**: Calling this method BLOCKS ANY ADDITIONAL CALLS to this method on THIS structure instance.
+    ///   Hence, you should not call this method on the same instance from multiple threads. This is for safety,
+    ///   since SMB2 does not allow multiple queries on the same handle at the same time.
+    #[cfg(not(feature = "async"))]
+    pub fn query_directory_with_options<'a, T>(
+        &'a self,
+        pattern: &str,
+        buffer_size: u32,
+    ) -> crate::Result<iter_sync::QueryDirectoryIterator<'a, T>>
+    where
+        T: QueryDirectoryInfoValue,
+    {
+        iter_sync::QueryDirectoryIterator::new(self, pattern.to_string(), buffer_size)
     }
 
     /// Watches the directory for changes.
@@ -268,14 +348,25 @@ pub mod iter_stream {
     where
         T: QueryDirectoryInfoValue,
     {
-        pub async fn new(directory: &'a Arc<Directory>, pattern: String) -> crate::Result<Self> {
+        pub async fn new(
+            directory: &'a Arc<Directory>,
+            pattern: String,
+            buffer_size: u32,
+        ) -> crate::Result<Self> {
             let (sender, receiver) = tokio::sync::mpsc::channel(1024);
             let notify_fetch_next = Arc::new(tokio::sync::Notify::new());
             {
                 let notify_fetch_next = notify_fetch_next.clone();
                 let directory = directory.clone();
                 tokio::spawn(async move {
-                    Self::fetch_loop(directory, pattern, sender, notify_fetch_next.clone()).await;
+                    Self::fetch_loop(
+                        directory,
+                        pattern,
+                        buffer_size,
+                        sender,
+                        notify_fetch_next.clone(),
+                    )
+                    .await;
                 });
             }
             let guard = directory.query_lock.lock().await?;
@@ -289,12 +380,15 @@ pub mod iter_stream {
         async fn fetch_loop(
             directory: Arc<Directory>,
             pattern: String,
+            buffer_size: u32,
             sender: mpsc::Sender<crate::Result<T>>,
             notify_fetch_next: Arc<tokio::sync::Notify>,
         ) {
             let mut is_first = true;
             loop {
-                let result = directory.send_query::<T>(&pattern, is_first).await;
+                let result = directory
+                    .send_query::<T>(&pattern, is_first, buffer_size)
+                    .await;
                 is_first = false;
 
                 match result {
@@ -361,6 +455,8 @@ pub mod iter_sync {
         pattern: String,
         /// Whether this is the first query or not.
         is_first: bool,
+        /// The buffer size to use for each query.
+        buffer_size: u32,
 
         /// The lock being held while iterating the directory.
         _iter_lock_guard: MutexGuard<'a, ()>,
@@ -370,12 +466,17 @@ pub mod iter_sync {
     where
         T: QueryDirectoryInfoValue,
     {
-        pub fn new(directory: &'a Directory, pattern: String) -> crate::Result<Self> {
+        pub fn new(
+            directory: &'a Directory,
+            pattern: String,
+            buffer_size: u32,
+        ) -> crate::Result<Self> {
             Ok(Self {
                 backlog: Vec::new(),
                 directory,
                 pattern,
                 is_first: true,
+                buffer_size,
                 _iter_lock_guard: directory.query_lock.lock()?,
             })
         }
@@ -394,7 +495,9 @@ pub mod iter_sync {
             }
 
             // If we have no backlog, we need to query the directory again.
-            let query_result = self.directory.send_query::<T>(&self.pattern, self.is_first);
+            let query_result =
+                self.directory
+                    .send_query::<T>(&self.pattern, self.is_first, self.buffer_size);
             self.is_first = false;
             match query_result {
                 Ok(next_backlog) => {

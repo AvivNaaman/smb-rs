@@ -19,7 +19,8 @@ use common::make_server_connection;
 use smb::FileCreateArgs;
 
 const LONG_DIR: &str = "longdir";
-const NUM_ITEMS: usize = 1000;
+const FILE_PREFIX: &'static str = "test_file_with_a_long_name_to_take_up_some_space_when_dir_query_performed_and_consume_buffer_size_";
+const NUM_FILES: usize = 100;
 
 /// This test is to check if we can iterate over a long directory
 /// To make sure it works properly, since dealing with streams can be tricky.
@@ -56,8 +57,8 @@ async fn test_smb_iterating_long_directory() -> Result<(), Box<dyn std::error::E
         .await?;
 
     // Create NUM_ITEMS files
-    for i in 0..NUM_ITEMS {
-        let file_name = format!("{}\\file_{}", LONG_DIR, i);
+    for i in 0..NUM_FILES {
+        let file_name = format!("{}\\{}{}", LONG_DIR, FILE_PREFIX, i);
         let file = client
             .lock()
             .await
@@ -88,47 +89,52 @@ async fn test_smb_iterating_long_directory() -> Result<(), Box<dyn std::error::E
         .await?
         .unwrap_dir();
     let directory = Arc::new(directory);
-    let found = Directory::query_directory::<FileFullDirectoryInformation>(&directory, "file_*")
-        .await?
-        .fold(0, |sum, entry| {
-            let client = client.clone();
-            let share_path = share_path.clone();
-            async move {
-                let entry = entry.unwrap();
-                let file_name = entry.file_name.to_string();
-                assert!(file_name.starts_with("file_"));
-                let file_number: usize = file_name[5..].parse().unwrap();
-                assert!(file_number < NUM_ITEMS);
+    const SMALL_BUFFER_SIZE_FOR_MANY_ITERATIONS: u32 = 0x300;
+    let found = Directory::query_directory_with_options::<FileFullDirectoryInformation>(
+        &directory,
+        &format!("{}*", FILE_PREFIX),
+        SMALL_BUFFER_SIZE_FOR_MANY_ITERATIONS,
+    )
+    .await?
+    .fold(0, |sum, entry| {
+        let client = client.clone();
+        let share_path = share_path.clone();
+        async move {
+            let entry = entry.unwrap();
+            let file_name = entry.file_name.to_string();
+            assert!(file_name.starts_with(FILE_PREFIX));
+            let file_number: usize = file_name[FILE_PREFIX.len()..].parse().unwrap();
+            assert!(file_number < NUM_FILES);
 
-                // .. And delete the file!
-                let full_file_path = share_path.with_path(format!("{}\\{}", LONG_DIR, file_name));
-                let file = client
-                    .lock()
-                    .await
-                    .unwrap()
-                    .create_file(
-                        &full_file_path,
-                        &FileCreateArgs::make_open_existing(
-                            FileAccessMask::new()
-                                .with_generic_read(true)
-                                .with_delete(true),
-                        ),
-                    )
-                    .await
-                    .unwrap()
-                    .unwrap_file();
-                file.set_file_info(FileDispositionInformation {
-                    delete_pending: true.into(),
-                })
+            // .. And delete the file!
+            let full_file_path = share_path.with_path(format!("{}\\{}", LONG_DIR, file_name));
+            let file = client
+                .lock()
                 .await
-                .unwrap();
-                file.close().await.unwrap();
-                sum + 1
-            }
-        })
-        .await;
+                .unwrap()
+                .create_file(
+                    &full_file_path,
+                    &FileCreateArgs::make_open_existing(
+                        FileAccessMask::new()
+                            .with_generic_read(true)
+                            .with_delete(true),
+                    ),
+                )
+                .await
+                .unwrap()
+                .unwrap_file();
+            file.set_file_info(FileDispositionInformation {
+                delete_pending: true.into(),
+            })
+            .await
+            .unwrap();
+            file.close().await.unwrap();
+            sum + 1
+        }
+    })
+    .await;
 
-    assert_eq!(found, NUM_ITEMS);
+    assert_eq!(found, NUM_FILES);
     directory.close().await?;
 
     // Cleanup

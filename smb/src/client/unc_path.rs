@@ -57,6 +57,21 @@ impl UncPath {
             path: None,
         }
     }
+
+    /// Adds to the current path, if set.
+    /// Otherwise, sets the path to the new value.
+    pub fn with_add_path(mut self, add_path: &str) -> Self {
+        if self.path.is_none() || self.path.as_ref().unwrap().is_empty() {
+            self.path = Some(add_path.to_string());
+            return self;
+        }
+
+        let path = self.path.as_ref().unwrap().trim_end_matches('\\');
+        let add_path = add_path.trim_start_matches('\\');
+
+        self.path = Some(format!("{}\\{}", path, add_path));
+        self
+    }
 }
 
 impl FromStr for UncPath {
@@ -148,5 +163,41 @@ pub mod tests {
         }
         .to_string();
         assert_eq!(unc_full, r"\\server33\share2\path/to/heaven");
+    }
+
+    #[test]
+    fn test_add_path() {
+        // Random combinations
+        let path = UncPath {
+            server: String::from("server"),
+            share: Some(String::from("share")),
+            path: Some(String::from("path")),
+        };
+        for (p, r) in [
+            ("", r"\\server\share\path\"),
+            (r"\check", r"\\server\share\path\check"),
+            (r"my", r"\\server\share\path\my"),
+            (r"\dir\", r"\\server\share\path\dir\"),
+        ] {
+            assert_eq!(path.clone().with_add_path(p).to_string(), r);
+        }
+        // Empty path
+        for empty_path in [
+            UncPath {
+                server: String::new(),
+                share: None,
+                path: None,
+            },
+            UncPath {
+                server: String::new(),
+                share: None,
+                path: Some(String::new()),
+            },
+        ] {
+            assert_eq!(
+                empty_path.with_add_path("test").path,
+                Some("test".to_string())
+            );
+        }
     }
 }
