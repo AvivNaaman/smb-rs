@@ -764,7 +764,7 @@ impl Drop for ConnectionMessageHandler {
     fn drop(&mut self) {
         match self.worker.take() {
             Some(worker) => {
-                worker.stop().ok;
+                worker.stop().ok();
             }
             None => (),
         }
