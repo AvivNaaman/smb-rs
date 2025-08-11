@@ -280,6 +280,8 @@ pub struct SessionMessageHandler {
     upstream: Upstream,
 
     session_state: Arc<Mutex<SessionInfo>>,
+
+    #[allow(dead_code)]
     dropping: bool,
 }
 
