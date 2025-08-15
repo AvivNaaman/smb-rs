@@ -216,6 +216,8 @@ pub struct TreeMessageHandler {
     tree_name: String,
 
     share_flags: ShareFlags,
+    #[allow(dead_code)]
+    dropping: bool,
 }
 
 impl TreeMessageHandler {
@@ -230,6 +232,7 @@ impl TreeMessageHandler {
             connect_info: OnceCell::from(info),
             tree_name,
             share_flags,
+            dropping: false,
         })
     }
 
@@ -319,6 +322,10 @@ impl Drop for TreeMessageHandler {
 #[cfg(feature = "async")]
 impl Drop for TreeMessageHandler {
     fn drop(&mut self) {
+        if self.dropping {
+            return;
+        }
+
         let connect_info = match self.connect_info.take() {
             Some(info) => info,
             None => return,
@@ -332,6 +339,7 @@ impl Drop for TreeMessageHandler {
             tree_name,
             upstream: self.upstream.clone(),
             share_flags: self.share_flags,
+            dropping: true,
         };
 
         tokio::task::spawn(async move {

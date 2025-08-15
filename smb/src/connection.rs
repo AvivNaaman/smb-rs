@@ -762,11 +762,8 @@ impl MessageHandler for ConnectionMessageHandler {
 #[cfg(not(feature = "async"))]
 impl Drop for ConnectionMessageHandler {
     fn drop(&mut self) {
-        match self.worker.take() {
-            Some(worker) => {
-                worker.stop().ok();
-            }
-            None => (),
+        if let Some(worker) = self.worker.take() {
+            worker.stop().ok();
         }
     }
 }
