@@ -34,7 +34,7 @@ impl Worker for SingleWorker {
     fn stop(&self) -> crate::Result<()> {
         self.transport
             .lock()?
-            .get()
+            .take()
             .ok_or(crate::Error::NotConnected)?;
         Ok(())
     }

@@ -758,3 +758,26 @@ impl MessageHandler for ConnectionMessageHandler {
         Ok(())
     }
 }
+
+#[cfg(not(feature = "async"))]
+impl Drop for ConnectionMessageHandler {
+    fn drop(&mut self) {
+        if let Some(worker) = self.worker.take() {
+            worker.stop().ok();
+        }
+    }
+}
+
+#[cfg(feature = "async")]
+impl Drop for ConnectionMessageHandler {
+    fn drop(&mut self) {
+        let worker = match self.worker.take() {
+            Some(worker) => worker,
+            None => return,
+        };
+
+        tokio::task::spawn(async move {
+            worker.stop().await.ok();
+        });
+    }
+}
