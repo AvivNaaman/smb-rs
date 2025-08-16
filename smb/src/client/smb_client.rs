@@ -14,7 +14,30 @@ use crate::{
 
 use super::{config::ClientConfig, unc_path::UncPath};
 
-/// A High-level SMB client interface.
+/// This struct represents a high-level SMB client, and it is highly encouraged to use it
+/// for interacting with SMB servers, instead of manually creating connections.
+///
+/// ```no_run
+/// use smb::{Client, ClientConfig, UncPath, FileCreateArgs, FileAccessMask};
+/// use std::str::FromStr;
+///
+/// #[tokio::main]
+/// async fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     // instantiate the client
+///     let mut client = Client::new(ClientConfig::default());
+///     
+///     // Connect to a share
+///     let target_path = UncPath::from_str(r"\\server\share").unwrap();
+///     client.share_connect(&target_path, "username", "password".to_string()).await?;
+///     
+///     // And open a file on the server
+///     let file_to_open = target_path.with_path("file.txt".to_string());
+///     let file_open_args = FileCreateArgs::make_open_existing(FileAccessMask::new().with_generic_read(true));
+///     let file = client.create_file(&file_to_open, &file_open_args).await?;
+///     // now, you can do a bunch of operations against `file`, and close it at the end.
+///     Ok(())
+/// }
+/// ```
 pub struct Client {
     config: ClientConfig,
 
@@ -37,6 +60,9 @@ impl Client {
         }
     }
 
+    /// Use this method to shut down all the connections managed by the client.
+    ///
+    /// Note: in any case a reference to a connection still exists, the connection will not be dropped until all references are gone.
     #[maybe_async]
     pub async fn close(&mut self) -> crate::Result<()> {
         self.connections.clear();
@@ -55,6 +81,7 @@ impl Client {
         self.share_connect(&ipc_share, user_name, password).await
     }
 
+    /// Lists all shares on the specified server.
     #[maybe_async]
     pub async fn list_shares(&mut self, server: &str) -> crate::Result<Vec<ShareInfo1>> {
         let srvsvc_pipe_name: &str = "srvsvc";
@@ -65,6 +92,20 @@ impl Client {
         Ok(shares)
     }
 
+    /// Connects to a share on the specified server.
+    ///
+    /// Once the connection completes, the client will be able to access resource under the specified share,
+    /// without needing to re-authenticate.
+    ///
+    /// If the share is already connected, this method will do nothing, and will log a warning indicating the double-connection attempt.
+    ///
+    /// # Arguments
+    /// * `unc` - The UNC path of the share to connect to. The method refers to the server and share components in this path.
+    /// * `user_name` - The username to use for authentication.
+    /// * `password` - The password to use for authentication.
+    ///
+    /// # Returns
+    /// whether the operation succeeded.
     #[maybe_async]
     pub async fn share_connect(
         &mut self,
@@ -130,6 +171,14 @@ impl Client {
             .await
     }
 
+    /// Creates (or opens) a file on the specified path, using the specified args.
+    ///
+    /// See [`FileCreateArgs`] for detailed information regarding the file open options.
+    /// # Arguments
+    /// * `path` - The UNC path of the file to create or open.
+    /// * `args` - The arguments to use when creating or opening the file.
+    /// # Returns
+    /// A result containing the created or opened file resource, or an error.
     #[maybe_async]
     pub async fn create_file(
         &mut self,
@@ -155,6 +204,13 @@ impl Client {
         Ok(resource)
     }
 
+    /// Opens a named pipe on the specified server.
+    /// Use this when intending to communicate with a service using a named pipe, for convenience.
+    /// # Arguments
+    /// * `server` - The name of the server hosting the pipe.
+    /// * `pipe_name` - The name of the pipe to open.
+    /// # Returns
+    /// A result containing the opened pipe resource, or an error.
     #[maybe_async]
     pub async fn open_pipe(&mut self, server: &str, pipe_name: &str) -> crate::Result<Pipe> {
         let path = UncPath::ipc_share(server.to_string()).with_path(pipe_name.to_string());
@@ -173,6 +229,14 @@ impl Client {
     }
 }
 
+impl Default for Client {
+    /// Starts the client with default configuration.
+    fn default() -> Self {
+        Client::new(ClientConfig::default())
+    }
+}
+
+/// Internal helper struct for implementing DFS referral resolution simply and easily.
 struct DfsResolver<'a>(&'a mut Client);
 
 impl<'a> DfsResolver<'a> {
@@ -227,6 +291,7 @@ impl<'a> DfsResolver<'a> {
         Err(Error::DfsReferralConnectionFail(dfs_path.clone()))
     }
 
+    /// Returns a list of DFS referral paths for the given input UNC path.
     #[maybe_async]
     async fn get_dfs_refs(&self, unc: &UncPath) -> crate::Result<Vec<UncPath>> {
         log::debug!("Resolving DFS referral for {unc}");
@@ -254,6 +319,7 @@ impl<'a> DfsResolver<'a> {
         Ok(paths)
     }
 
+    /// Given a [`ReferralEntry`] result from a DFS referral query, returns a ready UNC path for the DFS target.
     fn ref_entry_to_dfs_target(
         &self,
         entry: &ReferralEntry,

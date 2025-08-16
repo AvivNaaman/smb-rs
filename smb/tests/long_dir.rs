@@ -90,7 +90,7 @@ async fn test_smb_iterating_long_directory() -> Result<(), Box<dyn std::error::E
         .unwrap_dir();
     let directory = Arc::new(directory);
     const SMALL_BUFFER_SIZE_FOR_MANY_ITERATIONS: u32 = 0x300;
-    let found = Directory::query_directory_with_options::<FileFullDirectoryInformation>(
+    let found = Directory::query_with_options::<FileFullDirectoryInformation>(
         &directory,
         &format!("{}*", FILE_PREFIX),
         SMALL_BUFFER_SIZE_FOR_MANY_ITERATIONS,
@@ -123,7 +123,7 @@ async fn test_smb_iterating_long_directory() -> Result<(), Box<dyn std::error::E
                 .await
                 .unwrap()
                 .unwrap_file();
-            file.set_file_info(FileDispositionInformation {
+            file.set_info(FileDispositionInformation {
                 delete_pending: true.into(),
             })
             .await
@@ -149,7 +149,7 @@ async fn test_smb_iterating_long_directory() -> Result<(), Box<dyn std::error::E
         .await?
         .unwrap_dir();
     directory
-        .set_file_info(FileDispositionInformation {
+        .set_info(FileDispositionInformation {
             delete_pending: true.into(),
         })
         .await?;
@@ -170,7 +170,7 @@ pub async fn remove_file_by_name(tree: &Tree, file_name: &str) -> smb::Result<()
         )
         .await?
         .unwrap_file();
-    file.set_file_info(FileDispositionInformation {
+    file.set_info(FileDispositionInformation {
         delete_pending: true.into(),
     })
     .await?;

@@ -6,6 +6,19 @@ use binrw::prelude::*;
 
 use crate::packets::binrw_util::prelude::*;
 
+/// SID (Security identifier)
+///
+/// [MS-DTYP 2.4.2](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-dtyp/78eb9013-1c3a-4970-ad1f-2b1dad588a25>)
+///
+/// This SID implementation supports binary read/write, and from/to string operations.
+/// ```
+/// use smb::packets::security::SID;
+/// use std::str::FromStr;
+/// const SID_STRING: &str = "S-1-5-21-782712087-4182988437-2163400469-1002";
+/// let sid = SID::from_str(SID_STRING).unwrap();
+/// let sid_string = sid.to_string();
+/// assert_eq!(sid_string, SID_STRING);
+/// ```
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[brw(little)]
@@ -23,10 +36,14 @@ pub struct SID {
     pub sub_authority: Vec<u32>,
 }
 impl SID {
+    /// SID common string prefix
     const PREFIX: &'static str = "S-1-";
 
+    /// Administrators group SID
     pub const S_ADMINISTRATORS: &'static str = "S-1-5-32-544";
+    /// Local System user SID
     pub const S_LOCAL_SYSTEM: &'static str = "S-1-5-18";
+    /// Everyone group SID
     pub const S_EVERYONE: &'static str = "S-1-1-0";
 }
 

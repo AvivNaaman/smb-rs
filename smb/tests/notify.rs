@@ -124,7 +124,7 @@ async fn delete_file_from_another_connection(
         .await?
         .unwrap_file();
 
-    file.set_file_info(FileDispositionInformation {
+    file.set_info(FileDispositionInformation {
         delete_pending: true.into(),
     })
     .await?;

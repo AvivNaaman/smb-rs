@@ -357,7 +357,7 @@ impl GetLen for File {
 impl SetLen for File {
     #[maybe_async]
     async fn set_len(&self, len: u64) -> crate::Result<()> {
-        self.set_file_info(FileEndOfFileInformation { end_of_file: len })
+        self.set_info(FileEndOfFileInformation { end_of_file: len })
             .await
     }
 }

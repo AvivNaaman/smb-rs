@@ -28,8 +28,7 @@ async fn do_test_basic_integration(
         .await?
         .unwrap_file();
 
-    file.set_file_info(FileDispositionInformation::default())
-        .await?;
+    file.set_info(FileDispositionInformation::default()).await?;
 
     file.close().await?;
     Ok(())
