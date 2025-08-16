@@ -2,6 +2,7 @@
 
 [![Build](https://github.com/AvivNaaman/smb-rs/actions/workflows/build.yml/badge.svg)](https://github.com/AvivNaaman/smb-rs/actions/workflows/build.yml)
 [![Crates.io](https://img.shields.io/crates/v/smb)](https://crates.io/crates/smb)
+[![docs.rs](https://img.shields.io/docsrs/smb/latest?link=https%3A%2F%2Fdocs.rs%2Fsmb%2Flatest%2Fsmb%2Findex.html)](https://docs.rs/smb/latest/smb/index.html)
 
 This project is the first rust implementation of [SMB2 & 3](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-smb2/5606ad47-5ee0-437a-817e-70c366052962) client -- the protocol that powers Windows file sharing and remote services. The project is designed to be used as a crate, but also includes a CLI tool for basic operations.
 

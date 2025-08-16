@@ -29,7 +29,7 @@ impl<'a> DfsRootTreeRef<'a> {
     /// Performs a DFS referral request to the server.
     /// This is used to get the referral information for a given path.
     ///
-    /// See [MS-DFSC][https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-dfsc/04657125-a7d5-4c62-9bec-85af601fa14c] for more information.
+    /// See [MS-DFSC](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-dfsc/04657125-a7d5-4c62-9bec-85af601fa14c>) for more information.
     #[maybe_async]
     pub async fn dfs_get_referrals(&self, path: &str) -> crate::Result<RespGetDfsReferral> {
         let res = self

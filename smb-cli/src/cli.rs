@@ -38,7 +38,7 @@ pub struct Cli {
     #[arg(short, long)]
     pub password: String,
 
-    /// [DANGEROUS] Disables message signing.
+    /// Disables message signing.
     /// This may should only be used when logging in with a guest user.
     #[arg(long)]
     pub disable_message_signing: bool,

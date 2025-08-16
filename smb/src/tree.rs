@@ -186,8 +186,8 @@ impl Tree {
         .await
     }
 
-    /// A wrapper around [Tree:create] that opens an existing file or directory on the remote server.
-    /// See [Tree::create] for more information.
+    /// A wrapper around [create][crate::tree::Tree::create] that opens an existing file or directory on the remote server.
+    /// See [create][crate::tree::Tree::create] for more information.
     #[maybe_async]
     pub async fn open_existing(
         &self,

@@ -5,8 +5,6 @@ use std::io::prelude::*;
 use std::ops::{Deref, DerefMut};
 
 /// An opened file on the server.
-/// This struct also represents an open named pipe or a printer. use [File::file_type] to
-/// determine the type of the share this file belongs to.
 ///
 /// # [std::io] Support
 /// The [File] struct also supports the [Read][std::io::Read] and [Write][std::io::Write] traits.
@@ -18,7 +16,7 @@ use std::ops::{Deref, DerefMut};
 /// Since we would NOT like to call a tokio task from a blocking context, these traits are **NOT** implemented in the async context!
 ///
 /// You may not directly create this struct. Instead, use the [Tree::create][crate::tree::Tree::create] method to gain
-/// a proper handle against the server in the shape of a [Resource][crate::resource::Resource], that can be then converted to a [File].
+/// a proper handle against the server in the shape of a [Resource], that can be then converted to a [File].
 pub struct File {
     handle: ResourceHandle,
 

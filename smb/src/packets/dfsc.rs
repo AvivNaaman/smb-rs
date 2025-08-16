@@ -2,7 +2,7 @@ use super::binrw_util::prelude::{PosMarker, SizedWideString};
 use binrw::{NullWideString, io::TakeSeekExt, prelude::*};
 use modular_bitfield::prelude::*;
 
-/// [MS-DFSC 2.2.2][https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-dfsc/663c9b38-41b8-4faa-b6f6-a4576b4cea62]:
+/// [MS-DFSC 2.2.2](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-dfsc/663c9b38-41b8-4faa-b6f6-a4576b4cea62>):
 /// DFS referral requests are sent in the form of an REQ_GET_DFS_REFERRAL message, by using an appropriate transport as specified in section 2.1.
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]

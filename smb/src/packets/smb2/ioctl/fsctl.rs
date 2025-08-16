@@ -377,7 +377,7 @@ pub struct PipeWaitRequest {
     #[bw(calc = name.len() as u32)]
     name_length: u32,
     /// Whether the Timeout parameter will be ignored.
-    /// FALSE Indicates that the server MUST wait forever. Any value in [`timeout`] must be ignored.
+    /// FALSE Indicates that the server MUST wait forever. Any value in `timeout` must be ignored.
     pub timeout_specified: Boolean,
     #[bw(calc = 0)]
     _padding: u8,

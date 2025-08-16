@@ -4,6 +4,9 @@ use crate::Error;
 
 /// Represents a UNC path (Universal Naming Convention).
 ///
+/// More on [MSDN](https://learn.microsoft.com/en-us/dotnet/standard/io/file-path-formats#unc-paths)
+///
+///
 /// # Examples
 /// ```
 /// use smb::UncPath;
@@ -29,11 +32,14 @@ impl UncPath {
         }
     }
 
+    /// Returns a new [UncPath] with the IPC$ share,
+    /// and with no path set.
     pub fn ipc_share(server: String) -> Self {
         const SMB_IPC_SHARE: &str = "IPC$";
         Self::new(server).with_share(SMB_IPC_SHARE.to_string())
     }
 
+    /// Returns the current [UncPath] with a different share name.
     pub fn with_share(self, share: String) -> Self {
         UncPath {
             server: self.server,
@@ -42,6 +48,7 @@ impl UncPath {
         }
     }
 
+    /// Returns the current [UncPath] with a different path.
     pub fn with_path(self, path: String) -> Self {
         UncPath {
             server: self.server,
@@ -50,6 +57,7 @@ impl UncPath {
         }
     }
 
+    /// Returns the current [UncPath] with no path set.
     pub fn with_no_path(self) -> Self {
         UncPath {
             server: self.server,

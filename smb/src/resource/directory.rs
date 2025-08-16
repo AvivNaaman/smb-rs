@@ -112,14 +112,14 @@ impl Directory {
     /// # Returns
     /// * An iterator over the directory contents, yielding [`QueryDirectoryInfoValue`] objects.
     /// # Returns
-    /// [`QueryDirectoryStream`] - Which implements [Stream] and can be used to iterate over the directory contents.
+    /// [`iter_stream::QueryDirectoryStream`] - Which implements [futures_core::Stream] and can be used to iterate over the directory contents.
     /// # Notes
     /// * **IMPORTANT** Calling this method BLOCKS ANY ADDITIONAL CALLS to this method on THIS structure instance.
     ///   Hence, you should not call this method on the same instance from multiple threads. This is for thread safety,
     ///   since SMB2 does not allow multiple queries on the same handle at the same time. Re-open the directory and
     ///   create a new instance of this structure to query the directory again.
     /// * You must use [`futures_util::StreamExt`] to consume the stream.
-    ///   See [https://tokio.rs/tokio/tutorial/streams] for more information on how to use streams.
+    ///   See (<https://tokio.rs/tokio/tutorial/streams>) for more information on how to use streams.
     #[cfg(feature = "async")]
     pub fn query_directory<'a, T>(
         this: &'a Arc<Self>,
@@ -139,14 +139,14 @@ impl Directory {
     /// # Returns
     /// * An iterator over the directory contents, yielding [`QueryDirectoryInfoValue`] objects.
     /// # Returns
-    /// [`QueryDirectoryStream`] - Which implements [Stream] and can be used to iterate over the directory contents.
+    /// [`iter_stream::QueryDirectoryStream`] - Which implements [futures_core::Stream] and can be used to iterate over the directory contents.
     /// # Notes
     /// * **IMPORTANT** Calling this method BLOCKS ANY ADDITIONAL CALLS to this method on THIS structure instance.
     ///   Hence, you should not call this method on the same instance from multiple threads. This is for thread safety,
     ///   since SMB2 does not allow multiple queries on the same handle at the same time. Re-open the directory and
     ///   create a new instance of this structure to query the directory again.
     /// * You must use [`futures_util::StreamExt`] to consume the stream.
-    ///   See [https://tokio.rs/tokio/tutorial/streams] for more information on how to use streams.
+    ///   See [<https://tokio.rs/tokio/tutorial/streams>] for more information on how to use streams.
     /// * The actual buffer size that may be used depends on the negotiated transact size given by the server.
     ///   In case of `buffer_size` > `max_transact_size`, the function would use the minimum, and log a warning.
     #[cfg(feature = "async")]

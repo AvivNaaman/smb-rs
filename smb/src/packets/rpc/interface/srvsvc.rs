@@ -10,7 +10,7 @@ use crate::packets::rpc::ndr64::*;
 use binrw::prelude::*;
 use maybe_async::maybe_async;
 use modular_bitfield::prelude::*;
-/// [SHARE_ENUM_STRUCT][https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-srvs/79ee052e-e16b-4ec5-b4b7-e99777c26eca]
+/// [SHARE_ENUM_STRUCT](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-srvs/79ee052e-e16b-4ec5-b4b7-e99777c26eca>)
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 struct ShareEnumStruct {
@@ -32,7 +32,7 @@ pub enum ShareInfoLevel {
     Info503 = 503,
 }
 
-/// [`SHARE_ENUM_UNION`][https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-srvs/7894d7e4-bb82-419c-b431-0247c8ae4dfe]
+/// [`SHARE_ENUM_UNION`](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-srvs/7894d7e4-bb82-419c-b431-0247c8ae4dfe>)
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[br(import(level: ShareInfoLevel))]
@@ -55,7 +55,7 @@ impl ShareEnumUnion {
     }
 }
 
-/// [`SHARE_INFO_1_CONTAINER`][https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-srvs/919abd5d-87d9-4ffa-b4b1-632a66053bc6]
+/// [`SHARE_INFO_1_CONTAINER`](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-srvs/919abd5d-87d9-4ffa-b4b1-632a66053bc6>)
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 struct ShareInfoContainer<T>
@@ -78,7 +78,7 @@ trait ShareInfo:
 {
 }
 
-/// [`SHARE_INFO_1`][https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-srvs/fc69f110-998d-4c16-9667-514e22fdd80b]
+/// [`SHARE_INFO_1`](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-srvs/fc69f110-998d-4c16-9667-514e22fdd80b>)
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[bw(import(stage: NdrPtrWriteStage))]
@@ -95,7 +95,7 @@ pub struct ShareInfo1 {
     pub remark: NdrPtr<NdrString<u16>>,
 }
 
-/// [`SHARE_INFO_0`][https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-srvs/73a25288-8086-4975-91a3-5cbee5b590cc]
+/// [`SHARE_INFO_0`](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-srvs/73a25288-8086-4975-91a3-5cbee5b590cc>)
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq, Clone)]
 #[bw(import(stage: NdrPtrWriteStage))]
@@ -120,7 +120,7 @@ pub enum ShareKind {
 
 /// Share types
 ///
-/// [MS-SRVS][https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-srvs/6069f8c0-c93f-43a0-a5b4-7ed447eb4b84]
+/// [MS-SRVS](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-srvs/6069f8c0-c93f-43a0-a5b4-7ed447eb4b84>)
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
@@ -148,7 +148,7 @@ impl ShareType {
 // FYI: RPC top-level stub data is aligned to min(8, arg_size0, arg_size1, ...) bytes.
 // DCE/RPC Chap. 12.3: RPC PDU Encodings/Alignment.
 
-/// Input arguments for [NetrShareEnum][https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-srvs/c4a98e7b-d416-439c-97bd-4d9f52f8ba52]
+/// Input arguments for [NetrShareEnum](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-srvs/c4a98e7b-d416-439c-97bd-4d9f52f8ba52>)
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 struct NetrShareEnumIn {
@@ -158,7 +158,7 @@ struct NetrShareEnumIn {
     resume_handle: NdrAlign<NdrPtr<u32>, 4>,
 }
 
-/// Return value and out params of [NetrShareEnum][https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-srvs/c4a98e7b-d416-439c-97bd-4d9f52f8ba52]
+/// Return value and out params of [NetrShareEnum](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-srvs/c4a98e7b-d416-439c-97bd-4d9f52f8ba52>)
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 struct NetrShareEnumOut {
