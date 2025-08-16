@@ -3,6 +3,7 @@
 
 use std::fmt::Display;
 use std::ops::Deref;
+use std::time::{Duration, SystemTime};
 
 use binrw::prelude::*;
 use time::PrimitiveDateTime;
@@ -16,10 +17,11 @@ pub struct FileTime {
 
 impl FileTime {
     const EPOCH: PrimitiveDateTime = datetime!(1601-01-01 00:00:00);
-    const SCALE: u64 = 100;
+    const SCALE_VALUE_TO_NANOS: u64 = 100;
+    const SCALE_VALUE_TO_SECS: u64 = 1_000_000_000 / Self::SCALE_VALUE_TO_NANOS;
 
     pub fn date_time(&self) -> PrimitiveDateTime {
-        let duration = core::time::Duration::from_nanos(self.value * Self::SCALE);
+        let duration = core::time::Duration::from_nanos(self.value * Self::SCALE_VALUE_TO_NANOS);
         Self::EPOCH + duration
     }
 }
@@ -46,7 +48,7 @@ impl From<PrimitiveDateTime> for FileTime {
     fn from(dt: PrimitiveDateTime) -> Self {
         let duration = dt - Self::EPOCH;
         Self {
-            value: duration.whole_nanoseconds() as u64 / Self::SCALE,
+            value: duration.whole_nanoseconds() as u64 / Self::SCALE_VALUE_TO_NANOS,
         }
     }
 }
@@ -56,6 +58,15 @@ impl Deref for FileTime {
 
     fn deref(&self) -> &Self::Target {
         &self.value
+    }
+}
+
+impl From<FileTime> for SystemTime {
+    fn from(src: FileTime) -> SystemTime {
+        let epoch = SystemTime::from(FileTime::EPOCH.as_utc());
+        let secs = src.value / FileTime::SCALE_VALUE_TO_SECS;
+        let nanos = src.value % FileTime::SCALE_VALUE_TO_SECS * FileTime::SCALE_VALUE_TO_NANOS;
+        epoch + Duration::new(secs, nanos as u32)
     }
 }
 
@@ -69,7 +80,9 @@ mod tests {
 
     #[test]
     pub fn test_file_time_from_u64_correct() {
-        assert_eq!(FileTime::from(TEST_VAL1_U64).date_time(), TEST_VAL1_DT)
+        assert_eq!(FileTime::from(TEST_VAL1_U64).date_time(), TEST_VAL1_DT);
+        let result: SystemTime = FileTime::from(TEST_VAL1_U64).into();
+        assert_eq!(time::UtcDateTime::from(result), TEST_VAL1_DT.as_utc());
     }
 
     #[test]
