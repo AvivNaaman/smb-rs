@@ -26,7 +26,7 @@ pub enum NdrPtrWriteStage {
 
 /// Ndr represents a pointer.
 ///
-/// *Note*: This is only aligned if the type [`T`] is aligned!
+/// *Note*: This is only aligned if the type argument `T` is aligned!
 #[derive(Debug, Default, PartialEq, Eq)]
 pub enum NdrPtr<T>
 where

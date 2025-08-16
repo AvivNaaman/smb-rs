@@ -97,7 +97,7 @@ pub struct FileNameInformation {
     pub file_name: SizedWideString,
 }
 
-/// [MS-FSCC 2.1.2.1][https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/c8e77b37-3909-4fe6-a4ea-2b9d423b1ee4]:
+/// [MS-FSCC 2.1.2.1](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/c8e77b37-3909-4fe6-a4ea-2b9d423b1ee4>):
 /// Each reparse point has a reparse tag.
 /// The reparse tag uniquely identifies the owner of that reparse point.
 /// The owner is the implementer of the file system filter driver associated with a reparse tag.

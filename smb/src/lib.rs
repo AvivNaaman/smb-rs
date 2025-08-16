@@ -1,3 +1,5 @@
+//! smb-rs is a pure rust SMB2/3 client.
+
 #[cfg(not(any(
     feature = "async",
     feature = "single_threaded",
@@ -20,6 +22,7 @@ pub mod compression;
 pub mod connection;
 pub mod crypto;
 pub mod dialects;
+pub mod docs;
 pub mod error;
 pub mod msg_handler;
 pub mod packets;

@@ -110,6 +110,12 @@ impl Resource {
             ));
         }
 
+        if name.starts_with("\\") {
+            return Err(Error::InvalidArgument(
+                "Resource name cannot start with a backslash.".to_string(),
+            ));
+        }
+
         let mut msg = OutgoingMessage::new(
             CreateRequest {
                 requested_oplock_level: OplockLevel::None,
@@ -135,7 +141,7 @@ impl Resource {
             .await?;
 
         let response = response.message.content.to_create()?;
-        log::info!("Created file '{}', ({:?})", name, response.file_id);
+        log::debug!("Created file '{}', ({:?})", name, response.file_id);
 
         let is_dir = response.file_attributes.directory();
 
@@ -331,7 +337,7 @@ impl ResourceHandle {
     /// # Returns
     /// A `Result` containing the requested information.
     /// # Notes
-    /// * use [File::query_full_ea_info] to query extended attributes information.
+    /// * use [`ResourceHandle::query_full_ea_info`] to query extended attributes information.
     #[maybe_async]
     pub async fn query_info<T>(&self) -> crate::Result<T>
     where
@@ -349,7 +355,7 @@ impl ResourceHandle {
     /// * `names` - A list of extended attribute names to query.
     /// # Returns
     /// A `Result` containing the requested information, of type [QueryFileFullEaInformation].
-    /// See [File::query_info] for more information.
+    /// See [`ResourceHandle::query_info`] for more information.
     #[maybe_async]
     pub async fn query_full_ea_info(
         &self,
@@ -386,7 +392,7 @@ impl ResourceHandle {
     /// # Returns
     /// A `Result` containing the requested information.
     /// # Notes
-    /// * use [File::query_full_ea_info] to query extended attributes information.
+    /// * use [ResourceHandle::query_full_ea_info] to query extended attributes information.
     #[maybe_async]
     pub async fn query_info_with_options<T: QueryFileInfoValue>(
         &self,
@@ -646,7 +652,7 @@ impl ResourceHandle {
         log::debug!("Closing handle for {} ({:?})", self.name, self._file_id);
         Self::send_close(self._file_id, &self.handler).await?;
 
-        log::info!("Closed file {}.", self.name);
+        log::debug!("Closed file {}.", self.name);
 
         Ok(())
     }

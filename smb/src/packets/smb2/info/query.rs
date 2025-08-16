@@ -180,7 +180,7 @@ impl QueryInfoResponse {
 }
 
 /// A helpers struct that contains the raw data of a query info response or a set info request,
-/// and can be parsed using the [QueryInfoResponseData::parse] method, to a specific info type.
+/// and can be parsed using the [`QueryInfoResponseData::parse`] method, to a specific info type.
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct QueryInfoResponseData {
@@ -189,7 +189,7 @@ pub struct QueryInfoResponseData {
 }
 
 impl QueryInfoResponseData {
-    fn parse(&self, info_type: InfoType) -> Result<QueryInfoData, binrw::Error> {
+    pub fn parse(&self, info_type: InfoType) -> Result<QueryInfoData, binrw::Error> {
         let mut cursor = Cursor::new(&self.data);
         QueryInfoData::read_args(&mut cursor, (info_type,))
     }

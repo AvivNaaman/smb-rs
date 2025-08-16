@@ -22,7 +22,7 @@
 //! SOFTWARE.
 //!
 //! This file was adapted from:
-//! https://github.com/Devolutions/IronRDP/blob/ac291423de6835df855e1b40c8da6b45ac0905d9/crates/ironrdp-tokio/src/reqwest.rs
+//! <https://github.com/Devolutions/IronRDP/blob/ac291423de6835df855e1b40c8da6b45ac0905d9/crates/ironrdp-tokio/src/reqwest.rs>
 //!
 //!
 //! Modified by Aviv Naaman @AvivNaaman on 2025-08-08

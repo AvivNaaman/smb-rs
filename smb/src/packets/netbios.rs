@@ -65,8 +65,6 @@ pub struct NBSessionRequest {
 }
 
 /// Represents a NetBIOS name.
-///
-/// Use [`NetBiosName::to_string`] to display the name and the suffix.
 #[derive(Debug, PartialEq, Eq)]
 pub struct NetBiosName {
     name: String,

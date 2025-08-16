@@ -130,6 +130,7 @@ make_status! {
     NoMoreFiles = 0x80000006: "No More Files",
     StoppedOnSymlink = 0x8000002D: "Stopped on Symlink",
     NotImplemented = 0xC0000002: "Not Implemented",
+    InfoLengthMismatch = 0xC0000004: "Info Length Mismatch",
     InvalidParameter = 0xC000000D: "Invalid Parameter",
     NoSuchDevice = 0xC000000E: "No Such Device",
     InvalidDeviceRequest0 = 0xC0000010: "Invalid Device Request",
