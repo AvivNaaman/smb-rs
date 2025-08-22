@@ -121,14 +121,14 @@ impl Directory {
     /// * You must use [`futures_util::StreamExt`] to consume the stream.
     ///   See (<https://tokio.rs/tokio/tutorial/streams>) for more information on how to use streams.
     #[cfg(feature = "async")]
-    pub fn query_directory<'a, T>(
+    pub fn query<'a, T>(
         this: &'a Arc<Self>,
         pattern: &str,
     ) -> impl Future<Output = crate::Result<iter_stream::QueryDirectoryStream<'a, T>>>
     where
         T: QueryDirectoryInfoValue,
     {
-        Self::query_directory_with_options(this, pattern, Self::QUERY_DIRECTORY_DEFAULT_BUFFER_SIZE)
+        Self::query_with_options(this, pattern, Self::QUERY_DIRECTORY_DEFAULT_BUFFER_SIZE)
     }
 
     /// Asynchronously iterates over the directory contents, using the provided pattern and information type.
@@ -150,7 +150,7 @@ impl Directory {
     /// * The actual buffer size that may be used depends on the negotiated transact size given by the server.
     ///   In case of `buffer_size` > `max_transact_size`, the function would use the minimum, and log a warning.
     #[cfg(feature = "async")]
-    pub async fn query_directory_with_options<'a, T>(
+    pub async fn query_with_options<'a, T>(
         this: &'a Arc<Self>,
         pattern: &str,
         buffer_size: u32,
@@ -181,14 +181,14 @@ impl Directory {
     ///   Hence, you should not call this method on the same instance from multiple threads. This is for safety,
     ///   since SMB2 does not allow multiple queries on the same handle at the same time.
     #[cfg(not(feature = "async"))]
-    pub fn query_directory<'a, T>(
+    pub fn query<'a, T>(
         &'a self,
         pattern: &str,
     ) -> crate::Result<iter_sync::QueryDirectoryIterator<'a, T>>
     where
         T: QueryDirectoryInfoValue,
     {
-        Self::query_directory_with_options(self, pattern, Self::QUERY_DIRECTORY_DEFAULT_BUFFER_SIZE)
+        Self::query_with_options(self, pattern, Self::QUERY_DIRECTORY_DEFAULT_BUFFER_SIZE)
     }
 
     /// Synchronously iterates over the directory contents, using the provided pattern and information type.
@@ -201,7 +201,7 @@ impl Directory {
     ///   Hence, you should not call this method on the same instance from multiple threads. This is for safety,
     ///   since SMB2 does not allow multiple queries on the same handle at the same time.
     #[cfg(not(feature = "async"))]
-    pub fn query_directory_with_options<'a, T>(
+    pub fn query_with_options<'a, T>(
         &'a self,
         pattern: &str,
         buffer_size: u32,
@@ -330,7 +330,7 @@ pub mod iter_stream {
     use std::task::{Context, Poll};
 
     /// A stream that allows you to iterate over the contents of a directory.
-    /// See [Directory::query_directory] for more information on how to use it.
+    /// See [Directory::query] for more information on how to use it.
     pub struct QueryDirectoryStream<'a, T> {
         /// A channel to receive the results from the query.
         /// This is used to send the results from the query loop to the stream.
@@ -340,7 +340,7 @@ pub mod iter_stream {
         notify_fetch_next: Arc<tokio::sync::Notify>,
         /// Holds the lock while iterating the directory,
         /// to prevent multiple queries at the same time.
-        /// See [Directory::query_directory] for more information.
+        /// See [Directory::query] for more information.
         _lock_guard: MutexGuard<'a, ()>,
     }
 

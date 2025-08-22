@@ -181,7 +181,7 @@ async fn iterate_dir_items(
     params: &mut IterateParams<'_>,
 ) -> smb::Result<()> {
     let mut info_stream =
-        Directory::query_directory::<FileIdBothDirectoryInformation>(&item.dir, pattern).await?;
+        Directory::query::<FileIdBothDirectoryInformation>(&item.dir, pattern).await?;
     while let Some(info) = info_stream.next().await {
         if let Some(to_push) = handle_iteration_item(&info?, &item.path, params).await {
             subdirs.push_back(to_push);
@@ -197,7 +197,7 @@ fn iterate_dir_items(
     subdirs: &mut VecDeque<IteratedItem>,
     params: &mut IterateParams<'_>,
 ) -> smb::Result<()> {
-    for info in Directory::query_directory::<FileIdBothDirectoryInformation>(&item.dir, pattern)? {
+    for info in Directory::query::<FileIdBothDirectoryInformation>(&item.dir, pattern)? {
         if let Some(to_push) = handle_iteration_item(&info?, &item.path, params) {
             subdirs.push_back(to_push);
         }

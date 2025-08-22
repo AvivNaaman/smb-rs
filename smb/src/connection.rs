@@ -762,6 +762,8 @@ impl MessageHandler for ConnectionMessageHandler {
 #[cfg(not(feature = "async"))]
 impl Drop for ConnectionMessageHandler {
     fn drop(&mut self) {
+        self.stop_notify();
+
         if let Some(worker) = self.worker.take() {
             worker.stop().ok();
         }
@@ -771,6 +773,8 @@ impl Drop for ConnectionMessageHandler {
 #[cfg(feature = "async")]
 impl Drop for ConnectionMessageHandler {
     fn drop(&mut self) {
+        self.stop_notify();
+
         let worker = match self.worker.take() {
             Some(worker) => worker,
             None => return,

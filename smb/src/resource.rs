@@ -25,6 +25,7 @@ pub use pipe::*;
 
 type Upstream = HandlerReference<TreeMessageHandler>;
 
+#[derive(Default)]
 pub struct FileCreateArgs {
     pub disposition: CreateDisposition,
     pub attributes: FileAttributes,
@@ -570,7 +571,7 @@ impl ResourceHandle {
     /// # Type Parameters
     /// * `T` - The type of information to set. Must implement the [SetFileInfoValue] trait.
     #[maybe_async]
-    pub async fn set_file_info<T>(&self, info: T) -> crate::Result<()>
+    pub async fn set_info<T>(&self, info: T) -> crate::Result<()>
     where
         T: SetFileInfoValue,
     {
