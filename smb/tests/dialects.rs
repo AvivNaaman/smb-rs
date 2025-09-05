@@ -57,7 +57,7 @@ async fn test_smb_integration_dialect_encrpytion_mode(
         ..Default::default()
     };
 
-    let (mut client, share_path) =
+    let (client, share_path) =
         make_server_connection(TestConstants::DEFAULT_SHARE, Some(connection_config)).await?;
 
     const TEST_FILE: &str = "test.txt";
@@ -106,8 +106,7 @@ async fn test_smb_integration_dialect_encrpytion_mode(
             .await?
             .unwrap_dir();
         let directory = Arc::new(directory);
-        let ds =
-            Directory::query_directory::<FileDirectoryInformation>(&directory, TEST_FILE).await?;
+        let ds = Directory::query::<FileDirectoryInformation>(&directory, TEST_FILE).await?;
         let mut found = false;
 
         ds.for_each(|entry| {
@@ -152,7 +151,7 @@ async fn test_smb_integration_dialect_encrpytion_mode(
         .unwrap_file();
 
     // So anyway it will be deleted at the end.
-    file.set_file_info(FileDispositionInformation {
+    file.set_info(FileDispositionInformation {
         delete_pending: true.into(),
     })
     .await?;

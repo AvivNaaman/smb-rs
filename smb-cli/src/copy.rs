@@ -43,7 +43,7 @@ impl CopyFile {
     #[maybe_async]
     async fn open(
         path: &Path,
-        client: &mut Client,
+        client: &Client,
         cli: &Cli,
         cmd: &CopyCmd,
         read: bool,
@@ -125,9 +125,9 @@ pub async fn copy(cmd: &CopyCmd, cli: &Cli) -> Result<(), Box<dyn Error>> {
         return Err("Copying between two local files is not supported".into());
     }
 
-    let mut client = Client::new(cli.make_smb_client_config());
-    let from = CopyFile::open(&cmd.from, &mut client, cli, cmd, true).await?;
-    let to = CopyFile::open(&cmd.to, &mut client, cli, cmd, false).await?;
+    let client = Client::new(cli.make_smb_client_config());
+    let from = CopyFile::open(&cmd.from, &client, cli, cmd, true).await?;
+    let to = CopyFile::open(&cmd.to, &client, cli, cmd, false).await?;
     from.copy_to(to).await?;
 
     Ok(())

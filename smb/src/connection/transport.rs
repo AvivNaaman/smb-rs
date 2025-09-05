@@ -3,7 +3,6 @@ use std::time::Duration;
 use super::TransportConfig;
 
 pub mod netbios;
-#[cfg(feature = "quic")]
 pub mod quic;
 pub mod tcp;
 pub mod traits;
@@ -11,6 +10,11 @@ pub mod utils;
 
 pub use traits::*;
 
+/// Creates [`SmbTransport`] out of [`TransportConfig`].
+///
+/// ## Arguments
+/// * `transport` - The transport configuration to make the transport by.
+/// * `timeout` - The timeout duration to use for the transport.
 pub fn make_transport(
     transport: &TransportConfig,
     timeout: Duration,
@@ -28,10 +32,3 @@ pub fn make_transport(
         TransportConfig::NetBios => Ok(Box::new(netbios::NetBiosTransport::new(timeout))),
     }
 }
-
-// Force async if QUIC is enabled
-#[cfg(all(not(feature = "async"), feature = "quic"))]
-compile_error!(
-    "QUIC transport requires the async feature to be enabled. \
-    Please enable the async feature in your Cargo.toml."
-);

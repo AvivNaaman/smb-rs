@@ -38,7 +38,7 @@ pub async fn make_server_connection(
     conn_config.auth_methods.kerberos = false;
     conn_config.auth_methods.ntlm = true;
 
-    let mut smb = Client::new(ClientConfig {
+    let smb = Client::new(ClientConfig {
         connection: conn_config,
         ..Default::default()
     });

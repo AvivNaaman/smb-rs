@@ -19,7 +19,7 @@ const NEW_FILE_NAME_UNDER_WORKDIR: &str = "test_file.txt";
 ))]
 #[serial]
 async fn test_smb_notify() -> Result<(), Box<dyn std::error::Error>> {
-    let (mut client, share_path) = make_server_connection(
+    let (client, share_path) = make_server_connection(
         TestConstants::DEFAULT_SHARE,
         ConnectionConfig {
             encryption_mode: EncryptionMode::Disabled,
@@ -102,7 +102,7 @@ fn start_notify_task(sem: Arc<Semaphore>, r: Directory) {
 async fn delete_file_from_another_connection(
     share_name: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let (mut client, share_path) = make_server_connection(
+    let (client, share_path) = make_server_connection(
         share_name,
         ConnectionConfig {
             encryption_mode: EncryptionMode::Disabled,
@@ -124,7 +124,7 @@ async fn delete_file_from_another_connection(
         .await?
         .unwrap_file();
 
-    file.set_file_info(FileDispositionInformation {
+    file.set_info(FileDispositionInformation {
         delete_pending: true.into(),
     })
     .await?;

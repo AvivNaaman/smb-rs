@@ -20,7 +20,8 @@ use crate::{
 use binrw::prelude::*;
 use maybe_async::*;
 use sspi::{AuthIdentity, Secret, Username};
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 type Upstream = HandlerReference<ConnectionMessageHandler>;
 
 mod authenticator;
@@ -35,14 +36,14 @@ pub use signer::MessageSigner;
 pub use state::SessionInfo;
 
 pub struct Session {
-    handler: HandlerReference<SessionMessageHandler>,
+    pub(crate) handler: HandlerReference<SessionMessageHandler>,
     conn_info: Arc<ConnectionInfo>,
 }
 
 impl Session {
     /// Sets up the session with the specified username and password.
     #[maybe_async]
-    pub async fn setup(
+    pub(crate) async fn setup(
         user_name: &str,
         password: String,
         upstream: &Upstream,
@@ -90,7 +91,7 @@ impl Session {
         let setup_result = if init_response.message.header.status == Status::Success as u32 {
             unimplemented!()
         } else {
-            Self::setup_more_processing(
+            Self::_setup_more_processing(
                 &mut authenticator,
                 init_response.message.content.to_sessionsetup()?,
                 &session_state,
@@ -133,7 +134,7 @@ impl Session {
     }
 
     #[maybe_async]
-    pub async fn setup_more_processing(
+    async fn _setup_more_processing(
         authenticator: &mut Authenticator,
         init_response: SessionSetupResponse,
         session_state: &Arc<Mutex<SessionInfo>>,
@@ -231,44 +232,29 @@ impl Session {
         ))
     }
 
-    /// (Internal)
-    ///
-    ///  Connects to the specified tree using the current session.
-    #[maybe_async]
-    async fn do_tree_connect(&self, name: &str, dfs: bool) -> crate::Result<Tree> {
-        Tree::connect(name, &self.handler, &self.conn_info, dfs).await
-    }
-
     /// Connects to the specified tree using the current session.
-    /// # Arguments
+    /// ## Arguments
     /// * `name` - The name of the tree to connect to. This should be a UNC path, with only server and share,
     ///     for example, `\\server\share`.
-    /// # Notes
-    /// See [`Session::dfs_tree_connect`] for connecting to a share as a DFS referral.
     #[maybe_async]
-    #[inline]
     pub async fn tree_connect(&self, name: &str) -> crate::Result<Tree> {
-        self.do_tree_connect(name, false).await
+        let tree = Tree::connect(name, &self.handler, &self.conn_info).await?;
+        Ok(tree)
     }
 
-    /// Connects to the specified tree using the current session as a DFS referral.
+    /// Returns the Session ID of this session.
     ///
-    #[maybe_async]
-    #[inline]
-    pub async fn dfs_tree_connect(&self, name: &str) -> crate::Result<Tree> {
-        self.do_tree_connect(name, true).await
-    }
-
+    /// This ID is the same as the SMB's session id,
+    /// so it is unique-per-connection, and may be seen on the wire as well.
     #[inline]
     pub fn session_id(&self) -> u64 {
         self.handler.session_id
     }
 
-    #[inline]
-    pub fn handler(&self) -> Weak<SessionMessageHandler> {
-        self.handler.weak()
-    }
-
+    /// Logs off the session.
+    ///
+    /// Any resources held by the session will be released,
+    /// and any [`Tree`] objects and their resources will be unusable.
     #[maybe_async]
     pub async fn close(&self) -> crate::Result<()> {
         self.handler.logoff().await
@@ -281,12 +267,11 @@ pub struct SessionMessageHandler {
 
     session_state: Arc<Mutex<SessionInfo>>,
 
-    #[allow(dead_code)]
-    dropping: bool,
+    dropping: AtomicBool,
 }
 
 impl SessionMessageHandler {
-    pub fn new(
+    fn new(
         session_id: u64,
         upstream: &Upstream,
         session_state: Arc<Mutex<SessionInfo>>,
@@ -295,12 +280,19 @@ impl SessionMessageHandler {
             session_id,
             upstream: upstream.clone(),
             session_state,
-            dropping: false,
+            dropping: AtomicBool::new(false),
         })
     }
 
     #[maybe_async]
     async fn logoff(&self) -> crate::Result<()> {
+        if self
+            .dropping
+            .swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            return Ok(());
+        }
+
         {
             let state = self.session_state.lock().await?;
             if !state.is_ready() {
@@ -339,7 +331,7 @@ impl SessionMessageHandler {
     /// It is used when dropping the session.
     #[cfg(feature = "async")]
     #[maybe_async]
-    pub async fn logoff_async(&self) {
+    async fn logoff_async(&self) {
         self.logoff().await.unwrap_or_else(|e| {
             log::error!("Failed to logoff: {e}");
         });
@@ -519,19 +511,24 @@ impl Drop for SessionMessageHandler {
 #[cfg(feature = "async")]
 impl Drop for SessionMessageHandler {
     fn drop(&mut self) {
-        if self.dropping {
+        if self
+            .dropping
+            .swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
             return;
         }
 
-        let handler = SessionMessageHandler {
-            session_id: self.session_id,
-            upstream: self.upstream.clone(),
-            session_state: self.session_state.clone(),
-            dropping: true,
-        };
-
+        let session_id = self.session_id;
+        let upstream = self.upstream.clone();
+        let session_state = self.session_state.clone();
         tokio::task::spawn(async move {
-            handler.logoff_async().await;
+            let temp_handler = SessionMessageHandler {
+                session_id,
+                upstream,
+                session_state,
+                dropping: AtomicBool::new(false),
+            };
+            temp_handler.logoff_async().await;
         });
     }
 }

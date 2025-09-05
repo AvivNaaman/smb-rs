@@ -16,7 +16,7 @@ async fn do_test_basic_integration(
     conn_config: Option<ConnectionConfig>,
     share: Option<&str>,
 ) -> smb::Result<()> {
-    let (mut client, share_path) =
+    let (client, share_path) =
         make_server_connection(share.unwrap_or(TestConstants::DEFAULT_SHARE), conn_config).await?;
 
     // Create a file
@@ -28,8 +28,7 @@ async fn do_test_basic_integration(
         .await?
         .unwrap_file();
 
-    file.set_file_info(FileDispositionInformation::default())
-        .await?;
+    file.set_info(FileDispositionInformation::default()).await?;
 
     file.close().await?;
     Ok(())
@@ -117,7 +116,7 @@ async fn test_connection_timeout_fail() -> Result<(), Box<dyn std::error::Error>
     use std::time::Instant;
 
     const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
-    let mut client = Client::new(ClientConfig {
+    let client = Client::new(ClientConfig {
         connection: ConnectionConfig {
             timeout: Some(CONNECT_TIMEOUT),
             ..Default::default()
@@ -133,7 +132,8 @@ async fn test_connection_timeout_fail() -> Result<(), Box<dyn std::error::Error>
             "user",
             "password".to_string(),
         )
-        .await;
+        .await
+        .map(|_| ());
     let time_after = Instant::now();
 
     if !matches!(

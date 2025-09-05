@@ -48,7 +48,7 @@ pub struct InfoCmd {
 
 #[maybe_async]
 pub async fn info(cmd: &InfoCmd, cli: &Cli) -> Result<(), Box<dyn Error>> {
-    let mut client = Client::new(cli.make_smb_client_config());
+    let client = Client::new(cli.make_smb_client_config());
 
     if cmd.path.share.is_none() || cmd.path.share.as_ref().unwrap().is_empty() {
         client
@@ -90,9 +90,9 @@ pub async fn info(cmd: &InfoCmd, cli: &Cli) -> Result<(), Box<dyn Error>> {
                 &dir,
                 &cmd.path,
                 "*",
-                &mut IterateParams {
+                &IterateParams {
                     display_func: &display_item_info,
-                    client: &mut client,
+                    client: &client,
                     recursive: cmd.recursive,
                 },
             )
@@ -144,7 +144,7 @@ fn display_item_info(info: &FileIdBothDirectoryInformation, dir_path: &UncPath) 
 
 struct IterateParams<'a> {
     display_func: &'a DisplayFunc,
-    client: &'a mut Client,
+    client: &'a Client,
     recursive: RecursiveMode,
 }
 struct IteratedItem {
@@ -157,7 +157,7 @@ async fn iterate_directory(
     dir: &Arc<Directory>,
     dir_path: &UncPath,
     pattern: &str,
-    params: &mut IterateParams<'_>,
+    params: &IterateParams<'_>,
 ) -> smb::Result<()> {
     let mut subdirs = VecDeque::new();
     subdirs.push_back(IteratedItem {
@@ -178,10 +178,10 @@ async fn iterate_dir_items(
     item: &IteratedItem,
     pattern: &str,
     subdirs: &mut VecDeque<IteratedItem>,
-    params: &mut IterateParams<'_>,
+    params: &IterateParams<'_>,
 ) -> smb::Result<()> {
     let mut info_stream =
-        Directory::query_directory::<FileIdBothDirectoryInformation>(&item.dir, pattern).await?;
+        Directory::query::<FileIdBothDirectoryInformation>(&item.dir, pattern).await?;
     while let Some(info) = info_stream.next().await {
         if let Some(to_push) = handle_iteration_item(&info?, &item.path, params).await {
             subdirs.push_back(to_push);
@@ -195,9 +195,9 @@ fn iterate_dir_items(
     item: &IteratedItem,
     pattern: &str,
     subdirs: &mut VecDeque<IteratedItem>,
-    params: &mut IterateParams<'_>,
+    params: &IterateParams<'_>,
 ) -> smb::Result<()> {
-    for info in Directory::query_directory::<FileIdBothDirectoryInformation>(&item.dir, pattern)? {
+    for info in Directory::query::<FileIdBothDirectoryInformation>(&item.dir, pattern)? {
         if let Some(to_push) = handle_iteration_item(&info?, &item.path, params) {
             subdirs.push_back(to_push);
         }
@@ -209,7 +209,7 @@ fn iterate_dir_items(
 async fn handle_iteration_item(
     info: &FileIdBothDirectoryInformation,
     dir_path: &UncPath,
-    params: &mut IterateParams<'_>,
+    params: &IterateParams<'_>,
 ) -> Option<IteratedItem> {
     (params.display_func)(info, dir_path);
 

@@ -1,12 +1,12 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use maybe_async::*;
 
 use crate::connection::connection_info::ConnectionInfo;
 use crate::packets::fscc::FileAttributes;
-use crate::packets::smb2::{CreateOptions, ShareFlags, ShareType};
+use crate::packets::smb2::{CreateOptions, RequestContent, ShareFlags, ShareType};
 use crate::resource::FileCreateArgs;
-use crate::sync_helpers::*;
 
 use crate::{
     Error,
@@ -22,22 +22,23 @@ use crate::{
     session::SessionMessageHandler,
 };
 mod dfs_tree;
+use crate::msg_handler::OutgoingMessage;
 pub use dfs_tree::*;
 
 type Upstream = HandlerReference<SessionMessageHandler>;
 
 #[derive(Debug, Clone)]
 pub struct TreeConnectInfo {
-    tree_id: u32,
     share_type: ShareType,
+    share_flags: ShareFlags,
 }
 
-/// A tree represents a share on the server.
-/// It is used to create resources (files, directories, pipes, printers) on the server.
+/// Represents an SMB share.
+///
+/// A Tree is the SMB protocol's representation of a connected share on the server.
 pub struct Tree {
     handler: HandlerReference<TreeMessageHandler>,
     conn_info: Arc<ConnectionInfo>,
-    dfs: bool,
 }
 
 impl Tree {
@@ -46,7 +47,6 @@ impl Tree {
         name: &str,
         upstream: &Upstream,
         conn_info: &Arc<ConnectionInfo>,
-        dfs: bool,
     ) -> crate::Result<Tree> {
         // send and receive tree request & response.
         let response = upstream
@@ -95,19 +95,18 @@ impl Tree {
         log::info!("Connected to tree {name} (#{tree_id})");
 
         let tree_connect_info = TreeConnectInfo {
-            tree_id,
             share_type: content.share_type,
+            share_flags: content.share_flags,
         };
 
         let t = Tree {
             handler: TreeMessageHandler::new(
                 upstream,
+                tree_id,
                 name.to_string(),
                 tree_connect_info,
-                content.share_flags,
             ),
             conn_info: conn_info.clone(),
-            dfs,
         };
 
         Ok(t)
@@ -127,19 +126,14 @@ impl Tree {
     ///     That is, assuming it is NOT prefixed with "\\". This is rquired for a proper DFS referral file open. ("DFS normalization", MS-SMB2 2.2.13 + 3.3.5.9)
     #[maybe_async]
     pub async fn create(&self, file_name: &str, args: &FileCreateArgs) -> crate::Result<Resource> {
-        let info = self
-            .handler
-            .connect_info
-            .get()
-            .ok_or(Error::InvalidState("Tree is closed".to_string()))?;
-
+        let info = self.handler.info()?;
         Resource::create(
             file_name,
             &self.handler,
             args,
             &self.conn_info,
             info.share_type,
-            self.dfs,
+            info.share_flags.dfs(),
         )
         .await
     }
@@ -198,77 +192,82 @@ impl Tree {
             .await
     }
 
-    pub fn is_dfs_root(&self) -> bool {
-        self.handler.share_flags.dfs_root() && self.handler.share_flags.dfs()
+    pub fn is_dfs_root(&self) -> crate::Result<bool> {
+        let info = self.handler.info()?;
+        Ok(info.share_flags.dfs_root() && info.share_flags.dfs())
     }
 
     pub fn as_dfs_tree(&self) -> crate::Result<DfsRootTreeRef<'_>> {
-        if !self.is_dfs_root() {
+        if !self.is_dfs_root()? {
             return Err(Error::InvalidState("Tree is not a DFS tree".to_string()));
         }
         Ok(DfsRootTreeRef::new(self))
     }
+
+    /// Disconnects from the tree (share) on the server.
+    ///
+    /// After calling this method, none of the resources held open by the tree are accessible.
+    #[maybe_async]
+    pub async fn disconnect(&self) -> crate::Result<()> {
+        self.handler.disconnect().await?;
+        Ok(())
+    }
 }
 
-pub struct TreeMessageHandler {
-    upstream: Upstream,
-    connect_info: OnceCell<TreeConnectInfo>,
-    tree_name: String,
+pub(crate) struct TreeMessageHandler {
+    tree_id: AtomicU32,
 
-    share_flags: ShareFlags,
-    #[allow(dead_code)]
-    dropping: bool,
+    upstream: Upstream,
+
+    tree_name: String,
+    info: TreeConnectInfo,
 }
 
 impl TreeMessageHandler {
+    const INVALID_TREE_ID: u32 = u32::MAX;
+
     pub fn new(
         upstream: &Upstream,
+        tree_id: u32,
         tree_name: String,
         info: TreeConnectInfo,
-        share_flags: ShareFlags,
     ) -> HandlerReference<TreeMessageHandler> {
         HandlerReference::new(TreeMessageHandler {
+            tree_id: AtomicU32::new(tree_id),
             upstream: upstream.clone(),
-            connect_info: OnceCell::from(info),
+            info,
             tree_name,
-            share_flags,
-            dropping: false,
         })
     }
 
     #[maybe_async]
-    async fn disconnect(&mut self) -> crate::Result<()> {
-        let info = self.connect_info.get();
-
-        if info.is_none() {
-            return Err(Error::InvalidState(
-                "Tree connection already disconnected!".into(),
-            ));
-        }
-
-        log::debug!("Disconnecting from tree {}", self.tree_name);
-
+    async fn _disconnect(upstream: Upstream, tree_id: u32) -> crate::Result<()> {
         // send and receive tree disconnect request & response.
-        let _response = self
-            .send_recv(TreeDisconnectRequest::default().into())
-            .await?;
+        let request_content: RequestContent = TreeDisconnectRequest::default().into();
+        let mut message = OutgoingMessage::new(request_content);
+        message.message.header.tree_id = Some(tree_id);
 
-        self.connect_info.take();
-        log::info!("Disconnected from tree {}", self.tree_name);
+        let _response = upstream.sendo_recv(message).await?;
 
         Ok(())
     }
 
-    #[cfg(feature = "async")]
-    #[inline]
-    pub async fn disconnect_async(&mut self) {
-        self.disconnect()
-            .await
-            .map_err(|e| {
-                log::error!("Failed to disconnect from tree: {e}");
-                e
-            })
-            .ok();
+    #[maybe_async]
+    async fn disconnect(&self) -> crate::Result<()> {
+        let tree_id = self.tree_id.swap(Self::INVALID_TREE_ID, Ordering::SeqCst);
+        if tree_id == Self::INVALID_TREE_ID {
+            // Already disconnected
+            return Ok(());
+        }
+        Self::_disconnect(self.upstream.clone(), tree_id).await
+    }
+
+    pub fn info(&self) -> crate::Result<&TreeConnectInfo> {
+        if self.tree_id.load(Ordering::Relaxed) == Self::INVALID_TREE_ID {
+            return Err(Error::InvalidState("Tree is closed".to_string()));
+        }
+
+        Ok(&self.info)
     }
 }
 
@@ -278,12 +277,8 @@ impl MessageHandler for TreeMessageHandler {
         &self,
         mut msg: crate::msg_handler::OutgoingMessage,
     ) -> crate::Result<crate::msg_handler::SendMessageResult> {
-        msg.message.header.tree_id = match self.connect_info.get() {
-            Some(info) => info.tree_id,
-            None => 0,
-        }
-        .into();
-        if self.share_flags.encrypt_data() {
+        msg.message.header.tree_id = self.tree_id.load(Ordering::SeqCst).into();
+        if self.info.share_flags.encrypt_data() {
             msg.encrypt = true;
         }
         self.upstream.sendo(msg).await
@@ -296,8 +291,16 @@ impl MessageHandler for TreeMessageHandler {
     ) -> crate::Result<crate::msg_handler::IncomingMessage> {
         let msg = self.upstream.recvo(options).await?;
 
+        if !msg.message.header.flags.async_command()
+            && msg.message.header.tree_id.unwrap() != self.tree_id.load(Ordering::SeqCst)
+        {
+            return Err(Error::InvalidMessage(
+                "Received message for different tree, or tree disconnecting.".to_string(),
+            ));
+        }
+
         // Make sure encryption is enforced if the share requires it.
-        if !msg.form.encrypted && self.share_flags.encrypt_data() {
+        if !msg.form.encrypted && self.info()?.share_flags.encrypt_data() {
             return Err(Error::InvalidMessage(
                 "Received unencrypted message on encrypted share".to_string(),
             ));
@@ -322,28 +325,21 @@ impl Drop for TreeMessageHandler {
 #[cfg(feature = "async")]
 impl Drop for TreeMessageHandler {
     fn drop(&mut self) {
-        if self.dropping {
+        let tree_id = self.tree_id.load(Ordering::SeqCst);
+        if tree_id == Self::INVALID_TREE_ID {
+            // Already dropped
             return;
         }
 
-        let connect_info = match self.connect_info.take() {
-            Some(info) => info,
-            None => return,
-        };
-
-        let mut tree_name = String::new();
-        std::mem::swap(&mut self.tree_name, &mut tree_name);
-
-        let mut handler = TreeMessageHandler {
-            connect_info: OnceCell::from(connect_info),
-            tree_name,
-            upstream: self.upstream.clone(),
-            share_flags: self.share_flags,
-            dropping: true,
-        };
-
+        let upstream = self.upstream.clone();
+        let tree_name = self.tree_name.clone();
         tokio::task::spawn(async move {
-            handler.disconnect_async().await;
+            Self::_disconnect(upstream, tree_id)
+                .await
+                .map_err(|e| {
+                    log::error!("Failed to disconnect from tree {}: {e}", tree_name);
+                })
+                .ok();
         });
     }
 }

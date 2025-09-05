@@ -95,6 +95,8 @@ pub enum Error {
     UnsupportedOperation(String),
     #[error("Unable to connect to DFS referrals for: {0}")]
     DfsReferralConnectionFail(UncPath),
+    #[error("Not found: {0}")]
+    NotFound(String),
 
     // -- QUIC --
     #[cfg(feature = "quic")]

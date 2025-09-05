@@ -73,3 +73,9 @@ jobs:
             echo "Compiling with features: $td_model, ${COMMON_FEATURES}"
             cargo build --verbose --no-default-features --features "$td_model,${COMMON_FEATURES}"
           done
+      - name: Doc
+        run: |
+          for td_model in async multi_threaded single_threaded; do
+            echo "Generating documentation with features: $td_model, ${COMMON_FEATURES}"
+            cargo doc --verbose --no-default-features --features "$td_model,${COMMON_FEATURES}"
+          done

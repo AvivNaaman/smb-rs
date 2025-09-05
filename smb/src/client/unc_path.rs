@@ -24,6 +24,7 @@ pub struct UncPath {
 }
 
 impl UncPath {
+    /// Creates a UNC path with the specified server.
     pub fn new(server: String) -> Self {
         UncPath {
             server,
@@ -32,7 +33,7 @@ impl UncPath {
         }
     }
 
-    /// Returns a new [UncPath] with the IPC$ share,
+    /// Creates a new [UncPath] with the IPC$ share,
     /// and with no path set.
     pub fn ipc_share(server: String) -> Self {
         const SMB_IPC_SHARE: &str = "IPC$";
@@ -68,6 +69,13 @@ impl UncPath {
 
     /// Adds to the current path, if set.
     /// Otherwise, sets the path to the new value.
+    /// ```
+    /// # use std::str::FromStr;
+    /// # use smb::UncPath;
+    /// let unc = UncPath::from_str(r"\\server\share\path").unwrap();
+    /// let unc = unc.with_add_path("new_folder");
+    /// assert_eq!(unc.to_string(), r"\\server\share\path\new_folder");
+    /// ```
     pub fn with_add_path(mut self, add_path: &str) -> Self {
         if self.path.is_none() || self.path.as_ref().unwrap().is_empty() {
             self.path = Some(add_path.to_string());

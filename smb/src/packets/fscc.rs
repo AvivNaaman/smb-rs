@@ -1,6 +1,18 @@
-//! File System Control Codes (MS-FSCC)
+//! File System Control Codes [MS-FSCC](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/efbfe127-73ad-4140-9967-ec6500e66d5e)
 //!
 //! The FSCC types are widely used in SMB messages.
+//! This module contains implementation of many structs supported in SMB from the FSCC specification,
+//! to allow a wide variety of SMB operations, with a well defined, convenient typing system,
+//! and with an extensive set of structures.
+//!
+//! This module also contains common utility structures to wrap around common FSCC structures.
+//!
+//! The module contains the following implementations:
+//! * [Querying file information][`crate::ResourceHandle::query_info`]
+//! * [Setting file information][`crate::ResourceHandle::set_info`]
+//! * [Directory query types][`crate::Directory::query`]
+//! * Access masks types, including the [`access_mask!{...}`][`access_mask!`] macro.
+
 use crate::access_mask;
 use binrw::{io::TakeSeekExt, meta::ReadEndian, prelude::*};
 use modular_bitfield::prelude::*;

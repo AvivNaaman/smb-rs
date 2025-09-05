@@ -1,4 +1,4 @@
-//! smb-rs is a pure rust SMB2/3 client.
+#![doc = include_str!("docs/index.md")]
 
 #[cfg(not(any(
     feature = "async",
@@ -31,12 +31,16 @@ pub mod session;
 pub mod tree;
 
 pub use client::{Client, ClientConfig, UncPath};
-pub use connection::{Connection, ConnectionConfig};
+pub use connection::{Connection, ConnectionConfig, transport::*};
 pub use error::Error;
-pub use resource::{Directory, File, FileCreateArgs, Resource};
+pub use packets::fscc::*;
+pub use resource::{
+    Directory, File, FileCreateArgs, GetLen, ReadAt, Resource, ResourceHandle, WriteAt,
+};
 pub use session::Session;
 pub use tree::{DfsRootTreeRef, Tree};
 
+/// SMB Result type
 pub type Result<T> = std::result::Result<T, crate::Error>;
 
 // Re-exports of some dependencies for convenience

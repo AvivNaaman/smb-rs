@@ -9,6 +9,10 @@ use crate::packets::{binrw_util::prelude::*, guid::Guid};
 use super::SID;
 
 /// Macro for defining a bitfield for an access mask.
+///
+/// In windows, the upper word of access mask dword is always a set of common fields.
+/// Therefore, implementing this macro helps saving bunch of code for different access masks.
+///
 /// It's input is the name of the struct to generate, and in {}, the list of fields to add
 /// before the common fields. include support for `#[skip]` fields, without visibility (all fields are public).
 #[macro_export]

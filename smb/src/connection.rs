@@ -32,11 +32,14 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
-use std::time::Duration;
 pub use transformer::TransformError;
 use transport::{SmbTransport, make_transport};
 use worker::{Worker, WorkerImpl};
 
+/// Represents an SMB connection.
+///
+/// Each SMB connection has a single matching transport (e.g. TCP connection).
+/// Usually, most use cases require a single connection per server-client communication.
 pub struct Connection {
     handler: HandlerReference<ConnectionMessageHandler>,
     config: ConnectionConfig,
@@ -60,19 +63,9 @@ impl Connection {
         })
     }
 
-    /// Sets operations timeout for the connection.
-    #[maybe_async]
-    pub async fn set_timeout(&mut self, timeout: Duration) -> crate::Result<()> {
-        self.config.timeout = Some(timeout);
-        if let Some(worker) = self.handler.worker.get() {
-            worker.set_timeout(timeout).await?;
-        }
-        Ok(())
-    }
-
     /// Connects to the specified server, if it is not already connected, and negotiates the connection.
     #[maybe_async]
-    pub async fn connect(&mut self) -> crate::Result<()> {
+    pub async fn connect(&self) -> crate::Result<()> {
         if self.handler.worker().is_some() {
             return Err(Error::InvalidState("Already connected".into()));
         }
@@ -84,13 +77,16 @@ impl Connection {
         transport.connect(endpoint.as_str()).await?;
 
         log::info!("Connected to {}. Negotiating.", &endpoint);
-        self.negotiate(transport, self.config.smb2_only_negotiate)
+        self._negotiate(transport, self.config.smb2_only_negotiate)
             .await?;
 
         Ok(())
     }
 
     /// Starts a new connection from an existing, connected transport.
+    ///
+    /// This is especially useful when you want to use a custom transport - otherwise,
+    /// You should create a connection using the [`Client`][`crate::Client`] API.
     ///
     /// # Arguments
     /// * `transport` - The transport to use for the connection.
@@ -99,18 +95,39 @@ impl Connection {
     ///   creating the connection.
     /// # Returns
     /// A new [`Connection`] object with the specified transport and configuration.
+    ///
+    ///
+    /// ```no_run
+    /// # use smb::*;
+    /// # use std::time::Duration;
+    /// use smb::connection::transport::tcp::TcpTransport;
+    /// # #[cfg(not(feature = "async"))] fn main() {}
+    /// #[cfg(feature = "async")]
+    /// # #[tokio::main]
+    /// # async fn main() -> Result<()> {
+    /// let custom_tcp_transport = Box::new(TcpTransport::new(Duration::from_millis(10))); // you may also implement you own transport!
+    /// let my_connection_config = ConnectionConfig { ..Default::default() };
+    /// let connection = Connection::from_transport(custom_tcp_transport, "server", my_connection_config).await?;
+    /// # Ok(())}
+    /// ```
     #[maybe_async]
     pub async fn from_transport(
         transport: Box<dyn SmbTransport>,
         server: &str,
         config: ConnectionConfig,
     ) -> crate::Result<Self> {
-        let mut conn = Self::build(server, config)?;
-        conn.negotiate(transport, conn.config.smb2_only_negotiate)
+        let conn = Self::build(server, config)?;
+        conn._negotiate(transport, conn.config.smb2_only_negotiate)
             .await?;
         Ok(conn)
     }
 
+    /// Closes the connection, and all of it's managed resources.
+    ///
+    /// Any session, tree, or file handles associated with the connection will be unusable after
+    /// calling this method.
+    ///
+    /// See also [`Client::close`][`crate::Client::close`].
     #[maybe_async]
     pub async fn close(&self) -> crate::Result<()> {
         match self.handler.worker() {
@@ -122,8 +139,8 @@ impl Connection {
     /// Switches the protocol to SMB2 against the server if required,
     /// and wraps the transport in a SMB2 worker.
     #[maybe_async]
-    async fn negotiate_switch_to_smb2(
-        &mut self,
+    async fn _negotiate_switch_to_smb2(
+        &self,
         mut transport: Box<dyn SmbTransport>,
         smb2_only_neg: bool,
     ) -> crate::Result<Arc<WorkerImpl>> {
@@ -172,7 +189,7 @@ impl Connection {
 
     /// This method perofrms the SMB2 negotiation.
     #[maybe_async]
-    async fn negotiate_smb2(&mut self) -> crate::Result<ConnectionInfo> {
+    async fn _negotiate_smb2(&self) -> crate::Result<ConnectionInfo> {
         // Confirm that we're not already negotiated.
         if self.handler.conn_info.get().is_some() {
             return Err(Error::InvalidState("Already negotiated".into()));
@@ -205,7 +222,7 @@ impl Connection {
         let response = self
             .handler
             .send_recv(
-                self.make_smb2_neg_request(
+                self._make_smb2_neg_request(
                     dialects,
                     crypto::SIGNING_ALGOS.to_vec(),
                     encryption_algos,
@@ -268,7 +285,7 @@ impl Connection {
     }
 
     /// Creates an SMB2 negotiate request.
-    fn make_smb2_neg_request(
+    fn _make_smb2_neg_request(
         &self,
         supported_dialects: Vec<Dialect>,
         signing_algorithms: Vec<SigningAlgorithmId>,
@@ -378,10 +395,10 @@ impl Connection {
         }
     }
 
-    /// Send negotiate messages, potentially
+    /// Performs SMB negotiation post-connect.
     #[maybe_async]
-    async fn negotiate(
-        &mut self,
+    async fn _negotiate(
+        &self,
         transport: Box<dyn SmbTransport>,
         smb2_only_neg: bool,
     ) -> crate::Result<()> {
@@ -391,13 +408,13 @@ impl Connection {
 
         // Negotiate SMB1, Switch to SMB2
         let worker = self
-            .negotiate_switch_to_smb2(transport, smb2_only_neg)
+            ._negotiate_switch_to_smb2(transport, smb2_only_neg)
             .await?;
 
         self.handler.worker.set(worker).unwrap();
 
         // Negotiate SMB2
-        let info = self.negotiate_smb2().await?;
+        let info = self._negotiate_smb2().await?;
 
         self.handler
             .worker
@@ -420,14 +437,18 @@ impl Connection {
         Ok(())
     }
 
-    /// Starts a new session with the specified user and password.
-    /// # Arguments
+    /// Starts a new session for the current connection, and authenticates it
+    /// using the provided user name and password.
+    ///
+    /// ## Arguments
     /// * `user_name` - The user to authenticate with.
     /// * `password` - The password for the user.
-    /// # Returns
+    ///
+    /// ## Returns
     /// A [`Session`] object representing the authenticated session.
-    /// # Notes:
-    /// * You may use the [`ConnectionConfig`] to configure authentication options.
+    ///
+    /// ## Notes:
+    /// * Use the [`ConnectionConfig`] to configure authentication options.
     #[maybe_async]
     pub async fn authenticate(&self, user_name: &str, password: String) -> crate::Result<Session> {
         let session = Session::setup(
@@ -437,7 +458,7 @@ impl Connection {
             self.handler.conn_info.get().unwrap(),
         )
         .await?;
-        let session_handler = session.handler();
+        let session_handler = session.handler.weak();
         self.handler
             .sessions
             .lock()
@@ -448,7 +469,7 @@ impl Connection {
 }
 
 /// This struct is the internal message handler for the SMB client.
-pub struct ConnectionMessageHandler {
+pub(crate) struct ConnectionMessageHandler {
     client_guid: Guid,
 
     /// The number of extra credits to be requested by the client
@@ -637,7 +658,7 @@ impl ConnectionMessageHandler {
         let worker = self.worker.get().unwrap();
         worker.start_notify_channel(tx)?;
 
-        const POLLING_INTERVAL: Duration = Duration::from_millis(100);
+        const POLLING_INTERVAL: std::time::Duration = std::time::Duration::from_millis(100);
         let stopped_ref = self.stop_notifications.clone();
         let self_clone = self.clone();
         std::thread::spawn(move || {
@@ -762,6 +783,9 @@ impl MessageHandler for ConnectionMessageHandler {
 #[cfg(not(feature = "async"))]
 impl Drop for ConnectionMessageHandler {
     fn drop(&mut self) {
+        #[cfg(not(feature = "single_threaded"))]
+        self.stop_notify();
+
         if let Some(worker) = self.worker.take() {
             worker.stop().ok();
         }
@@ -771,6 +795,9 @@ impl Drop for ConnectionMessageHandler {
 #[cfg(feature = "async")]
 impl Drop for ConnectionMessageHandler {
     fn drop(&mut self) {
+        #[cfg(not(feature = "single_threaded"))]
+        self.stop_notify();
+
         let worker = match self.worker.take() {
             Some(worker) => worker,
             None => return,
