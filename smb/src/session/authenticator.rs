@@ -124,16 +124,15 @@ impl Authenticator {
             // an implementation of the async one had to be added in this module.
             #[cfg(feature = "kerberos")]
             {
+                use super::sspi_network_client::ReqwestNetworkClient;
                 #[cfg(feature = "async")]
                 {
-                    use super::sspi_network_client::ReqwestNetworkClient;
                     generator
                         .resolve_with_async_client(&mut ReqwestNetworkClient::new())
                         .await?
                 }
                 #[cfg(not(feature = "async"))]
                 {
-                    use sspi::network_client::reqwest_network_client::ReqwestNetworkClient;
                     generator.resolve_with_client(&ReqwestNetworkClient {})?
                 }
             }
@@ -148,9 +147,7 @@ impl Authenticator {
         Ok(AuthenticationStep::NextToken(
             output_buffer
                 .pop()
-                .ok_or(Error::InvalidState(
-                    "SSPI output buffer is empty.".to_string(),
-                ))?
+                .ok_or_else(|| Error::InvalidState("SSPI output buffer is empty.".to_string()))?
                 .buffer,
         ))
     }

@@ -55,7 +55,7 @@ impl QuicTransport {
     fn make_client_config(quic_config: &QuicConfig) -> crate::Result<quinn::ClientConfig> {
         let mut quic_client_config = match &quic_config.cert_validation {
             crate::connection::QuicCertValidationOptions::PlatformVerifier => {
-                rustls::ClientConfig::with_platform_verifier()
+                rustls::ClientConfig::with_platform_verifier()?
             }
             crate::connection::QuicCertValidationOptions::CustomRootCerts(items) => {
                 let mut roots = rustls::RootCertStore::empty();
