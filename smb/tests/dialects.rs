@@ -57,7 +57,7 @@ async fn test_smb_integration_dialect_encrpytion_mode(
         ..Default::default()
     };
 
-    let (mut client, share_path) =
+    let (client, share_path) =
         make_server_connection(TestConstants::DEFAULT_SHARE, Some(connection_config)).await?;
 
     const TEST_FILE: &str = "test.txt";

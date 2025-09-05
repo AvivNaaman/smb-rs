@@ -1,14 +1,6 @@
 # SMB
 the `smb` crate is a pure rust SMB client, supports the SMB2 protocol (including SMB3).
 
-## Installation
-Installing the crate is as simple as:
-
-```toml
-[dependencies]
-smb = "
-```
-
 ## Basic usage
 The most basic functionality that an SMB client should provide is the ability to connect to an SMB server, authenticate, and perform simple file operations.
 
@@ -17,11 +9,13 @@ The [`Client`] struct provides a simple interface for interacting with an SMB se
 ```rust,no_run
 use smb::{Client, ClientConfig, UncPath, FileCreateArgs, FileAccessMask};
 use std::str::FromStr;
+# #[cfg(not(feature = "async"))] fn main() {}
 
+# #[cfg(feature = "async")]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // instantiate the client
-    let mut client = Client::new(ClientConfig::default());
+    let client = Client::new(ClientConfig::default());
     
     // Connect to a share
     let target_path = UncPath::from_str(r"\\server\share").unwrap();
@@ -42,9 +36,11 @@ But wait... How do we know it's actually a file? Well, we don't. The [`Client::c
 
 ```rust,no_run
 # use smb::*;
+# #[cfg(not(feature = "async"))] fn main() {}
 # #[tokio::main]
+# #[cfg(feature = "async")]
 # async fn main() -> Result<()> {
-# let mut client = Client::default();
+# let client = Client::default();
 # let mut file = client.create_file(&UncPath::new(String::new()), &FileCreateArgs::default()).await?;
 match &file {
     Resource::File(file) => {
@@ -65,9 +61,11 @@ match &file {
 Cool! Let's assume we got ourselves a file. Then, we can do the obvious operation of reading or writing a block of data from or to the file:
 ```rust,no_run
 # use smb::*;
+# #[cfg(not(feature = "async"))] fn main() {}
+# #[cfg(feature = "async")]
 # #[tokio::main]
 # async fn main() -> Result<()> {
-# let mut client = Client::default();
+# let client = Client::default();
 # let mut file = client.create_file(&UncPath::new(String::new()), &FileCreateArgs::default()).await?;
 let file: File = file.unwrap_file();
 
@@ -80,9 +78,11 @@ file.write_at(&data, 0).await?;
 At the end, close the file.
 ```rust,no_run
 # use smb::*;
+# #[cfg(not(feature = "async"))] fn main() {}
+# #[cfg(feature = "async")]
 # #[tokio::main]
 # async fn main() -> Result<()> {
-# let mut client = Client::default();
+# let client = Client::default();
 # let mut file = client.create_file(&UncPath::new(String::new()), &FileCreateArgs::default()).await?;
 # let file: File = file.unwrap_file();
 file.close().await?;

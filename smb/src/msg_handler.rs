@@ -233,18 +233,19 @@ pub trait MessageHandler: Send + Sync {
 /// - `*o`: Send a message and receive a response with custom options:
 ///     - `sendo`: Send a message with custom, low-level handler options.
 ///     - `recvo`: Receive a message with custom, low-level handler options.
-pub struct HandlerReference<T: MessageHandler + ?Sized> {
+pub(crate) struct HandlerReference<T: MessageHandler + ?Sized> {
     pub handler: Arc<T>,
 }
 
 impl<T: MessageHandler> HandlerReference<T> {
-    pub fn new(handler: T) -> HandlerReference<T> {
+    pub(crate) fn new(handler: T) -> HandlerReference<T> {
         HandlerReference {
             handler: Arc::new(handler),
         }
     }
 
-    pub fn weak(&self) -> std::sync::Weak<T> {
+    /// Returns a weak reference to the handler.
+    pub(crate) fn weak(&self) -> std::sync::Weak<T> {
         Arc::downgrade(&self.handler)
     }
 }

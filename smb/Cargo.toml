@@ -63,7 +63,7 @@ serial_test = "3.2"
 temp-env = { version = "0.3.6", features = ["async_closure"] }
 
 [features]
-default = ["sign", "encrypt", "compress", "quic", "async", "kerberos"]
+default = ["sign", "encrypt", "compress", "async", "kerberos"]
 
 # Threading models
 async = ["dep:tokio", "dep:futures-core", "dep:tokio-util", "dep:futures-util"]

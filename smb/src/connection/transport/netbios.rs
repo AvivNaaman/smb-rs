@@ -13,12 +13,12 @@ use futures_core::future::BoxFuture;
 #[cfg(feature = "async")]
 use futures_util::FutureExt;
 use maybe_async::*;
-pub(crate) struct NetBiosTransport {
+pub struct NetBiosTransport {
     tcp: Box<dyn SmbTransport>,
 }
 
 impl NetBiosTransport {
-    pub(crate) fn new(timeout: Duration) -> NetBiosTransport {
+    pub fn new(timeout: Duration) -> NetBiosTransport {
         NetBiosTransport {
             tcp: Box::new(TcpTransport::new(timeout)),
         }

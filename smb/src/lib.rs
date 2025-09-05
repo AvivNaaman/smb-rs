@@ -31,7 +31,7 @@ pub mod session;
 pub mod tree;
 
 pub use client::{Client, ClientConfig, UncPath};
-pub use connection::{Connection, ConnectionConfig};
+pub use connection::{Connection, ConnectionConfig, transport::*};
 pub use error::Error;
 pub use packets::fscc::*;
 pub use resource::{

@@ -36,7 +36,7 @@ use std::str::FromStr;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // instantiate the client
-    let mut client = Client::new(ClientConfig::default());
+    let client = Client::new(ClientConfig::default());
     
     // Connect to a share
     let target_path = UncPath::from_str(r"\\server\share").unwrap();

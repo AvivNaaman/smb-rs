@@ -39,7 +39,7 @@ pub struct QuicConfig {
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub enum QuicCertValidationOptions {
     /// Use the default platform verifier for the certificate.
-    /// See [quinn::ClientConfig::with_platform_verifier].
+    /// See `quinn::ClientConfig::with_platform_verifier`.
     /// This is the default option.
     #[default]
     PlatformVerifier,
