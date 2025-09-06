@@ -1,6 +1,6 @@
 use sha2::{Digest, Sha512};
 
-use crate::packets::smb2::HashAlgorithm;
+use smb_msg::HashAlgorithm;
 
 pub type PreauthHashValue = [u8; 64];
 

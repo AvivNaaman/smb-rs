@@ -7,25 +7,17 @@ pub mod worker;
 
 use crate::Error;
 use crate::dialects::DialectImpl;
-use crate::packets::guid::Guid;
-use crate::packets::smb2::{Command, Response};
 use crate::session::SessionMessageHandler;
 use crate::{compression, sync_helpers::*};
-use crate::{
-    crypto,
-    msg_handler::*,
-    packets::{
-        smb1::SMB1NegotiateMessage,
-        smb2::{negotiate::*, plain::*},
-    },
-    session::Session,
-};
+use crate::{crypto, msg_handler::*, session::Session};
 use binrw::prelude::*;
 pub use config::*;
 use connection_info::{ConnectionInfo, NegotiatedProperties};
 use maybe_async::*;
 use rand::RngCore;
 use rand::rngs::OsRng;
+use smb_dtyp::*;
+use smb_msg::{Command, Response, negotiate::*, plain::*, smb1::SMB1NegotiateMessage};
 use std::cmp::max;
 use std::collections::HashMap;
 #[cfg(feature = "multi_threaded")]

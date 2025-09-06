@@ -2,7 +2,8 @@
 
 use std::time::Duration;
 
-use crate::packets::{guid::Guid, smb2::Dialect};
+use smb_dtyp::Guid;
+use smb_msg::Dialect;
 
 /// Specifies the encryption mode for the connection.
 /// Use this as part of the [ConnectionConfig] to specify the encryption mode for the connection.

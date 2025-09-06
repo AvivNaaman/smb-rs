@@ -1,11 +1,10 @@
 use super::ResourceHandle;
+use crate::Error;
 use crate::msg_handler::{MessageHandler, ReceiveOptions};
 use crate::sync_helpers::Mutex;
-use crate::{
-    Error,
-    packets::{fscc::*, smb2::*},
-};
 use maybe_async::*;
+use smb_fscc::*;
+use smb_msg::*;
 use std::ops::{Deref, DerefMut};
 #[cfg(feature = "async")]
 use std::sync::Arc;

@@ -6,10 +6,10 @@ use crate::{
     ConnectionConfig, Error,
     connection::{connection_info::NegotiatedProperties, preauth_hash},
     crypto,
-    packets::smb2::{
-        Dialect, GlobalCapabilities, NegotiateResponse, ShareCacheMode, ShareFlags,
-        SigningAlgorithmId, TreeCapabilities,
-    },
+};
+use smb_msg::{
+    Dialect, GlobalCapabilities, NegotiateResponse, ShareCacheMode, ShareFlags, SigningAlgorithmId,
+    TreeCapabilities,
 };
 
 /// This is a utility struct that returns constants and functions for the given dialect.

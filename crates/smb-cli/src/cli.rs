@@ -1,11 +1,11 @@
 use crate::{copy::CopyCmd, info::InfoCmd, security::SecurityCmd};
 use clap::{Parser, Subcommand, ValueEnum};
+use smb::Dialect;
 use smb::{
     ClientConfig, ConnectionConfig,
     connection::{
         AuthMethodsConfig, EncryptionMode, QuicCertValidationOptions, QuicConfig, TransportConfig,
     },
-    packets::smb2::Dialect,
 };
 
 #[derive(Parser)]

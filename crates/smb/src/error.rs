@@ -2,12 +2,8 @@ use std::{num::TryFromIntError, sync::PoisonError};
 
 use thiserror::Error;
 
-use crate::{
-    UncPath,
-    connection::TransformError,
-    packets::smb2::{Command, ErrorResponse, NegotiateDialect, Status},
-    sync_helpers::AcquireError,
-};
+use crate::{UncPath, connection::TransformError, sync_helpers::AcquireError};
+use smb_msg::{Command, ErrorResponse, NegotiateDialect, Status};
 
 #[derive(Debug)]
 pub enum TimedOutTask {
@@ -47,11 +43,6 @@ pub enum Error {
     ReceivedErrorMessage(u32, ErrorResponse),
     #[error("Unexpected command: {0}")]
     UnexpectedMessageCommand(Command),
-    #[error("Unexpected content: {0} - expected {1}", actual, expected)]
-    UnexpectedContent {
-        actual: &'static str,
-        expected: &'static str,
-    },
     #[error("Missing permissions to perform {0}")]
     MissingPermissions(String),
     #[error("Sspi error: {0}")]
@@ -97,6 +88,13 @@ pub enum Error {
     DfsReferralConnectionFail(UncPath),
     #[error("Not found: {0}")]
     NotFound(String),
+
+    #[error("RPC error: {0}")]
+    RpcError(#[from] smb_rpc::SmbRpcError),
+    #[error("SMB message error: {0}")]
+    SmbMessageError(#[from] smb_msg::SmbMsgError),
+    #[error("SMB FSCC error: {0}")]
+    FsccError(#[from] smb_fscc::SmbFsccError),
 
     // -- QUIC --
     #[cfg(feature = "quic")]

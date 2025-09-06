@@ -3,7 +3,8 @@
 use binrw::prelude::*;
 use std::io::Cursor;
 
-use crate::{Error, crypto, packets::smb2::header::Header};
+use crate::{Error, crypto};
+use smb_msg::Header;
 
 /// A struct for writing and verifying SMB message signatures.
 ///
@@ -68,7 +69,7 @@ impl Clone for MessageSigner {
 
 #[cfg(test)]
 mod tests {
-    use crate::{crypto::make_signing_algo, packets::smb2::SigningAlgorithmId};
+    use crate::crypto::make_signing_algo;
 
     use super::*;
 
@@ -81,6 +82,8 @@ mod tests {
     #[cfg(feature = "sign_gmac")]
     fn test_calc_signature() {
         // Some random session logoff request for testing.
+
+        use smb_msg::SigningAlgorithmId;
         let raw_data = vec![
             0xfeu8, 0x53, 0x4d, 0x42, 0x40, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2, 0x0, 0x1, 0x0,
             0x18, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x9, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,

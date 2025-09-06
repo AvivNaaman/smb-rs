@@ -8,6 +8,7 @@ use crate::{
 };
 
 use maybe_async::*;
+use smb_msg::Status;
 
 use crate::{
     connection::transformer::Transformer,
@@ -70,7 +71,7 @@ pub trait Worker: Sized + std::fmt::Debug {
         }
 
         // If not pending, that's the result, right away!
-        if curr.message.header.status != crate::packets::smb2::Status::Pending as u32 {
+        if curr.message.header.status != Status::Pending as u32 {
             return Ok(curr);
         }
 
@@ -108,7 +109,7 @@ pub trait Worker: Sized + std::fmt::Debug {
             }
 
             // We've got a result!
-            if msg.message.header.status != crate::packets::smb2::Status::Pending as u32 {
+            if msg.message.header.status != Status::Pending as u32 {
                 return Ok(msg);
             }
 

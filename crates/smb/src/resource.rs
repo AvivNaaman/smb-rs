@@ -1,6 +1,9 @@
 use std::sync::{Arc, atomic::AtomicBool};
 
 use maybe_async::*;
+use smb_dtyp::SecurityDescriptor;
+use smb_fscc::*;
+use smb_msg::*;
 use time::PrimitiveDateTime;
 
 use crate::{
@@ -9,7 +12,6 @@ use crate::{
     msg_handler::{
         HandlerReference, IncomingMessage, MessageHandler, OutgoingMessage, ReceiveOptions,
     },
-    packets::{fscc::*, security::SecurityDescriptor, smb2::*},
     tree::TreeMessageHandler,
 };
 
@@ -368,26 +370,28 @@ impl ResourceHandle {
         &self,
         names: Vec<&str>,
     ) -> crate::Result<QueryFileFullEaInformation> {
-        self.query_common(QueryInfoRequest {
-            info_type: InfoType::File,
-            info_class: QueryInfoClass::File(QueryFileInfoClass::FullEaInformation),
-            output_buffer_length: 1024,
-            additional_info: AdditionalInfo::new(),
-            flags: QueryInfoFlags::new()
-                .with_restart_scan(true)
-                .with_return_single_entry(true),
-            file_id: self.file_id()?,
-            data: GetInfoRequestData::EaInfo(GetEaInfoList {
-                values: names
-                    .iter()
-                    .map(|&s| FileGetEaInformationInner { ea_name: s.into() }.into())
-                    .collect(),
-            }),
-        })
-        .await?
-        .as_file()?
-        .parse(QueryFileInfoClass::FullEaInformation)?
-        .try_into()
+        let result = self
+            .query_common(QueryInfoRequest {
+                info_type: InfoType::File,
+                info_class: QueryInfoClass::File(QueryFileInfoClass::FullEaInformation),
+                output_buffer_length: 1024,
+                additional_info: AdditionalInfo::new(),
+                flags: QueryInfoFlags::new()
+                    .with_restart_scan(true)
+                    .with_return_single_entry(true),
+                file_id: self.file_id()?,
+                data: GetInfoRequestData::EaInfo(GetEaInfoList {
+                    values: names
+                        .iter()
+                        .map(|&s| FileGetEaInformationInner { ea_name: s.into() }.into())
+                        .collect(),
+                }),
+            })
+            .await?
+            .as_file()?
+            .parse(QueryFileInfoClass::FullEaInformation)?
+            .try_into()?;
+        Ok(result)
     }
 
     /// Queries the file for information with additional arguments.
@@ -406,19 +410,21 @@ impl ResourceHandle {
         flags: QueryInfoFlags,
         output_buffer_length: usize,
     ) -> crate::Result<T> {
-        self.query_common(QueryInfoRequest {
-            info_type: InfoType::File,
-            info_class: QueryInfoClass::File(T::CLASS_ID),
-            output_buffer_length: output_buffer_length as u32,
-            additional_info: AdditionalInfo::new(),
-            flags,
-            file_id: self.file_id()?,
-            data: GetInfoRequestData::None(()),
-        })
-        .await?
-        .as_file()?
-        .parse(T::CLASS_ID)?
-        .try_into()
+        let result: T = self
+            .query_common(QueryInfoRequest {
+                info_type: InfoType::File,
+                info_class: QueryInfoClass::File(T::CLASS_ID),
+                output_buffer_length: output_buffer_length as u32,
+                additional_info: AdditionalInfo::new(),
+                flags,
+                file_id: self.file_id()?,
+                data: GetInfoRequestData::None(()),
+            })
+            .await?
+            .as_file()?
+            .parse(T::CLASS_ID)?
+            .try_into()?;
+        Ok(result)
     }
 
     /// Queries the file for it's security descriptor.
@@ -475,15 +481,17 @@ impl ResourceHandle {
         max_output_response: u32,
     ) -> crate::Result<T::Response> {
         const NO_INPUT_IN_RESPONSE: u32 = 0;
-        self._ioctl(
-            T::FSCTL_CODE as u32,
-            request.into(),
-            NO_INPUT_IN_RESPONSE,
-            max_output_response,
-            IoctlRequestFlags::new().with_is_fsctl(true),
-        )
-        .await?
-        .parse_fsctl::<T::Response>()
+        let ioctl_result = self
+            ._ioctl(
+                T::FSCTL_CODE as u32,
+                request.into(),
+                NO_INPUT_IN_RESPONSE,
+                max_output_response,
+                IoctlRequestFlags::new().with_is_fsctl(true),
+            )
+            .await?
+            .parse_fsctl::<T::Response>()?;
+        Ok(ioctl_result)
     }
 
     /// Sends an IOCTL message for the current resource (file).
@@ -523,7 +531,8 @@ impl ResourceHandle {
         max_out: u32,
         flags: IoctlRequestFlags,
     ) -> crate::Result<IoctlResponse> {
-        self.handler
+        let result = self
+            .handler
             .send_recvo(
                 RequestContent::Ioctl(IoctlRequest {
                     ctl_code,
@@ -538,7 +547,8 @@ impl ResourceHandle {
             .await?
             .message
             .content
-            .to_ioctl()
+            .to_ioctl()?;
+        Ok(result)
     }
 
     /// Queries the file system information for the current file.
@@ -556,21 +566,23 @@ impl ResourceHandle {
                 "File system information is only available for disk files".into(),
             ));
         }
-        self.query_common(QueryInfoRequest {
-            info_type: InfoType::FileSystem,
-            info_class: QueryInfoClass::FileSystem(T::CLASS_ID),
-            output_buffer_length: 1024,
-            additional_info: AdditionalInfo::new(),
-            flags: QueryInfoFlags::new()
-                .with_restart_scan(true)
-                .with_return_single_entry(true),
-            file_id: self.file_id()?,
-            data: GetInfoRequestData::None(()),
-        })
-        .await?
-        .unwrap_filesystem()
-        .parse(T::CLASS_ID)?
-        .try_into()
+        let query_result: T = self
+            .query_common(QueryInfoRequest {
+                info_type: InfoType::FileSystem,
+                info_class: QueryInfoClass::FileSystem(T::CLASS_ID),
+                output_buffer_length: 1024,
+                additional_info: AdditionalInfo::new(),
+                flags: QueryInfoFlags::new()
+                    .with_restart_scan(true)
+                    .with_return_single_entry(true),
+                file_id: self.file_id()?,
+                data: GetInfoRequestData::None(()),
+            })
+            .await?
+            .unwrap_filesystem()
+            .parse(T::CLASS_ID)?
+            .try_into()?;
+        Ok(query_result)
     }
 
     /// Sets the file information for the current file.

@@ -2,14 +2,7 @@ use crate::{Cli, path::*};
 use clap::Parser;
 use maybe_async::*;
 use smb::sync_helpers::*;
-use smb::{
-    Client,
-    packets::{
-        fscc::{FileAccessMask, FileAttributes},
-        smb2::CreateOptions,
-    },
-    resource::*,
-};
+use smb::{Client, CreateOptions, FileAccessMask, FileAttributes, resource::*};
 use std::error::Error;
 #[cfg(not(feature = "async"))]
 use std::fs;

@@ -4,9 +4,8 @@ use clap::{Parser, ValueEnum};
 use futures_util::StreamExt;
 use maybe_async::*;
 use smb::{
-    Client, FileCreateArgs, UncPath,
-    packets::fscc::*,
-    resource::{Directory, GetLen, Resource},
+    Client, FileAccessMask, FileBasicInformation, FileIdBothDirectoryInformation, UncPath,
+    resource::*,
 };
 use std::collections::VecDeque;
 use std::fmt::Display;

@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use crate::dialects::DialectImpl;
-use crate::packets::guid::Guid;
-use crate::packets::smb2::*;
 use binrw::prelude::*;
+use smb_dtyp::Guid;
+use smb_msg::*;
 
 use super::ConnectionConfig;
 

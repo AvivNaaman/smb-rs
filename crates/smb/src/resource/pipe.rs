@@ -1,14 +1,10 @@
 use std::ops::{Deref, DerefMut};
 
 use super::ResourceHandle;
-use crate::{
-    msg_handler::ReceiveOptions,
-    packets::{
-        rpc::{interface::*, ndr64::NDR64_SYNTAX_ID, pdu::*},
-        smb2::{IoctlBuffer, PipeTransceiveRequest, ReadRequest, WriteRequest},
-    },
-};
+use crate::msg_handler::ReceiveOptions;
 use maybe_async::*;
+use smb_msg::{IoctlBuffer, PipeTransceiveRequest, ReadRequest, WriteRequest};
+use smb_rpc::{SmbRpcError, interface::*, ndr64::NDR64_SYNTAX_ID, pdu::*};
 pub struct Pipe {
     handle: ResourceHandle,
 }
@@ -230,7 +226,11 @@ impl PipeRpcConnection {
 
 impl BoundRpcConnection for PipeRpcConnection {
     #[maybe_async]
-    async fn send_receive_raw(&mut self, opnum: u16, stub_input: &[u8]) -> crate::Result<Vec<u8>> {
+    async fn send_receive_raw(
+        &mut self,
+        opnum: u16,
+        stub_input: &[u8],
+    ) -> Result<Vec<u8>, SmbRpcError> {
         let req = DcRpcCoPktRequest {
             alloc_hint: DcRpcCoPktRequest::ALLOC_HINT_NONE,
             context_id: self.context_id,
@@ -248,7 +248,9 @@ impl BoundRpcConnection for PipeRpcConnection {
         );
         self.next_call_id += 1;
 
-        let req_data: Vec<u8> = req.try_into()?;
+        let req_data: Vec<u8> = req.try_into().map_err(|e| {
+            SmbRpcError::SendReceiveError(format!("Failed to serialize RPC request: {e}"))
+        })?;
 
         let res = self
             .pipe
@@ -257,19 +259,23 @@ impl BoundRpcConnection for PipeRpcConnection {
                 PipeTransceiveRequest::from(IoctlBuffer::from(req_data)),
                 self.server_max_xmit_frag as u32,
             )
-            .await?;
+            .await
+            .map_err(|e| {
+                SmbRpcError::SendReceiveError(format!("Failed to send RPC request via FSCTL: {e}"))
+            })?;
 
-        let rpc_reply = DceRpcCoResponsePkt::try_from(res.as_ref())?;
+        let rpc_reply = DceRpcCoResponsePkt::try_from(res.as_ref())
+            .map_err(SmbRpcError::FailedToParseRpcResponse)?;
 
         if rpc_reply.packed_drep() != Self::PACKED_DREP {
-            return Err(crate::Error::InvalidMessage(format!(
+            return Err(SmbRpcError::SendReceiveError(format!(
                 "Currently Unsupported packed DREP: {}",
                 rpc_reply.packed_drep()
             )));
         }
 
         if !rpc_reply.pfc_flags().first_frag() || !rpc_reply.pfc_flags().last_frag() {
-            return Err(crate::Error::InvalidMessage(
+            return Err(SmbRpcError::SendReceiveError(
                 "Expected first and last fragment flags to be set".to_string(),
             ));
         }
@@ -277,14 +283,14 @@ impl BoundRpcConnection for PipeRpcConnection {
         let response = match rpc_reply.into_content() {
             DcRpcCoPktResponseContent::Response(dc_rpc_co_pkt_response) => dc_rpc_co_pkt_response,
             content => {
-                return Err(crate::Error::InvalidMessage(format!(
+                return Err(SmbRpcError::SendReceiveError(format!(
                     "Expected DceRpcCoPktResponseContent::Response, got: {content:?}",
                 )));
             }
         };
 
         if response.context_id != self.context_id {
-            return Err(crate::Error::InvalidMessage(format!(
+            return Err(SmbRpcError::SendReceiveError(format!(
                 "Response context ID {} does not match expected {}",
                 response.context_id, self.context_id
             )));

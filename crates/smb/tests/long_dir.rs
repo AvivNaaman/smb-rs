@@ -2,13 +2,10 @@
 
 use serial_test::serial;
 use smb::{
-    ConnectionConfig,
-    connection::EncryptionMode,
-    packets::{fscc::*, smb2::CreateOptions},
-    resource::Directory,
-    sync_helpers::*,
-    tree::Tree,
+    ConnectionConfig, connection::EncryptionMode, resource::Directory, sync_helpers::*, tree::Tree,
 };
+use smb_fscc::*;
+use smb_msg::CreateOptions;
 use std::sync::Arc;
 
 #[cfg(feature = "async")]

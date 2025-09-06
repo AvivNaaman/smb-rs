@@ -1,14 +1,9 @@
 use crate::{
-    Connection, Error, FileCreateArgs, Resource, Session, Tree,
-    packets::{
-        dfsc::{ReferralEntry, ReferralEntryValue},
-        rpc::interface::{ShareInfo1, SrvSvc},
-        smb2::Status,
-    },
-    resource::Pipe,
-    sync_helpers::*,
+    Connection, Error, FileCreateArgs, Resource, Session, Tree, resource::Pipe, sync_helpers::*,
 };
 use maybe_async::maybe_async;
+use smb_msg::{ReferralEntry, ReferralEntryValue, Status};
+use smb_rpc::interface::{ShareInfo1, SrvSvc};
 use std::sync::Arc;
 use std::{collections::HashMap, str::FromStr};
 

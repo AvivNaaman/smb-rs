@@ -1,4 +1,4 @@
-use crate::packets::smb2::*;
+use smb_msg::*;
 
 use super::CryptoError;
 

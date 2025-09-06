@@ -1,5 +1,6 @@
-use crate::{connection::preauth_hash::PreauthHashValue, packets::smb2::*};
+use crate::connection::preauth_hash::PreauthHashValue;
 use maybe_async::*;
+use smb_msg::{Command, PlainRequest, PlainResponse, RequestContent, Status};
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -76,7 +77,7 @@ impl MessageForm {
 ///
 /// Use a builder pattern to set the options:
 /// ```
-/// use smb::packets::smb2::*;
+/// use smb_msg::*;
 /// use smb::msg_handler::ReceiveOptions;
 ///
 /// let options = ReceiveOptions::new()

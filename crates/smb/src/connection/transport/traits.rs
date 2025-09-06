@@ -5,7 +5,7 @@ use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
 use std::io::Cursor;
 
-use crate::packets::transport::SmbTcpMessageHeader;
+use smb_msg::SmbTcpMessageHeader;
 
 #[allow(async_fn_in_trait)]
 pub trait SmbTransport: Send + SmbTransportRead + SmbTransportWrite {

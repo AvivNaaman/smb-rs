@@ -9,7 +9,7 @@ use crate::connection::preauth_hash::PreauthHashValue;
 use crate::crypto::{
     CryptoError, DerivedKey, KeyToDerive, kbkdf_hmacsha256, make_encrypting_algo, make_signing_algo,
 };
-use crate::packets::smb2::{Dialect, EncryptionCipher, SessionFlags, SigningAlgorithmId};
+use smb_msg::{Dialect, EncryptionCipher, SessionFlags, SigningAlgorithmId};
 
 use super::{MessageDecryptor, MessageEncryptor, MessageSigner};
 

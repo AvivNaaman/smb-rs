@@ -7,9 +7,10 @@ use std::time::Duration;
 use common::{TestConstants, TestEnv, make_server_connection};
 use serial_test::serial;
 use smb::error::TimedOutTask;
-use smb::packets::smb2::Status;
 use smb::{Client, ClientConfig, UncPath};
-use smb::{ConnectionConfig, FileCreateArgs, packets::fscc::FileDispositionInformation};
+use smb::{ConnectionConfig, FileCreateArgs};
+use smb_fscc::FileDispositionInformation;
+use smb_msg::Status;
 
 #[maybe_async::maybe_async]
 async fn do_test_basic_integration(

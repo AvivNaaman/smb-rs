@@ -1,6 +1,6 @@
 [package]
 name = "smb"
-version = "0.9.0"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 description.workspace = true
@@ -12,23 +12,29 @@ categories.workspace = true
 readme.workspace = true
 
 [dependencies]
+smb-msg = { path = "../smb-msg" }
+smb-dtyp = { path = "../smb-dtyp" }
+smb-rpc = { path = "../smb-rpc" }
+smb-fscc = { path = "../smb-fscc" }
+
 # Encoding/Decoding
-binrw = "0.15.0"
-modular-bitfield = "0.11.2"
+binrw = { workspace = true }
+modular-bitfield = { workspace = true }
 
 # Async
-tokio = { version = "1.43", optional = true, features = ["full"] }
+tokio = { workspace = true, optional = true }
 futures-core = { version = "0.3", optional = true }
-futures-util = { version = "0.3", optional = true }
+futures-util = { workspace = true, optional = true }
 tokio-util = { version = "0.7", optional = true }
-maybe-async = "0.2"
+maybe-async = { workspace = true }
 
 # General utils
-rand = "0.8.5"
-log = "0.4.22"
-time = { version = "0.3.37", features = ["macros"] }
-thiserror = "2.0"
-paste = "1.0"
+rand = { workspace = true }
+log = { workspace = true }
+time = { workspace = true }
+thiserror = { workspace = true }
+paste = { workspace = true }
+
 url = "2.5.0"
 byteorder = { version = "1.5.0", optional = true }
 
@@ -68,8 +74,9 @@ default = ["sign", "encrypt", "compress", "async", "kerberos"]
 
 # Threading models
 async = ["dep:tokio", "dep:futures-core", "dep:tokio-util", "dep:futures-util"]
-multi_threaded = ["maybe-async/is_sync", "reqwest?/blocking"]
-single_threaded = ["maybe-async/is_sync", "reqwest?/blocking"]
+multi_threaded = ["__is_sync"]
+single_threaded = ["__is_sync"]
+__is_sync = ["maybe-async/is_sync", "smb-rpc/is_sync", "reqwest?/blocking"]
 
 # Compression
 compress_pattern_v1 = []

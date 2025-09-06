@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 
-use crate::packets::smb2::*;
+use smb_msg::*;
 
 use super::CryptoError;
 
@@ -113,7 +113,7 @@ mod encrypt_ccm {
         consts::{U11, U16},
     };
 
-    use crate::{crypto::CryptoError, packets::smb2::EncryptionNonce};
+    use crate::crypto::CryptoError;
 
     use super::*;
 
@@ -212,7 +212,7 @@ mod encrypt_gcm {
     use aes_gcm::{AesGcm, KeyInit, KeySizeUser};
     use crypto_common::typenum;
 
-    use crate::{crypto::CryptoError, packets::smb2::EncryptionNonce};
+    use crate::crypto::CryptoError;
 
     use super::*;
 

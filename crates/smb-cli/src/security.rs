@@ -2,10 +2,7 @@ use std::str::FromStr;
 
 use super::Cli;
 use clap::{Parser, Subcommand};
-use smb::{
-    packets::{security::*, smb2::AdditionalInfo},
-    *,
-};
+use smb::*;
 
 #[derive(Parser, Debug)]
 pub struct SecurityCmd {

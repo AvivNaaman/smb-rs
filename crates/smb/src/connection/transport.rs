@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use super::TransportConfig;
 
-pub mod netbios;
+pub mod nb;
 pub mod quic;
 pub mod tcp;
 pub mod traits;
@@ -29,6 +29,6 @@ pub fn make_transport(
         TransportConfig::Quic(_) => Err(crate::Error::InvalidState(
             "Quic transport is not available in this build.".into(),
         )),
-        TransportConfig::NetBios => Ok(Box::new(netbios::NetBiosTransport::new(timeout))),
+        TransportConfig::NetBios => Ok(Box::new(nb::NetBiosTransport::new(timeout))),
     }
 }

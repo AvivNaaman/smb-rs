@@ -9,7 +9,7 @@ pub use signing::{SIGNING_ALGOS, SigningAlgo, make_signing_algo};
 use crypto_common::InvalidLength;
 use thiserror::Error;
 
-use crate::packets::smb2::{EncryptionCipher, SigningAlgorithmId};
+use smb_msg::{EncryptionCipher, SigningAlgorithmId};
 
 #[derive(Debug, Error)]
 pub enum CryptoError {

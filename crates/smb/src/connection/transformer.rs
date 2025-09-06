@@ -1,7 +1,8 @@
 use crate::sync_helpers::*;
-use crate::{compression::*, msg_handler::*, packets::smb2::*, session::SessionInfo};
+use crate::{compression::*, msg_handler::*, session::SessionInfo};
 use binrw::prelude::*;
 use maybe_async::*;
+use smb_msg::*;
 use std::{collections::HashMap, io::Cursor, sync::Arc};
 
 use super::connection_info::ConnectionInfo;

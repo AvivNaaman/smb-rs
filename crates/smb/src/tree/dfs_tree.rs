@@ -1,14 +1,8 @@
 use std::ops::Deref;
 
+use crate::msg_handler::{MessageHandler, ReceiveOptions};
 use maybe_async::*;
-
-use crate::{
-    msg_handler::{MessageHandler, ReceiveOptions},
-    packets::{
-        dfsc::{ReferralLevel, ReqGetDfsReferral, RespGetDfsReferral},
-        smb2::{FileId, FsctlCodes, IoctlReqData, IoctlRequest, IoctlRequestFlags},
-    },
-};
+use smb_msg::{FileId, FsctlCodes, IoctlReqData, IoctlRequest, IoctlRequestFlags, dfsc::*};
 
 use super::Tree;
 

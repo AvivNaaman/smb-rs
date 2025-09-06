@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use smb::{Client, ClientConfig, ConnectionConfig, UncPath};
+use smb::*;
 use std::env::var;
 
 pub struct TestEnv;

@@ -14,11 +14,11 @@ use crate::{
         HandlerReference, IncomingMessage, MessageHandler, OutgoingMessage, ReceiveOptions,
         SendMessageResult,
     },
-    packets::smb2::*,
     tree::Tree,
 };
 use binrw::prelude::*;
 use maybe_async::*;
+use smb_msg::{Notification, ResponseContent, Status, session_setup::*};
 use sspi::{AuthIdentity, Secret, Username};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;

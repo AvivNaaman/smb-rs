@@ -4,15 +4,9 @@ use common::{TestConstants, make_server_connection};
 #[cfg(feature = "async")]
 use futures_util::StreamExt;
 use serial_test::serial;
-use smb::{
-    ConnectionConfig, FileCreateArgs,
-    connection::EncryptionMode,
-    packets::{
-        fscc::*,
-        smb2::{AdditionalInfo, CreateOptions, Dialect},
-    },
-    resource::Directory,
-};
+use smb::{ConnectionConfig, FileCreateArgs, connection::EncryptionMode, resource::Directory};
+use smb_fscc::*;
+use smb_msg::{AdditionalInfo, CreateOptions, Dialect};
 use std::sync::Arc;
 mod common;
 

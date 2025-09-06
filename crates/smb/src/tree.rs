@@ -4,20 +4,17 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use maybe_async::*;
 
 use crate::connection::connection_info::ConnectionInfo;
-use crate::packets::fscc::FileAttributes;
-use crate::packets::smb2::{CreateOptions, RequestContent, ShareFlags, ShareType};
 use crate::resource::FileCreateArgs;
+use smb_fscc::{FileAccessMask, FileAttributes};
+use smb_msg::{
+    CreateOptions, RequestContent, ShareFlags, ShareType,
+    create::CreateDisposition,
+    tree_connect::{TreeConnectRequest, TreeDisconnectRequest},
+};
 
 use crate::{
     Error,
     msg_handler::{HandlerReference, MessageHandler},
-    packets::{
-        fscc::FileAccessMask,
-        smb2::{
-            create::CreateDisposition,
-            tree_connect::{TreeConnectRequest, TreeDisconnectRequest},
-        },
-    },
     resource::Resource,
     session::SessionMessageHandler,
 };

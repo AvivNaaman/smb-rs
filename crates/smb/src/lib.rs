@@ -25,7 +25,6 @@ pub mod dialects;
 pub mod docs;
 pub mod error;
 pub mod msg_handler;
-pub mod packets;
 pub mod resource;
 pub mod session;
 pub mod tree;
@@ -33,12 +32,15 @@ pub mod tree;
 pub use client::{Client, ClientConfig, UncPath};
 pub use connection::{Connection, ConnectionConfig, transport::*};
 pub use error::Error;
-pub use packets::fscc::*;
 pub use resource::{
     Directory, File, FileCreateArgs, GetLen, ReadAt, Resource, ResourceHandle, WriteAt,
 };
 pub use session::Session;
 pub use tree::{DfsRootTreeRef, Tree};
+
+pub use smb_dtyp::*;
+pub use smb_fscc::*;
+pub use smb_msg::*;
 
 /// SMB Result type
 pub type Result<T> = std::result::Result<T, crate::Error>;

@@ -5,10 +5,8 @@ use rand::RngCore;
 use rand::rngs::OsRng;
 use std::io::Cursor;
 
-use crate::{
-    crypto,
-    packets::smb2::{Response, encrypted::*},
-};
+use crate::crypto;
+use smb_msg::{Response, encrypted::*};
 
 #[derive(Debug)]
 pub struct MessageEncryptor {

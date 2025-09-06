@@ -6,10 +6,8 @@ use maybe_async::maybe_async;
 use serial_test::serial;
 mod common;
 use common::{TestConstants, make_server_connection};
-use smb::{
-    Client, Connection, File, FileBasicInformation, FileCreateArgs, FileDispositionInformation,
-    Session, Tree,
-};
+use smb::{Client, Connection, File, FileCreateArgs, Session, Tree};
+use smb_fscc::{FileBasicInformation, FileDispositionInformation};
 
 #[maybe_async]
 async fn _close_tests_helper()

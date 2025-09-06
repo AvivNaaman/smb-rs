@@ -13,6 +13,24 @@ authors = ["Aviv Naaman <avivnaaman04@gmail.com>"]
 keywords = ["smb", "network", "file-sharing", "windows"]
 categories = ["network-programming", "parsing", "filesystem"]
 readme = "README.md"
+version = "0.9.0"
+
+[workspace.dependencies]
+# Binary encoding/decoding
+binrw = "0.15.0"
+modular-bitfield = "0.11.2"
+
+# Utilities
+thiserror = "2.0"
+paste = "1.0"
+time = { version = "0.3.37", features = ["macros"] }
+rand = "0.8.5"
+log = "0.4.22"
+
+# Async
+tokio = { version = "1.43", features = ["full"] }
+maybe-async = "0.2"
+futures-util = { version = "0.3" }
 
 # Profiling: release (optimized) with debug info
 [profile.profiling]
