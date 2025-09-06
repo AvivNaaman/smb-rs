@@ -285,6 +285,12 @@ impl ResourceHandle {
         self.share_type
     }
 
+    /// Returns the handle of the resource.
+    // This is implemented to be "inhrited" by Deref impl of resources impls, to avoid boilerplate code.
+    pub fn handle(&self) -> &ResourceHandle {
+        self
+    }
+
     /// (Internal)
     ///
     /// Returns the file ID of the resource, ensuring the resource is still open.

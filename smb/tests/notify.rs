@@ -32,9 +32,7 @@ async fn test_smb_notify() -> Result<(), Box<dyn std::error::Error>> {
     // Create the file
     client
         .create_file(
-            &share_path
-                .clone()
-                .with_path(NEW_FILE_NAME_UNDER_WORKDIR.to_string()),
+            &share_path.clone().with_path(NEW_FILE_NAME_UNDER_WORKDIR),
             &FileCreateArgs::make_create_new(Default::default(), Default::default()),
         )
         .await?
@@ -114,7 +112,7 @@ async fn delete_file_from_another_connection(
 
     let file = client
         .create_file(
-            &share_path.with_path(NEW_FILE_NAME_UNDER_WORKDIR.to_string()),
+            &share_path.with_path(NEW_FILE_NAME_UNDER_WORKDIR),
             &FileCreateArgs::make_open_existing(
                 FileAccessMask::new()
                     .with_delete(true)

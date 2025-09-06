@@ -33,7 +33,7 @@ url = "2.5.0"
 byteorder = { version = "1.5.0", optional = true }
 
 # APIs
-sspi = { version = "0.16.1", features = ["ring"], no-default-features = true }
+sspi = { version = "0.16.1", features = ["ring"], default-features = false }
 
 # Crypto
 hmac = "0.12.1"

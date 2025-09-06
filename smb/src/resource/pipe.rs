@@ -18,10 +18,6 @@ impl Pipe {
         Pipe { handle }
     }
 
-    pub fn handle(&self) -> &ResourceHandle {
-        &self.handle
-    }
-
     #[maybe_async]
     pub async fn bind<I>(self) -> crate::Result<I>
     where

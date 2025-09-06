@@ -22,7 +22,7 @@ async fn do_test_basic_integration(
     // Create a file
     let file = client
         .create_file(
-            &share_path.with_path("basic.txt".to_string()),
+            &share_path.with_path("basic.txt"),
             &FileCreateArgs::make_create_new(Default::default(), Default::default()),
         )
         .await?

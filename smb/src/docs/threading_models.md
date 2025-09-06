@@ -39,7 +39,7 @@ async fn do_main() -> Result<(), Box<dyn std::error::Error>> {
     client.share_connect(&target_path, "username", "password".to_string()).await?;
     
     // And open a file on the server
-    let file_to_open = target_path.with_path("file.txt".to_string());
+    let file_to_open = target_path.with_path("file.txt");
     let read_access= FileAccessMask::new().with_generic_read(true);
     let file_open_args = FileCreateArgs::make_open_existing(read_access);
     let file = client.create_file(&file_to_open, &file_open_args).await?;

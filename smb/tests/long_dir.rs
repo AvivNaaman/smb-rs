@@ -41,7 +41,7 @@ async fn test_smb_iterating_long_directory() -> Result<(), Box<dyn std::error::E
     .await?;
 
     let client = Arc::new(Mutex::new(client));
-    let long_dir_path = share_path.clone().with_path(LONG_DIR.to_string());
+    let long_dir_path = share_path.clone().with_path(LONG_DIR);
     // Mkdir
     client
         .lock()
@@ -64,7 +64,7 @@ async fn test_smb_iterating_long_directory() -> Result<(), Box<dyn std::error::E
             .await
             .unwrap()
             .create_file(
-                &share_path.clone().with_path(file_name),
+                &share_path.clone().with_path(&file_name),
                 &FileCreateArgs::make_create_new(Default::default(), Default::default()),
             )
             .await?
@@ -107,7 +107,7 @@ async fn test_smb_iterating_long_directory() -> Result<(), Box<dyn std::error::E
             assert!(file_number < NUM_FILES);
 
             // .. And delete the file!
-            let full_file_path = share_path.with_path(format!("{}\\{}", LONG_DIR, file_name));
+            let full_file_path = share_path.with_path(&format!("{}\\{}", LONG_DIR, file_name));
             let file = client
                 .lock()
                 .await
