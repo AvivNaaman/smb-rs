@@ -50,6 +50,9 @@ async fn _main() -> Result<(), Box<dyn Error>> {
             log::info!("Getting info for {:?}", cmd.path);
             info::info(cmd, &cli).await?;
         }
+        Commands::Security(cmd) => {
+            security::security(cmd, &cli).await?;
+        }
     }
 
     Ok(())

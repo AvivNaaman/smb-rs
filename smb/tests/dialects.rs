@@ -63,7 +63,7 @@ async fn test_smb_integration_dialect_encrpytion_mode(
     const TEST_FILE: &str = "test.txt";
     const TEST_DATA: &[u8] = b"Hello, World!";
 
-    let test_file_path = share_path.clone().with_path(TEST_FILE.to_string());
+    let test_file_path = share_path.clone().with_path(TEST_FILE);
 
     // Hello, World! > test.txt
     let security = {

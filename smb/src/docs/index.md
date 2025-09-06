@@ -22,7 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     client.share_connect(&target_path, "username", "password".to_string()).await?;
     
     // And open a file on the server
-    let file_to_open = target_path.with_path("file.txt".to_string());
+    let file_to_open = target_path.with_path("file.txt");
     let file_open_args = FileCreateArgs::make_open_existing(FileAccessMask::new().with_generic_read(true));
     let file = client.create_file(&file_to_open, &file_open_args).await?;
     // now, you can do a bunch of operations against `file`, and close it at the end.
@@ -41,7 +41,7 @@ But wait... How do we know it's actually a file? Well, we don't. The [`Client::c
 # #[cfg(feature = "async")]
 # async fn main() -> Result<()> {
 # let client = Client::default();
-# let mut file = client.create_file(&UncPath::new(String::new()), &FileCreateArgs::default()).await?;
+# let mut file = client.create_file(&UncPath::new("")?, &FileCreateArgs::default()).await?;
 match &file {
     Resource::File(file) => {
         // We have a file
@@ -66,7 +66,7 @@ Cool! Let's assume we got ourselves a file. Then, we can do the obvious operatio
 # #[tokio::main]
 # async fn main() -> Result<()> {
 # let client = Client::default();
-# let mut file = client.create_file(&UncPath::new(String::new()), &FileCreateArgs::default()).await?;
+# let mut file = client.create_file(&UncPath::new("")?, &FileCreateArgs::default()).await?;
 let file: File = file.unwrap_file();
 
 let mut data: [u8; 1024] = [0; 1024];
@@ -83,7 +83,7 @@ At the end, close the file.
 # #[tokio::main]
 # async fn main() -> Result<()> {
 # let client = Client::default();
-# let mut file = client.create_file(&UncPath::new(String::new()), &FileCreateArgs::default()).await?;
+# let mut file = client.create_file(&UncPath::new("")?, &FileCreateArgs::default()).await?;
 # let file: File = file.unwrap_file();
 file.close().await?;
 # Ok(())}

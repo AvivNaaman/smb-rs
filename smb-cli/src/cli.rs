@@ -1,4 +1,4 @@
-use crate::{copy::CopyCmd, info::InfoCmd};
+use crate::{copy::CopyCmd, info::InfoCmd, security::SecurityCmd};
 use clap::{Parser, Subcommand, ValueEnum};
 use smb::{
     ClientConfig, ConnectionConfig,
@@ -95,4 +95,6 @@ pub enum Commands {
     Copy(CopyCmd),
     /// Retrieves information about a share or a path.
     Info(InfoCmd),
+    /// Configures object security
+    Security(SecurityCmd),
 }

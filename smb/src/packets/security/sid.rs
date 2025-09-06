@@ -48,31 +48,37 @@ impl SID {
 }
 
 impl FromStr for SID {
-    type Err = ();
+    type Err = &'static str;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // 1. starts with S-1-:
         if !s.starts_with(Self::PREFIX) {
-            return Err(());
+            return Err("SID must start with S-1-");
         }
         let mut s = s[Self::PREFIX.len()..].split('-');
         // 2. authority is a number, possibly in hex.
         let identifier_authority = match s.next() {
             Some("0x") => {
                 // hex is only for sub-authorities > 32 bits!
-                let p = u64::from_str_radix(s.next().ok_or(())?, 16).map_err(|_| ())?;
+                let p = u64::from_str_radix(
+                    s.next().ok_or("Identifier authority format is incorrect")?,
+                    16,
+                )
+                .map_err(|_| "Identifier authority format is incorrect")?;
                 if p >> 32 == 0 {
                     p
                 } else {
-                    return Err(());
+                    return Err("Identifier authority format is incorrect");
                 }
             }
-            Some(x) => x.parse().map_err(|_| ())?,
-            None => return Err(()),
+            Some(x) => x
+                .parse()
+                .map_err(|_| "Identifier authority format is incorrect")?,
+            None => return Err("SID format is incorrect - missing authority"),
         };
         // 3. sub-authorities are numbers.
         let sub_authority = s
-            .map(|x| x.parse().map_err(|_| ()))
+            .map(|x| x.parse().map_err(|_| "Sub-authority format is incorrect"))
             .collect::<Result<_, _>>()?;
         Ok(SID {
             identifier_authority,

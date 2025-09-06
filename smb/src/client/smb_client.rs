@@ -48,7 +48,7 @@ use super::{config::ClientConfig, unc_path::UncPath};
 ///     client.share_connect(&target_path, "username", "password".to_string()).await?;
 ///     
 ///     // And open a file on the server
-///     let file_to_open = target_path.with_path("file.txt".to_string());
+///     let file_to_open = target_path.with_path("file.txt");
 ///     let file_open_args = FileCreateArgs::make_open_existing(FileAccessMask::new().with_generic_read(true));
 ///     let file = client.create_file(&file_to_open, &file_open_args).await?;
 ///     // now, you can do a bunch of operations against `file`, and close it at the end.
@@ -155,7 +155,7 @@ impl Client {
         user_name: &str,
         password: String,
     ) -> crate::Result<()> {
-        if target.share.is_none() {
+        if target.share().is_none() {
             return Err(crate::Error::InvalidArgument(
                 "UNC path does not contain a share name.".to_string(),
             ));
@@ -173,11 +173,14 @@ impl Client {
             }
         }
 
-        self.connect(&target.server).await?;
+        self.connect(target.server()).await?;
 
         let mut connections = self.connections.lock().await?;
-        let connection = connections.get_mut(&target.server).ok_or_else(|| {
-            Error::NotFound(format!("No connection found for server: {}", target.server))
+        let connection = connections.get_mut(target.server()).ok_or_else(|| {
+            Error::NotFound(format!(
+                "No connection found for server: {}",
+                target.server()
+            ))
         })?;
         let session = connection
             .connection
@@ -185,7 +188,7 @@ impl Client {
             .await?;
         log::debug!(
             "Successfully authenticated to {} as {}",
-            target.server,
+            target.server(),
             user_name
         );
         let tree = session.tree_connect(&target.to_string()).await?;
@@ -207,7 +210,7 @@ impl Client {
 
         log::debug!(
             "Successfully connected to share: {}",
-            target.share.as_ref().unwrap()
+            target.share().unwrap()
         );
 
         Ok(())
@@ -217,8 +220,11 @@ impl Client {
     async fn _get_credentials(&self, target: &UncPath) -> crate::Result<(String, String)> {
         let target: UncPath = target.clone().with_no_path();
         let connections = self.connections.lock().await?;
-        let connection = connections.get(&target.server).ok_or_else(|| {
-            Error::NotFound(format!("No connection found for server: {}", target.server))
+        let connection = connections.get(target.server()).ok_or_else(|| {
+            Error::NotFound(format!(
+                "No connection found for server: {}",
+                target.server()
+            ))
         })?;
         if !connection.share_connects.contains_key(&target) {
             return Err(Error::NotFound(format!(
@@ -240,9 +246,7 @@ impl Client {
     #[maybe_async]
     async fn _create_file(&self, path: &UncPath, args: &FileCreateArgs) -> crate::Result<Resource> {
         let tree = self.get_tree(path).await?;
-        let resource = tree
-            .create(path.path.as_deref().unwrap_or(""), args)
-            .await?;
+        let resource = tree.create(path.path().unwrap_or(""), args).await?;
         Ok(resource)
     }
 
@@ -306,8 +310,8 @@ impl Client {
     pub async fn get_session(&self, path: &UncPath) -> crate::Result<Arc<Session>> {
         let path = path.clone().with_no_path();
         let connections = self.connections.lock().await?;
-        let connection = connections.get(&path.server).ok_or_else(|| {
-            Error::NotFound(format!("No connection found for server: {}", path.server))
+        let connection = connections.get(path.server()).ok_or_else(|| {
+            Error::NotFound(format!("No connection found for server: {}", path.server()))
         })?;
         if let Some(share_connect) = connection.share_connects.get(&path) {
             return Ok(share_connect.session.clone());
@@ -323,8 +327,8 @@ impl Client {
     pub async fn get_tree(&self, path: &UncPath) -> crate::Result<Arc<Tree>> {
         let path = path.clone().with_no_path();
         let connections = self.connections.lock().await?;
-        let connection = connections.get(&path.server).ok_or_else(|| {
-            Error::NotFound(format!("No connection found for server: {}", path.server))
+        let connection = connections.get(path.server()).ok_or_else(|| {
+            Error::NotFound(format!("No connection found for server: {}", path.server()))
         })?;
         if let Some(share_connect) = connection.share_connects.get(&path) {
             return Ok(share_connect.tree.clone());
@@ -379,7 +383,7 @@ impl Client {
         user_name: &str,
         password: String,
     ) -> crate::Result<()> {
-        let ipc_share = UncPath::ipc_share(server.to_string());
+        let ipc_share = UncPath::ipc_share(server)?;
         self.share_connect(&ipc_share, user_name, password).await
     }
 
@@ -398,7 +402,7 @@ impl Client {
     /// that connects to the IPC$ share on the server, which then allows for communication with the named pipe.
     #[maybe_async]
     pub async fn open_pipe(&self, server: &str, pipe_name: &str) -> crate::Result<Pipe> {
-        let path = UncPath::ipc_share(server.to_string()).with_path(pipe_name.to_string());
+        let path = UncPath::ipc_share(server)?.with_path(pipe_name);
         let pipe = self
             ._create_file(&path, &FileCreateArgs::make_pipe())
             .await?;

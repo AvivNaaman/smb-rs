@@ -60,7 +60,7 @@ macro_rules! access_mask {
 }
 
 #[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ACE {
     #[bw(calc = value.get_type())]
     pub ace_type: AceType,
@@ -68,9 +68,21 @@ pub struct ACE {
     #[bw(calc = PosMarker::default())]
     _ace_size: PosMarker<u16>,
     #[br(args(ace_type))]
-    #[br(map_stream = |s| s.take_seek(_ace_size.value as u64))]
-    #[bw(write_with = PosMarker::write_size, args(&_ace_size))]
+    #[br(map_stream = |s| s.take_seek(_ace_size.value as u64 - Self::HEADER_SIZE))]
+    #[bw(write_with = PosMarker::write_size_plus, args(&_ace_size, Self::HEADER_SIZE))]
     pub value: AceValue,
+}
+
+impl ACE {
+    const HEADER_SIZE: u64 = 4;
+
+    /// Returns the type of the ACE.
+    ///
+    /// Can also be accessed by [`ACE::value`][`ACE::value`][`.get_type()`][`AceValue::get_type()`].
+    #[inline]
+    pub fn ace_type(&self) -> AceType {
+        self.value.get_type()
+    }
 }
 
 macro_rules! make_ace_value {
@@ -80,7 +92,7 @@ macro_rules! make_ace_value {
         paste::paste! {
 
 #[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 #[br(import(ace_type: AceType))]
 pub enum AceValue {
     $(
@@ -97,6 +109,29 @@ impl AceValue {
             )+
         }
     }
+
+    $(
+        pub fn [<unwrap_ $type:snake>](&self) -> &$val {
+            match self {
+                AceValue::$type(v) => v,
+                _ => panic!("Called unwrap_{} on a different AceValue variant", stringify!($type).to_lowercase()),
+            }
+        }
+
+        pub fn [<as_ $type:snake>](&self) -> Option<&$val> {
+            match self {
+                AceValue::$type(v) => Some(v),
+                _ => None,
+            }
+        }
+
+        pub fn [<as_mut_ $type:snake>](&mut self) -> Option<&mut $val> {
+            match self {
+                AceValue::$type(v) => Some(v),
+                _ => None,
+            }
+        }
+    )+
 }
 
         }
@@ -121,8 +156,32 @@ make_ace_value! {
     SystemScopedPolicyId(AccessAce),
 }
 
+impl AceValue {
+    /// Returns true if the ACE is an "access allowed" type.
+    pub fn is_access_allowed(&self) -> bool {
+        matches!(
+            self.get_type(),
+            AceType::AccessAllowed
+                | AceType::AccessAllowedObject
+                | AceType::AccessAllowedCallback
+                | AceType::AccessAllowedCallbackObject
+        )
+    }
+
+    /// Returns true if the ACE is an "access denied" type.
+    pub fn is_access_denied(&self) -> bool {
+        matches!(
+            self.get_type(),
+            AceType::AccessDenied
+                | AceType::AccessDeniedObject
+                | AceType::AccessDeniedCallback
+                | AceType::AccessDeniedCallbackObject
+        )
+    }
+}
+
 #[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct AccessAce {
     pub access_mask: AccessMask,
     pub sid: SID,
@@ -161,7 +220,7 @@ pub struct MandatoryLabelAccessMask {
 }}
 
 #[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct AccessObjectAce {
     pub access_mask: ObjectAccessMask,
     #[bw(calc = ObjectAceFlags::new().with_object_type_present(object_type.is_some()).with_inherited_object_type_present(inherited_object_type.is_some()))]
@@ -185,7 +244,7 @@ pub struct ObjectAceFlags {
 }
 
 #[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct AccessCallbackAce {
     pub access_mask: AccessMask,
     pub sid: SID,
@@ -194,7 +253,7 @@ pub struct AccessCallbackAce {
 }
 
 #[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct AccessObjectCallbackAce {
     pub access_mask: ObjectAccessMask,
     #[bw(calc = ObjectAceFlags::new().with_object_type_present(object_type.is_some()).with_inherited_object_type_present(inherited_object_type.is_some()))]
@@ -209,13 +268,13 @@ pub struct AccessObjectCallbackAce {
 }
 
 #[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SystemMandatoryLabelAce {
     pub mask: MandatoryLabelAccessMask,
     pub sid: SID,
 }
 #[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SystemResourceAttributeAce {
     pub mask: AccessMask,
     pub sid: SID,
@@ -223,7 +282,7 @@ pub struct SystemResourceAttributeAce {
 }
 
 #[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ClaimSecurityAttributeRelativeV1 {
     #[bw(calc = PosMarker::default())]
     _name: PosMarker<u32>, // TODO: Figure out what this is.
@@ -238,7 +297,7 @@ pub struct ClaimSecurityAttributeRelativeV1 {
 }
 
 #[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[brw(repr(u16))]
 pub enum ClaimSecurityAttributeType {
     None = 0,
@@ -272,7 +331,7 @@ pub struct FciClaimSecurityAttributes {
 }
 
 #[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 #[brw(repr(u8))]
 pub enum AceType {
     AccessAllowed = 0,

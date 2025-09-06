@@ -12,49 +12,57 @@ use crate::Error;
 /// use smb::UncPath;
 /// use std::str::FromStr;
 /// let unc = UncPath::from_str(r"\\server\share\path").unwrap();
-/// assert_eq!(unc.server, "server");
-/// assert_eq!(unc.share, Some("share".to_string()));
-/// assert_eq!(unc.path, Some("path".to_string()));
+/// assert_eq!(unc.server(), "server");
+/// assert_eq!(unc.share(), Some("share"));
+/// assert_eq!(unc.path(), Some("path"));
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct UncPath {
-    pub server: String,
-    pub share: Option<String>,
-    pub path: Option<String>,
+    server: String,
+    share: Option<String>,
+    path: Option<String>,
 }
 
 impl UncPath {
     /// Creates a UNC path with the specified server.
-    pub fn new(server: String) -> Self {
-        UncPath {
-            server,
+    pub fn new(server: &str) -> crate::Result<Self> {
+        if !Self::check_no_separators(server) {
+            return Err(Error::InvalidArgument("Invalid server name".into()));
+        }
+        Ok(UncPath {
+            server: server.to_string(),
             share: None,
             path: None,
-        }
+        })
     }
 
     /// Creates a new [UncPath] with the IPC$ share,
     /// and with no path set.
-    pub fn ipc_share(server: String) -> Self {
+    pub fn ipc_share(server: &str) -> crate::Result<Self> {
         const SMB_IPC_SHARE: &str = "IPC$";
-        Self::new(server).with_share(SMB_IPC_SHARE.to_string())
+        Ok(Self::new(server)?.with_share(SMB_IPC_SHARE).unwrap())
     }
 
     /// Returns the current [UncPath] with a different share name.
-    pub fn with_share(self, share: String) -> Self {
-        UncPath {
-            server: self.server,
-            share: Some(share),
-            path: self.path,
+    pub fn with_share(self, share: &str) -> crate::Result<Self> {
+        if !Self::check_no_separators(share) {
+            return Err(Error::InvalidArgument(
+                "Share name cannot contain slashes or backslashes".into(),
+            ));
         }
+        Ok(UncPath {
+            server: self.server,
+            share: Some(share.to_string()),
+            path: self.path,
+        })
     }
 
     /// Returns the current [UncPath] with a different path.
-    pub fn with_path(self, path: String) -> Self {
+    pub fn with_path(self, path: &str) -> Self {
         UncPath {
             server: self.server,
             share: self.share,
-            path: Some(path),
+            path: Some(Self::normalize_directory_separators(path)),
         }
     }
 
@@ -77,8 +85,10 @@ impl UncPath {
     /// assert_eq!(unc.to_string(), r"\\server\share\path\new_folder");
     /// ```
     pub fn with_add_path(mut self, add_path: &str) -> Self {
+        let add_path = Self::normalize_directory_separators(add_path);
+
         if self.path.is_none() || self.path.as_ref().unwrap().is_empty() {
-            self.path = Some(add_path.to_string());
+            self.path = Some(add_path);
             return self;
         }
 
@@ -87,6 +97,26 @@ impl UncPath {
 
         self.path = Some(format!("{}\\{}", path, add_path));
         self
+    }
+
+    fn normalize_directory_separators(path: &str) -> String {
+        path.replace('/', "\\")
+    }
+
+    fn check_no_separators(path: &str) -> bool {
+        !path.contains('\\') && !path.contains('/')
+    }
+
+    pub fn server(&self) -> &str {
+        &self.server
+    }
+
+    pub fn share(&self) -> Option<&str> {
+        self.share.as_deref()
+    }
+
+    pub fn path(&self) -> Option<&str> {
+        self.path.as_deref()
     }
 }
 
@@ -106,9 +136,13 @@ impl FromStr for UncPath {
             ));
         }
         Ok(UncPath {
-            server: parts[0].to_string(),
-            share: parts.get(1).map(|s| s.to_string()),
-            path: parts.get(2).map(|s| s.to_string()),
+            server: Self::normalize_directory_separators(parts[0]),
+            share: parts
+                .get(1)
+                .map(|s| Self::normalize_directory_separators(s)),
+            path: parts
+                .get(2)
+                .map(|s| Self::normalize_directory_separators(s)),
         })
     }
 }
@@ -171,14 +205,38 @@ pub mod tests {
     }
 
     #[test]
-    fn test_unc_path_display() {
-        let unc_full = UncPath {
-            server: String::from("server33"),
-            share: Some(String::from("share2")),
-            path: Some(String::from("path/to/heaven")),
+    fn test_unc_path_normalize_dir_sep() {
+        let unc_full = UncPath::new("server33")
+            .unwrap()
+            .with_share("share2")
+            .unwrap()
+            .with_path("path/to\\heaven/yes/");
+        assert_eq!(unc_full.path, Some(String::from("path\\to\\heaven\\yes\\")));
+    }
+
+    #[test]
+    fn test_unc_path_verify_server_name() {
+        let valid_servers = vec!["server", "server-name", "server.name", "server_name"];
+        for server in valid_servers {
+            let unc_path = UncPath::new(server);
+            assert!(matches!(unc_path, Ok(_)));
         }
-        .to_string();
-        assert_eq!(unc_full, r"\\server33\share2\path/to/heaven");
+        let invalid_servers = vec!["server/name", "server\\name", "server/share"];
+        for server in invalid_servers {
+            let result = UncPath::new(server);
+            assert!(matches!(result, Err(Error::InvalidArgument(_))));
+        }
+    }
+
+    #[test]
+    fn test_unc_path_display() {
+        let unc_full = UncPath::new("server33")
+            .unwrap()
+            .with_share("share2")
+            .unwrap()
+            .with_path("path/to/heaven");
+        let unc_full = unc_full.to_string();
+        assert_eq!(unc_full, r"\\server33\share2\path\to\heaven");
     }
 
     #[test]

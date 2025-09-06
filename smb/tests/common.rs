@@ -44,11 +44,7 @@ pub async fn make_server_connection(
     });
     log::info!("Connecting to {server}");
 
-    let unc_path = UncPath {
-        server: server.clone(),
-        share: Some(share.to_string()),
-        path: None,
-    };
+    let unc_path = UncPath::new(&server)?.with_share(share)?;
     // Connect & Authenticate
     smb.share_connect(&unc_path, user.as_str(), password.clone())
         .await?;

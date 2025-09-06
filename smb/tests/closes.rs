@@ -16,7 +16,7 @@ async fn _close_tests_helper()
 -> smb::Result<(Client, Arc<Connection>, Arc<Session>, Arc<Tree>, File)> {
     let (client, unc) =
         make_server_connection(TestConstants::DEFAULT_SHARE, Default::default()).await?;
-    let file_path = unc.with_path("file.txt".to_string());
+    let file_path = unc.with_path("file.txt");
     let file = client
         .create_file(
             &file_path,
@@ -25,7 +25,7 @@ async fn _close_tests_helper()
         .await?;
     let file = file.unwrap_file();
     file.set_info(FileDispositionInformation::default()).await?;
-    let connection = client.get_connection(&file_path.server).await?;
+    let connection = client.get_connection(file_path.server()).await?;
     let session = client.get_session(&file_path).await?;
     let tree = client.get_tree(&file_path).await?;
 
