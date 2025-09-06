@@ -1,0 +1,22 @@
+[package]
+name = "smb-msg"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+
+[dependencies]
+smb-dtyp = { path = "../smb-dtyp" }
+smb-fscc = { path = "../smb-fscc" }
+
+binrw = { workspace = true }
+modular-bitfield = { workspace = true }
+time = { workspace = true }
+paste = { workspace = true }
+thiserror = { workspace = true }

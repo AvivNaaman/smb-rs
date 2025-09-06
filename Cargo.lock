@@ -2415,6 +2415,10 @@ dependencies = [
  "rustls-platform-verifier",
  "serial_test",
  "sha2",
+ "smb-dtyp",
+ "smb-fscc",
+ "smb-msg",
+ "smb-rpc",
  "sspi",
  "temp-env",
  "test-log",
@@ -2427,7 +2431,7 @@ dependencies = [
 
 [[package]]
 name = "smb-cli"
-version = "0.1.0"
+version = "0.9.0"
 dependencies = [
  "clap",
  "env_logger",
@@ -2436,6 +2440,55 @@ dependencies = [
  "maybe-async",
  "smb",
  "tokio",
+]
+
+[[package]]
+name = "smb-dtyp"
+version = "0.9.0"
+dependencies = [
+ "binrw",
+ "modular-bitfield",
+ "paste",
+ "rand 0.8.5",
+ "time",
+]
+
+[[package]]
+name = "smb-fscc"
+version = "0.9.0"
+dependencies = [
+ "binrw",
+ "modular-bitfield",
+ "paste",
+ "smb-dtyp",
+ "thiserror 2.0.16",
+ "time",
+]
+
+[[package]]
+name = "smb-msg"
+version = "0.9.0"
+dependencies = [
+ "binrw",
+ "modular-bitfield",
+ "paste",
+ "smb-dtyp",
+ "smb-fscc",
+ "thiserror 2.0.16",
+ "time",
+]
+
+[[package]]
+name = "smb-rpc"
+version = "0.9.0"
+dependencies = [
+ "binrw",
+ "maybe-async",
+ "modular-bitfield",
+ "paste",
+ "smb-dtyp",
+ "thiserror 2.0.16",
+ "time",
 ]
 
 [[package]]

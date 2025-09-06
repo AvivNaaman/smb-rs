@@ -3,7 +3,7 @@
 use binrw::prelude::*;
 use modular_bitfield::prelude::*;
 
-use smb_dtyp::binrw_util::prelude::*;
+use crate::binrw_util::prelude::*;
 
 use super::{ACL, SID};
 

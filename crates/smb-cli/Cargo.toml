@@ -1,0 +1,30 @@
+[package]
+name = "smb-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+smb = { path = "../smb", default-features = false }
+
+maybe-async = { workspace = true }
+tokio = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
+
+# CLI & logging
+clap = { version = "4.5.27", features = ["derive"] }
+env_logger = "0.11.6"
+log = { workspace = true }
+
+[features]
+default = ["async", "smb/default"]
+
+async = ["smb/async", "dep:tokio", "dep:futures-util"]
+single_threaded = ["smb/single_threaded", "maybe-async/is_sync"]
+multi_threaded = ["smb/multi_threaded", "maybe-async/is_sync"]
+
+sign = ["smb/sign"]
+encrypt = ["smb/encrypt"]
+compress = ["smb/compress"]
+
+profiling = []
