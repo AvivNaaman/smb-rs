@@ -2,7 +2,7 @@
 
 use binrw::prelude::*;
 
-use smb_dtyp::binrw_util::prelude::*;
+use crate::binrw_util::prelude::*;
 
 use super::ACE;
 

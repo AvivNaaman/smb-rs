@@ -1,12 +1,10 @@
 #![cfg(not(feature = "single_threaded"))]
 use serial_test::serial;
 use smb::{
-    ConnectionConfig, Directory, FileCreateArgs,
-    connection::EncryptionMode,
-    sync_helpers::*,
+    ConnectionConfig, Directory, FileCreateArgs, connection::EncryptionMode, sync_helpers::*,
 };
-use smb_msg::NotifyFilter;
 use smb_fscc::*;
+use smb_msg::NotifyFilter;
 use std::sync::Arc;
 mod common;
 

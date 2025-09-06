@@ -1,0 +1,109 @@
+[package]
+name = "smb"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
+
+[dependencies]
+smb-msg = { path = "../smb-msg" }
+smb-dtyp = { path = "../smb-dtyp" }
+smb-rpc = { path = "../smb-rpc" }
+smb-fscc = { path = "../smb-fscc" }
+
+# Encoding/Decoding
+binrw = { workspace = true }
+modular-bitfield = { workspace = true }
+
+# Async
+tokio = { workspace = true, optional = true }
+futures-core = { version = "0.3", optional = true }
+futures-util = { workspace = true, optional = true }
+tokio-util = { version = "0.7", optional = true }
+maybe-async = { workspace = true }
+
+# General utils
+rand = { workspace = true }
+log = { workspace = true }
+time = { workspace = true }
+thiserror = { workspace = true }
+paste = { workspace = true }
+
+url = "2.5.0"
+byteorder = { version = "1.5.0", optional = true }
+
+# APIs
+sspi = { version = "0.16.1", features = ["ring"], default-features = false }
+
+# Crypto
+hmac = "0.12.1"
+sha2 = "0.10.8"
+rust-kbkdf = { version = "1.1.1" }
+crypto-common = { version = "0.1" }
+aes = "0.8.4"
+aes-gcm = { version = "0.10.3", features = ["std"], optional = true }
+cmac = { version = "0.7.2", optional = true }
+ccm = { version = "0.5.0", optional = true }
+aead = { version = "0.5", optional = true }
+
+# Compression
+lz4_flex = { version = "0.11", default-features = false, features = [
+    "std",
+], optional = true }
+
+# Transport
+quinn = { version = "0.11.9", optional = true }
+rustls = { version = "0.23", default-features = false, optional = true }
+rustls-platform-verifier = { version = "0.6.1", default-features = false, optional = true }
+reqwest = { version = "0.12", default-features = false, optional = true }
+
+# Dev - Tests
+[dev-dependencies]
+test-log = "0.2"
+serial_test = "3.2"
+temp-env = { version = "0.3.6", features = ["async_closure"] }
+
+[features]
+default = ["sign", "encrypt", "compress", "async", "kerberos"]
+
+# Threading models
+async = ["dep:tokio", "dep:futures-core", "dep:tokio-util", "dep:futures-util"]
+multi_threaded = ["__is_sync"]
+single_threaded = ["__is_sync"]
+__is_sync = ["maybe-async/is_sync", "smb-rpc/is_sync", "reqwest?/blocking"]
+
+# Compression
+compress_pattern_v1 = []
+compress_lz4 = ["dep:lz4_flex"]
+compress = ["compress_pattern_v1", "compress_lz4"]
+
+# Encryption
+encrypt_aes128ccm = ["dep:ccm", "dep:aead"]
+encrypt_aes256ccm = ["dep:ccm", "dep:aead"]
+encrypt_aesccm = ["encrypt_aes128ccm", "encrypt_aes256ccm"]
+encrypt_aes128gcm = ["dep:aes-gcm", "dep:aead"]
+encrypt_aes256gcm = ["dep:aes-gcm", "dep:aead"]
+encrypt_aesgcm = ["encrypt_aes128gcm", "encrypt_aes256gcm"]
+encrypt = ["encrypt_aesccm", "encrypt_aesgcm"]
+
+# Signing
+sign_gmac = ["dep:aes-gcm"]
+sign_cmac = ["dep:cmac"]
+sign_hmac = []
+sign = ["sign_gmac", "sign_cmac", "sign_hmac"]
+
+# Transport
+quic = ["dep:quinn", "dep:rustls", "dep:rustls-platform-verifier"]
+
+# Kerberos requires reqwest for HTTP transport, for kerberos
+kerberos = ["reqwest", "dep:byteorder"]
+
+[package.metadata.docs.rs]
+features = ["async", "sign", "encrypt", "compress", "kerberos", "quic"]
+no-default-features = true

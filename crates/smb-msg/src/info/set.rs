@@ -1,12 +1,12 @@
 //! SMB2 Set Info Request/Response messages.
 
-use crate::{packets::security::SecurityDescriptor, query_info_data};
-use smb_msg::FileId;
+use crate::{FileId, query_info_data};
 
 use super::{NullByte, QueryQuotaInfo, common::*};
-use crate::packets::{binrw_util::prelude::*, fscc::*};
 use binrw::io::TakeSeekExt;
 use binrw::prelude::*;
+use smb_dtyp::{SecurityDescriptor, binrw_util::prelude::*};
+use smb_fscc::*;
 
 #[binrw::binrw]
 #[derive(Debug)]
@@ -100,12 +100,9 @@ pub struct SetInfoResponse {
 
 #[cfg(test)]
 mod tests {
-    use crate::{
-        guid,
-        packets::{guid::Guid, smb2::*},
-    };
-
     use super::*;
+    use crate::*;
+    use smb_dtyp::*;
 
     #[test]
     fn test_set_info_request_write() {
