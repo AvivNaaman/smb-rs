@@ -1,4 +1,4 @@
-use crate::connection::transformer::Transformer;
+use crate::connection::transformer::{OutgoingMessageData, Transformer};
 use crate::connection::transport::{SmbTransport, SmbTransportWrite};
 use crate::connection::worker::Worker;
 use crate::msg_handler::ReceiveOptions;
@@ -184,7 +184,7 @@ where
     #[maybe_async]
     pub async fn outgoing_data_callback(
         self: &Arc<Self>,
-        message: Option<Vec<u8>>,
+        message: Option<OutgoingMessageData>,
         wtransport: &mut dyn SmbTransportWrite,
     ) -> crate::Result<()> {
         let message = match message {
@@ -199,7 +199,12 @@ where
                 }
             }
         };
-        wtransport.send(message.as_ref()).await?;
+        wtransport
+            .send_additional(
+                message.message_data.as_ref(),
+                message.additional_data.as_ref(),
+            )
+            .await?;
 
         Ok(())
     }

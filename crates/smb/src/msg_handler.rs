@@ -19,6 +19,9 @@ pub struct OutgoingMessage {
     /// Whether this request also expects a response.
     /// This value defaults to true.
     pub has_response: bool,
+
+    /// Zero copy support
+    pub additional_data: Option<Arc<[u8]>>,
 }
 
 impl OutgoingMessage {
@@ -29,7 +32,13 @@ impl OutgoingMessage {
             compress: true,
             encrypt: false,
             has_response: true,
+            additional_data: None,
         }
+    }
+
+    pub fn with_additional_data(mut self, data: Arc<[u8]>) -> Self {
+        self.additional_data = Some(data);
+        self
     }
 }
 

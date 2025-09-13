@@ -131,8 +131,24 @@ impl File {
     /// * `pos` - The offset in the file to write to.
     /// # Returns
     /// The number of bytes written.
+    /// # Note
+    /// this method copies the data from `buf` into an internal buffer,
+    /// which is then sent to the server.
+    /// If you want to avoid this copy, use [`File::write_block_zc`] instead.
     #[maybe_async]
+    #[inline]
     pub async fn write_block(&self, buf: &[u8], pos: u64) -> std::io::Result<usize> {
+        self.write_block_zc(buf.into(), pos).await
+    }
+
+    /// Write a block of data to an opened file, without copying the data.
+    /// # Arguments
+    /// * `buf` - The data to write.
+    /// * `pos` - The offset in the file to write to.
+    /// # Returns
+    /// The number of bytes written.
+    #[maybe_async]
+    pub async fn write_block_zc(&self, buf: Arc<[u8]>, pos: u64) -> std::io::Result<usize> {
         if buf.is_empty() {
             return Ok(0);
         }
@@ -151,18 +167,22 @@ impl File {
             self.handle.name()
         );
 
+        // Arc is accepted to provide safety regarding the buffer's lifetime,
+        // without forcing an actual copy of the data.
+        let outgoing = OutgoingMessage::new(
+            WriteRequest::new(
+                pos,
+                self.handle.file_id().map_err(std::io::Error::other)?,
+                WriteFlags::new(),
+                buf.len() as u32,
+            )
+            .into(),
+        )
+        .with_additional_data(Arc::clone(&buf));
+
         let response = self
             .handle
-            .send_recvo(
-                WriteRequest {
-                    offset: pos,
-                    file_id: self.handle.file_id().map_err(std::io::Error::other)?,
-                    flags: WriteFlags::new(),
-                    buffer: buf.to_vec(),
-                }
-                .into(),
-                ReceiveOptions::new().with_allow_async(true),
-            )
+            .sendo_recvo(outgoing, ReceiveOptions::new().with_allow_async(true))
             .await
             .map_err(|e| std::io::Error::other(e.to_string()))?;
 

@@ -29,6 +29,12 @@ struct TransformerConfig {
     negotiated: bool,
 }
 
+/// Contains the raw data of a message to be sent.
+pub struct OutgoingMessageData {
+    pub message_data: Vec<u8>,
+    pub additional_data: Arc<[u8]>,
+}
+
 impl Transformer {
     /// Notifies that the connection negotiation has been completed,
     /// with the given [`ConnectionInfo`].
@@ -157,16 +163,25 @@ impl Transformer {
 
     /// Transforms an outgoing message to a raw SMB message.
     #[maybe_async]
-    pub async fn transform_outgoing(&self, mut msg: OutgoingMessage) -> crate::Result<Vec<u8>> {
+    pub async fn transform_outgoing(
+        &self,
+        mut msg: OutgoingMessage,
+    ) -> crate::Result<OutgoingMessageData> {
         let should_encrypt = msg.encrypt;
         let should_sign = msg.message.header.flags.signed();
         let set_session_id = msg.message.header.session_id;
 
-        let mut data = Vec::new();
-        msg.message.write(&mut Cursor::new(&mut data))?;
+        let mut outgoing_data = OutgoingMessageData {
+            message_data: Vec::new(),
+            additional_data: msg.additional_data.take().unwrap_or_default(),
+        };
+        msg.message
+            .write(&mut Cursor::new(&mut outgoing_data.message_data))?;
 
         // 0. Update preauth hash as needed.
-        self.step_preauth_hash(&data).await?;
+        // it is assumed zero-copy is not used for non-data messages,
+        // such as negotiate/session setup, and so, we ignore additional data here.
+        self.step_preauth_hash(&outgoing_data.message_data).await?;
 
         // 1. Sign
         if should_sign {
@@ -183,7 +198,13 @@ impl Transformer {
                     .signer()?
                     .clone()
             };
-            signer.sign_message(&mut msg.message.header, &mut data)?;
+
+            signer.sign_message(
+                &mut msg.message.header,
+                &mut outgoing_data.message_data,
+                &outgoing_data.additional_data,
+            )?;
+
             log::debug!(
                 "Message #{} signed (signature={}).",
                 msg.message.header.message_id,
@@ -193,30 +214,50 @@ impl Transformer {
 
         // 2. Compress
         const COMPRESSION_THRESHOLD: usize = 1024;
-        data = {
-            if msg.compress && data.len() > COMPRESSION_THRESHOLD {
+        outgoing_data = {
+            let total_data_size =
+                outgoing_data.message_data.len() + outgoing_data.additional_data.len();
+            if msg.compress && total_data_size > COMPRESSION_THRESHOLD {
                 let rconfig = self.config.read().await?;
                 if let Some(compress) = &rconfig.compress {
-                    let compressed = compress.0.compress(&data)?;
-                    data.clear();
-                    let mut cursor = Cursor::new(&mut data);
+                    // Build a vector of the entire data. In the future, this may be optimized to avoid copying.
+                    // currently, there's not chained compression, and copy will occur anyway.
+                    outgoing_data
+                        .message_data
+                        .extend_from_slice(&outgoing_data.additional_data);
+                    let compressed = compress.0.compress(&outgoing_data.message_data)?;
+                    outgoing_data.message_data.clear();
+                    let mut cursor = Cursor::new(&mut outgoing_data.message_data);
                     Request::Compressed(compressed).write(&mut cursor)?;
+                    outgoing_data.additional_data = Arc::new([]);
                 };
             }
-            data
+            outgoing_data
         };
 
         // 3. Encrypt
-        let data = {
+        let outgoing_data = {
             if msg.encrypt {
                 let session = self.get_session(set_session_id).await?;
                 let encryptor = { session.lock().await?.encryptor()?.cloned() };
                 if let Some(mut encryptor) = encryptor {
                     debug_assert!(should_encrypt && !should_sign);
-                    let encrypted = encryptor.encrypt_message(data, set_session_id)?;
+
+                    // Encryption requires copying the additional data anyway, so just extend the message out of it
+                    outgoing_data
+                        .message_data
+                        .extend_from_slice(&outgoing_data.additional_data);
+
+                    let encrypted =
+                        encryptor.encrypt_message(outgoing_data.message_data, set_session_id)?;
+                    // TODO: eliminate double copy here
                     let mut cursor = Cursor::new(Vec::new());
                     Request::Encrypted(encrypted).write(&mut cursor)?;
-                    cursor.into_inner()
+
+                    OutgoingMessageData {
+                        message_data: cursor.into_inner(),
+                        additional_data: Arc::new([]),
+                    }
                 } else {
                     return Err(crate::Error::TranformFailed(TransformError {
                         outgoing: true,
@@ -227,11 +268,11 @@ impl Transformer {
                     }));
                 }
             } else {
-                data
+                outgoing_data
             }
         };
 
-        Ok(data)
+        Ok(outgoing_data)
     }
 
     /// Transforms an incoming message buffer to an [`IncomingMessage`].

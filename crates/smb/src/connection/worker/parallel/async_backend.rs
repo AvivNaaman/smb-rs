@@ -1,3 +1,4 @@
+use crate::connection::transformer::OutgoingMessageData;
 use crate::connection::transport::traits::{SmbTransport, SmbTransportRead, SmbTransportWrite};
 use crate::msg_handler::IncomingMessage;
 use crate::{error::*, sync_helpers::*};
@@ -62,7 +63,7 @@ impl AsyncBackend {
     async fn loop_send(
         self: Arc<Self>,
         mut wtransport: Box<dyn SmbTransportWrite>,
-        mut send_channel: mpsc::Receiver<Vec<u8>>,
+        mut send_channel: mpsc::Receiver<OutgoingMessageData>,
         worker: Arc<ParallelWorker<Self>>,
     ) {
         log::debug!("Starting worker loop.");
@@ -114,7 +115,7 @@ impl AsyncBackend {
     async fn handle_next_send(
         &self,
         wtransport: &mut dyn SmbTransportWrite,
-        send_channel: &mut mpsc::Receiver<Vec<u8>>,
+        send_channel: &mut mpsc::Receiver<OutgoingMessageData>,
         worker: &Arc<ParallelWorker<Self>>,
     ) -> crate::Result<()> {
         select! {
@@ -132,7 +133,7 @@ impl AsyncBackend {
 
 #[cfg(feature = "async")]
 impl MultiWorkerBackend for AsyncBackend {
-    type SendMessage = Vec<u8>;
+    type SendMessage = OutgoingMessageData;
 
     type AwaitingNotifier = oneshot::Sender<crate::Result<IncomingMessage>>;
     type AwaitingWaiter = oneshot::Receiver<crate::Result<IncomingMessage>>;
@@ -179,7 +180,7 @@ impl MultiWorkerBackend for AsyncBackend {
         loop_handles.1.await?;
         Ok(())
     }
-    fn wrap_msg_to_send(msg: Vec<u8>) -> Self::SendMessage {
+    fn wrap_msg_to_send(msg: OutgoingMessageData) -> Self::SendMessage {
         msg
     }
 

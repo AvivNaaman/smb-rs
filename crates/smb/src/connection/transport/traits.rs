@@ -30,34 +30,63 @@ pub trait SmbTransportWrite: Send {
     #[cfg(not(feature = "async"))]
     fn send_raw(&mut self, buf: &[u8]) -> crate::Result<()>;
 
+    #[cfg(not(feature = "async"))]
+    #[inline]
+    fn send(&mut self, message: &[u8]) -> crate::Result<()> {
+        self.send_additional(message, &[])
+    }
+
     #[cfg(feature = "async")]
+    #[inline]
     fn send<'a>(&'a mut self, message: &'a [u8]) -> BoxFuture<'a, crate::Result<()>> {
+        self.send_additional(message, &[])
+    }
+
+    #[cfg(feature = "async")]
+    fn send_additional<'a>(
+        &'a mut self,
+        message: &'a [u8],
+        additional: &'a [u8],
+    ) -> BoxFuture<'a, crate::Result<()>> {
         async {
             // Transport Header
             let header = SmbTcpMessageHeader {
-                stream_protocol_length: message.len() as u32,
+                stream_protocol_length: message.len() as u32 + additional.len() as u32,
             };
             let mut header_buf = Vec::with_capacity(SmbTcpMessageHeader::SIZE);
             header.write(&mut Cursor::new(&mut header_buf))?;
             self.send_raw(&header_buf).await?;
 
             // Content - final response.
-            self.send_raw(message).await
+            self.send_raw(message).await?;
+            // Additional data, if any.
+            if !additional.is_empty() {
+                self.send_raw(additional).await
+            } else {
+                Ok(())
+            }
         }
         .boxed()
     }
+
     #[cfg(not(feature = "async"))]
-    fn send(&mut self, message: &[u8]) -> crate::Result<()> {
+    fn send_additional(&mut self, message: &[u8], additional: &[u8]) -> crate::Result<()> {
         // Transport Header
         let header = SmbTcpMessageHeader {
-            stream_protocol_length: message.len() as u32,
+            stream_protocol_length: message.len() as u32 + additional.len() as u32,
         };
         let mut header_buf = Vec::with_capacity(SmbTcpMessageHeader::SIZE);
         header.write(&mut Cursor::new(&mut header_buf))?;
         self.send_raw(&header_buf)?;
 
         // Content - final response.
-        self.send_raw(message)
+        self.send_raw(message)?;
+        // Additional data, if any.
+        if !additional.is_empty() {
+            self.send_raw(additional)
+        } else {
+            Ok(())
+        }
     }
 }
 
