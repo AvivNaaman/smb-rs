@@ -49,6 +49,7 @@ macro_rules! make_content {
 
 #[derive(BinRead, BinWrite, Debug)]
 #[brw(import(command: &Command))]
+#[brw(little)]
 pub enum RequestContent {
     $(
         #[br(pre_assert(matches!(command, Command::$cmd)))]
@@ -68,6 +69,7 @@ pub enum RequestContent {
 
 #[derive(BinRead, BinWrite, Debug)]
 #[brw(import(command: &Command))]
+#[brw(little)]
 pub enum ResponseContent {
     $(
         #[br(pre_assert(matches!(command, Command::$cmd)))]

@@ -1,6 +1,7 @@
-use crate::connection::transformer::OutgoingMessageData;
 use crate::connection::transport::traits::{SmbTransport, SmbTransportRead, SmbTransportWrite};
 use crate::msg_handler::IncomingMessage;
+#[cfg(feature = "async")]
+use crate::util::iovec::IoVec;
 use crate::{error::*, sync_helpers::*};
 use std::sync::Arc;
 use std::time::Duration;
@@ -63,7 +64,7 @@ impl AsyncBackend {
     async fn loop_send(
         self: Arc<Self>,
         mut wtransport: Box<dyn SmbTransportWrite>,
-        mut send_channel: mpsc::Receiver<OutgoingMessageData>,
+        mut send_channel: mpsc::Receiver<IoVec>,
         worker: Arc<ParallelWorker<Self>>,
     ) {
         log::debug!("Starting worker loop.");
@@ -115,7 +116,7 @@ impl AsyncBackend {
     async fn handle_next_send(
         &self,
         wtransport: &mut dyn SmbTransportWrite,
-        send_channel: &mut mpsc::Receiver<OutgoingMessageData>,
+        send_channel: &mut mpsc::Receiver<IoVec>,
         worker: &Arc<ParallelWorker<Self>>,
     ) -> crate::Result<()> {
         select! {
@@ -133,7 +134,7 @@ impl AsyncBackend {
 
 #[cfg(feature = "async")]
 impl MultiWorkerBackend for AsyncBackend {
-    type SendMessage = OutgoingMessageData;
+    type SendMessage = IoVec;
 
     type AwaitingNotifier = oneshot::Sender<crate::Result<IncomingMessage>>;
     type AwaitingWaiter = oneshot::Receiver<crate::Result<IncomingMessage>>;
@@ -180,7 +181,7 @@ impl MultiWorkerBackend for AsyncBackend {
         loop_handles.1.await?;
         Ok(())
     }
-    fn wrap_msg_to_send(msg: OutgoingMessageData) -> Self::SendMessage {
+    fn wrap_msg_to_send(msg: IoVec) -> Self::SendMessage {
         msg
     }
 

@@ -28,7 +28,7 @@ pub struct EncryptedHeader {
 
 impl EncryptedHeader {
     const MAGIC_SIZE: usize = 4;
-    const STRUCTURE_SIZE: usize = 4
+    pub const STRUCTURE_SIZE: usize = 4
         + size_of::<u128>()
         + size_of::<EncryptionNonce>()
         + size_of::<u32>()

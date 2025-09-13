@@ -1,4 +1,5 @@
 use crate::sync_helpers::*;
+use crate::util::iovec::IoVec;
 use crate::{compression::*, msg_handler::*, session::SessionInfo};
 use binrw::prelude::*;
 use maybe_async::*;
@@ -27,12 +28,6 @@ struct TransformerConfig {
     compress: Option<(Compressor, Decompressor)>,
 
     negotiated: bool,
-}
-
-/// Contains the raw data of a message to be sent.
-pub struct OutgoingMessageData {
-    pub message_data: Vec<u8>,
-    pub additional_data: Arc<[u8]>,
 }
 
 impl Transformer {
@@ -120,7 +115,7 @@ impl Transformer {
     ///
     ///  Calculates the next preauth integrity hash value, if required.
     #[maybe_async]
-    async fn step_preauth_hash(&self, raw: &[u8]) -> crate::Result<()> {
+    async fn step_preauth_hash(&self, raw: &IoVec) -> crate::Result<()> {
         let mut pa_hash = self.preauth_hash.lock().await?;
         // If already finished -- do nothing.
         if matches!(*pa_hash, Some(PreauthHashState::Finished(_))) {
@@ -131,7 +126,9 @@ impl Transformer {
             return Ok(());
         }
         // Otherwise, update the hash!
-        *pa_hash = pa_hash.take().unwrap().next(raw).into();
+        for buf in raw.iter() {
+            *pa_hash = pa_hash.take().unwrap().next(buf).into();
+        }
         Ok(())
     }
 
@@ -163,25 +160,26 @@ impl Transformer {
 
     /// Transforms an outgoing message to a raw SMB message.
     #[maybe_async]
-    pub async fn transform_outgoing(
-        &self,
-        mut msg: OutgoingMessage,
-    ) -> crate::Result<OutgoingMessageData> {
+    pub async fn transform_outgoing(&self, mut msg: OutgoingMessage) -> crate::Result<IoVec> {
         let should_encrypt = msg.encrypt;
         let should_sign = msg.message.header.flags.signed();
         let set_session_id = msg.message.header.session_id;
 
-        let mut outgoing_data = OutgoingMessageData {
-            message_data: Vec::new(),
-            additional_data: msg.additional_data.take().unwrap_or_default(),
-        };
-        msg.message
-            .write(&mut Cursor::new(&mut outgoing_data.message_data))?;
+        let mut outgoing_data = IoVec::default();
+        // Plain header + content
+        {
+            let buffer = outgoing_data.add_owned(Vec::with_capacity(Header::STRUCT_SIZE));
+            msg.message.write(&mut Cursor::new(buffer))?;
+        }
+        // Additional data, if any
+        if msg.additional_data.as_ref().is_some_and(|d| !d.is_empty()) {
+            outgoing_data.add_shared(msg.additional_data.unwrap().clone());
+        }
 
         // 0. Update preauth hash as needed.
         // it is assumed zero-copy is not used for non-data messages,
         // such as negotiate/session setup, and so, we ignore additional data here.
-        self.step_preauth_hash(&outgoing_data.message_data).await?;
+        self.step_preauth_hash(&outgoing_data).await?;
 
         // 1. Sign
         if should_sign {
@@ -199,11 +197,7 @@ impl Transformer {
                     .clone()
             };
 
-            signer.sign_message(
-                &mut msg.message.header,
-                &mut outgoing_data.message_data,
-                &outgoing_data.additional_data,
-            )?;
+            signer.sign_message(&mut msg.message.header, &mut outgoing_data)?;
 
             log::debug!(
                 "Message #{} signed (signature={}).",
@@ -215,62 +209,51 @@ impl Transformer {
         // 2. Compress
         const COMPRESSION_THRESHOLD: usize = 1024;
         outgoing_data = {
-            let total_data_size =
-                outgoing_data.message_data.len() + outgoing_data.additional_data.len();
-            if msg.compress && total_data_size > COMPRESSION_THRESHOLD {
+            if msg.compress && outgoing_data.total_size() > COMPRESSION_THRESHOLD {
                 let rconfig = self.config.read().await?;
                 if let Some(compress) = &rconfig.compress {
                     // Build a vector of the entire data. In the future, this may be optimized to avoid copying.
                     // currently, there's not chained compression, and copy will occur anyway.
-                    outgoing_data
-                        .message_data
-                        .extend_from_slice(&outgoing_data.additional_data);
-                    let compressed = compress.0.compress(&outgoing_data.message_data)?;
-                    outgoing_data.message_data.clear();
-                    let mut cursor = Cursor::new(&mut outgoing_data.message_data);
-                    Request::Compressed(compressed).write(&mut cursor)?;
-                    outgoing_data.additional_data = Arc::new([]);
-                };
-            }
-            outgoing_data
-        };
+                    outgoing_data.consolidate();
+                    let compressed = compress.0.compress(outgoing_data.first().unwrap())?;
 
-        // 3. Encrypt
-        let outgoing_data = {
-            if msg.encrypt {
-                let session = self.get_session(set_session_id).await?;
-                let encryptor = { session.lock().await?.encryptor()?.cloned() };
-                if let Some(mut encryptor) = encryptor {
-                    debug_assert!(should_encrypt && !should_sign);
-
-                    // Encryption requires copying the additional data anyway, so just extend the message out of it
-                    outgoing_data
-                        .message_data
-                        .extend_from_slice(&outgoing_data.additional_data);
-
-                    let encrypted =
-                        encryptor.encrypt_message(outgoing_data.message_data, set_session_id)?;
-                    // TODO: eliminate double copy here
-                    let mut cursor = Cursor::new(Vec::new());
-                    Request::Encrypted(encrypted).write(&mut cursor)?;
-
-                    OutgoingMessageData {
-                        message_data: cursor.into_inner(),
-                        additional_data: Arc::new([]),
-                    }
+                    let mut compressed_result = IoVec::default();
+                    let write_compressed =
+                        compressed_result.add_owned(Vec::with_capacity(compressed.total_size()));
+                    compressed.write(&mut Cursor::new(write_compressed))?;
+                    compressed_result
                 } else {
-                    return Err(crate::Error::TranformFailed(TransformError {
-                        outgoing: true,
-                        phase: TransformPhase::EncryptDecrypt,
-                        session_id: Some(set_session_id),
-                        why: "Message is required to be encrypted, but no encryptor is set up!",
-                        msg_id: Some(msg.message.header.message_id),
-                    }));
+                    outgoing_data
                 }
             } else {
                 outgoing_data
             }
         };
+
+        // 3. Encrypt
+        if should_encrypt {
+            let session = self.get_session(set_session_id).await?;
+            let encryptor = { session.lock().await?.encryptor()?.cloned() };
+            if let Some(mut encryptor) = encryptor {
+                debug_assert!(should_encrypt && !should_sign);
+
+                let encrypted_header =
+                    encryptor.encrypt_message(&mut outgoing_data, set_session_id)?;
+
+                let write_encryption_header = outgoing_data
+                    .insert_owned(0, Vec::with_capacity(EncryptedHeader::STRUCTURE_SIZE));
+
+                encrypted_header.write(&mut Cursor::new(write_encryption_header))?;
+            } else {
+                return Err(crate::Error::TranformFailed(TransformError {
+                    outgoing: true,
+                    phase: TransformPhase::EncryptDecrypt,
+                    session_id: Some(set_session_id),
+                    why: "Message is required to be encrypted, but no encryptor is set up!",
+                    msg_id: Some(msg.message.header.message_id),
+                }));
+            }
+        }
 
         Ok(outgoing_data)
     }
@@ -331,10 +314,11 @@ impl Transformer {
             _ => panic!("Unexpected message type"),
         };
 
+        let iovec = IoVec::from(raw);
         // If fails, return TranformFailed, with message id.
         // this allows to notify the error to the task that was waiting for this message.
         match self
-            .verify_plain_incoming(&mut message, &raw, &mut form)
+            .verify_plain_incoming(&mut message, &iovec, &mut form)
             .await
         {
             Ok(_) => {}
@@ -350,9 +334,13 @@ impl Transformer {
             }
         };
 
-        self.step_preauth_hash(&raw).await?;
+        self.step_preauth_hash(&iovec).await?;
 
-        Ok(IncomingMessage { message, raw, form })
+        Ok(IncomingMessage {
+            message,
+            raw: iovec,
+            form,
+        })
     }
 
     /// (Internal)
@@ -364,7 +352,7 @@ impl Transformer {
     async fn verify_plain_incoming(
         &self,
         message: &mut PlainResponse,
-        raw: &[u8],
+        raw: &IoVec,
         form: &mut MessageForm,
     ) -> crate::Result<()> {
         // Check if signing check is required.

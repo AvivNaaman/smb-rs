@@ -3,7 +3,7 @@
 use binrw::prelude::*;
 use std::io::Cursor;
 
-use crate::{Error, crypto};
+use crate::{Error, crypto, util::iovec::IoVec};
 use smb_msg::Header;
 
 /// A struct for writing and verifying SMB message signatures.
@@ -20,8 +20,10 @@ impl MessageSigner {
     }
 
     /// Verifies the signature of a message.
-    pub fn verify_signature(&mut self, header: &mut Header, raw_data: &[u8]) -> crate::Result<()> {
-        let calculated_signature = self.calculate_signature(header, raw_data, &[])?;
+    ///
+    /// This function assumes that the provided raw_data contains the plain message header is the beginning of the first buffer.
+    pub fn verify_signature(&mut self, header: &mut Header, data: &IoVec) -> crate::Result<()> {
+        let calculated_signature = self._calculate_signature(header, data)?;
         if calculated_signature != header.signature {
             return Err(Error::SignatureVerificationFailed);
         }
@@ -29,27 +31,23 @@ impl MessageSigner {
     }
 
     /// Signs a message.
-    pub fn sign_message(
-        &mut self,
-        header: &mut Header,
-        raw_data: &mut [u8],
-        additional_data: &[u8],
-    ) -> crate::Result<()> {
-        debug_assert!(raw_data.len() >= Header::STRUCT_SIZE);
+    ///
+    /// This function assumes that the provided iovec contains the plain message header in the beginning of the first buffer.
+    pub fn sign_message(&mut self, header: &mut Header, all_data: &mut IoVec) -> crate::Result<()> {
+        header.signature = self._calculate_signature(header, all_data)?;
 
-        header.signature = self.calculate_signature(header, raw_data, additional_data)?;
         // Update raw data to include the signature.
-        let mut header_writer = Cursor::new(&mut raw_data[0..Header::STRUCT_SIZE]);
+        let header_buffer = all_data.get_mut(0).unwrap();
+        debug_assert!(
+            header_buffer.len() >= Header::STRUCT_SIZE,
+            "First buffer must contain the entire header."
+        );
+        let mut header_writer = Cursor::new(&mut header_buffer[0..Header::STRUCT_SIZE]);
         header.write(&mut header_writer)?;
         Ok(())
     }
 
-    fn calculate_signature(
-        &mut self,
-        header: &mut Header,
-        msg_data: &[u8],
-        additional_data: &[u8],
-    ) -> crate::Result<u128> {
+    fn _calculate_signature(&mut self, header: &mut Header, data: &IoVec) -> crate::Result<u128> {
         // Write header with signature set to 0.
         let signture_backup = header.signature;
         header.signature = 0;
@@ -61,13 +59,15 @@ impl MessageSigner {
         self.signing_algo.start(header);
         self.signing_algo.update(&header_bytes.into_inner());
 
-        // And write rest of the raw message.
-        let message_body = &msg_data[Header::STRUCT_SIZE..];
-        self.signing_algo.update(message_body);
+        if data.first().unwrap().len() >= Header::STRUCT_SIZE {
+            // If the first buffer is larger than the header, we need to skip the header part.
+            self.signing_algo
+                .update(&data.first().unwrap()[Header::STRUCT_SIZE..]);
+        }
 
-        // Additional data, if any.
-        if !additional_data.is_empty() {
-            self.signing_algo.update(additional_data);
+        // It is assumed here, too, that the first buffer is the header.
+        for buf in data.iter().skip(1) {
+            self.signing_algo.update(buf);
         }
 
         Ok(self.signing_algo.finalize())
@@ -98,26 +98,28 @@ mod tests {
     fn test_calc_signature() {
         // Some random session logoff request for testing.
 
+        use crate::util::iovec::{IoVec, IoVecBuf};
         use smb_msg::SigningAlgorithmId;
-        let raw_data = vec![
+
+        let header_data = vec![
             0xfeu8, 0x53, 0x4d, 0x42, 0x40, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2, 0x0, 0x1, 0x0,
             0x18, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x9, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
             0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x53, 0x20, 0xc, 0x21, 0x0, 0x0, 0x0, 0x0, 0x76,
             0x23, 0x4b, 0x3c, 0x81, 0x2f, 0x51, 0xab, 0x8a, 0x5c, 0xf9, 0xfa, 0x43, 0xd4, 0xeb,
-            0x28, 0x4, 0x0, 0x0,
+            0x28,
         ];
-        let additional_data = vec![0x0];
+        let next_data = vec![0x4, 0x0, 0x0, 0x0];
         let mut header = Header::read_le(&mut Cursor::new(
-            &raw_data.as_slice()[..=Header::STRUCT_SIZE],
+            &header_data.as_slice()[..Header::STRUCT_SIZE],
         ))
         .unwrap();
 
         let mut signer = MessageSigner::new(
             make_signing_algo(SigningAlgorithmId::AesGmac, &TEST_SIGNING_KEY).unwrap(),
         );
-        let signature = signer
-            .calculate_signature(&mut header, &raw_data, &additional_data)
-            .unwrap();
+
+        let iovec = IoVec::from(vec![IoVecBuf::from(header_data), IoVecBuf::from(next_data)]);
+        let signature = signer._calculate_signature(&mut header, &iovec).unwrap();
         assert_eq!(signature, 0x28ebd443faf95c8aab512f813c4b2376);
     }
 }

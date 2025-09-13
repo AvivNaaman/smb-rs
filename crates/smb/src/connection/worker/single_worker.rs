@@ -48,7 +48,7 @@ impl Worker for SingleWorker {
         let mut t = self.transport.lock()?;
         t.get_mut()
             .ok_or(crate::Error::NotConnected)?
-            .send_additional(&msg_to_send.message_data, &msg_to_send.additional_data)?;
+            .send(&msg_to_send)?;
 
         let hash = match finalize_preauth_hash {
             true => self.transformer.finalize_preauth_hash()?,

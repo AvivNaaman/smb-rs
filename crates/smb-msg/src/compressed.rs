@@ -10,9 +10,25 @@ use binrw::prelude::*;
 
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
+#[brw(little)]
 pub enum CompressedMessage {
     Unchained(CompressedUnchainedMessage),
     Chained(CompressedChainedMessage),
+}
+
+impl CompressedMessage {
+    pub fn total_size(&self) -> usize {
+        match self {
+            CompressedMessage::Unchained(m) => {
+                m.data.len() + CompressedUnchainedMessage::STRUCT_SIZE
+            }
+            CompressedMessage::Chained(m) => {
+                m.items.iter().map(|i| i.payload_data.len()).sum::<usize>()
+                    + m.items.len() * 4
+                    + CompressedChainedMessage::STRUCT_SIZE
+            }
+        }
+    }
 }
 
 #[binrw::binrw]
@@ -33,6 +49,14 @@ pub struct CompressedUnchainedMessage {
     pub data: Vec<u8>,
 }
 
+impl CompressedUnchainedMessage {
+    const MAGIC_SIZE: usize = 4;
+    pub const STRUCT_SIZE: usize = Self::MAGIC_SIZE
+        + std::mem::size_of::<u32>() * 2
+        + std::mem::size_of::<CompressionAlgorithm>()
+        + std::mem::size_of::<u16>();
+}
+
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[brw(magic(b"\xfcSMB"), little)]
@@ -40,6 +64,10 @@ pub struct CompressedChainedMessage {
     pub original_size: u32,
     #[br(parse_with = binrw::helpers::until_eof)]
     pub items: Vec<CompressedChainedItem>,
+}
+
+impl CompressedChainedMessage {
+    pub const STRUCT_SIZE: usize = std::mem::size_of::<u32>() + 4;
 }
 
 #[binrw::binrw]

@@ -1,4 +1,4 @@
-use crate::connection::preauth_hash::PreauthHashValue;
+use crate::{connection::preauth_hash::PreauthHashValue, util::IoVec};
 use maybe_async::*;
 use smb_msg::{Command, PlainRequest, PlainResponse, RequestContent, Status};
 use std::sync::Arc;
@@ -63,7 +63,7 @@ impl SendMessageResult {
 pub struct IncomingMessage {
     pub message: PlainResponse,
     /// The raw message received from the server, after applying transformations (e.g. decompression).
-    pub raw: Vec<u8>,
+    pub raw: IoVec,
 
     // How did the message arrive?
     pub form: MessageForm,
