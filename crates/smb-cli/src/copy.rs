@@ -116,7 +116,7 @@ impl CopyFile {
 #[maybe_async]
 pub async fn copy(cmd: &CopyCmd, cli: &Cli) -> Result<(), Box<dyn Error>> {
     if matches!(cmd.from, Path::Local(_)) && matches!(cmd.to, Path::Local(_)) {
-        return Err("Copying between two local files is not supported".into());
+        return Err("Copying between two local files is not supported. Use `cp` or `copy` shell commands instead :)".into());
     }
 
     let client = Client::new(cli.make_smb_client_config());
