@@ -1,14 +1,19 @@
 use crate::{Cli, path::*};
 use clap::Parser;
+use indicatif::{ProgressBar, ProgressStyle};
 use maybe_async::*;
 use smb::sync_helpers::*;
 use smb::{Client, CreateOptions, FileAccessMask, FileAttributes, resource::*};
 use std::error::Error;
 #[cfg(not(feature = "async"))]
 use std::fs;
+#[cfg(not(feature = "single_threaded"))]
+use std::sync::Arc;
+#[cfg(feature = "multi_threaded")]
+use std::thread::sleep;
 
 #[cfg(feature = "async")]
-use tokio::fs;
+use tokio::{fs, time::sleep};
 
 #[derive(Parser, Debug)]
 pub struct CopyCmd {
@@ -91,10 +96,10 @@ impl CopyFile {
         match self.value {
             Local(from_local) => match to.value {
                 Local(_) => unreachable!(),
-                Remote(to_remote) => block_copy(from_local, to_remote, 16).await?,
+                Remote(to_remote) => Self::do_copy(from_local, to_remote, 16).await?,
             },
             Remote(from_remote) => match to.value {
-                Local(to_local) => block_copy(from_remote, to_local, 16).await?,
+                Local(to_local) => Self::do_copy(from_remote, to_local, 16).await?,
                 Remote(to_remote) => {
                     if to.path.as_remote().unwrap().server()
                         == self.path.as_remote().unwrap().server()
@@ -104,12 +109,89 @@ impl CopyFile {
                         // Use server-side copy if both files are on the same server
                         to_remote.srv_copy(&from_remote).await?
                     } else {
-                        block_copy(from_remote, to_remote, 8).await?
+                        Self::do_copy(from_remote, to_remote, 8).await?
                     }
                 }
             },
         }
         Ok(())
+    }
+
+    #[maybe_async]
+    #[cfg(not(feature = "single_threaded"))]
+    pub async fn do_copy<
+        F: ReadAt + GetLen + Send + Sync + 'static,
+        T: WriteAt + SetLen + Send + Sync + 'static,
+    >(
+        from: F,
+        to: T,
+        jobs: usize,
+    ) -> smb::Result<()> {
+        let state = prepare_parallel_copy(&from, &to, jobs).await?;
+        let state = Arc::new(state);
+        let progress_handle = Self::progress(state.clone());
+        start_parallel_copy(from, to, state).await?;
+
+        #[cfg(feature = "async")]
+        progress_handle.await.unwrap();
+        #[cfg(not(feature = "async"))]
+        progress_handle.join().unwrap();
+        Ok(())
+    }
+
+    /// Single-threaded copy implementation.
+    #[cfg(feature = "single_threaded")]
+    pub fn do_copy<F: ReadAt + GetLen, T: WriteAt + SetLen>(
+        from: F,
+        to: T,
+        _jobs: usize,
+    ) -> smb::Result<()> {
+        let progress = Self::make_progress_bar(from.get_len()?);
+        block_copy_progress(
+            from,
+            to,
+            Some(&move |current| {
+                progress.set_position(current);
+            }),
+        )
+    }
+
+    /// Async progress bar task starter.
+    #[cfg(feature = "async")]
+    fn progress(state: Arc<CopyState>) -> tokio::task::JoinHandle<()> {
+        tokio::task::spawn(async move { Self::progress_loop(state).await })
+    }
+
+    /// Thread progress bar task starter.
+    #[cfg(feature = "multi_threaded")]
+    fn progress(state: Arc<CopyState>) -> std::thread::JoinHandle<()> {
+        std::thread::spawn(move || {
+            Self::progress_loop(state);
+        })
+    }
+
+    /// Thread/task entrypoint for measuring and displaying copy progress.
+    #[cfg(not(feature = "single_threaded"))]
+    #[maybe_async]
+    async fn progress_loop(state: Arc<CopyState>) {
+        let progress_bar = Self::make_progress_bar(state.total_size());
+        loop {
+            let bytes_copied = state.bytes_copied();
+            progress_bar.set_position(bytes_copied);
+            if bytes_copied >= state.total_size() {
+                break;
+            }
+            sleep(std::time::Duration::from_millis(100)).await;
+        }
+        progress_bar.finish_with_message("Copy complete");
+    }
+
+    /// Returns a new progress bar instance for copying files.
+    fn make_progress_bar(len: u64) -> ProgressBar {
+        let progress = ProgressBar::new(len);
+        progress.set_style(ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
+                    .unwrap().progress_chars("#>-"));
+        progress
     }
 }
 

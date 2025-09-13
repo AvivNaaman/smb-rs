@@ -1,5 +1,4 @@
-#[cfg(not(feature = "async"))]
-use crate::connection::transformer::IoVec;
+use crate::util::IoVec;
 use crate::{
     connection::transport::{SmbTransport, SmbTransportRead, SmbTransportWrite},
     error::*,
