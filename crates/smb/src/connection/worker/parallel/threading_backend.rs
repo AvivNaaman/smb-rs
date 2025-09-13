@@ -1,3 +1,5 @@
+#![cfg(feature = "multi_threaded")]
+
 use crate::util::IoVec;
 use crate::{
     connection::transport::{SmbTransport, SmbTransportRead, SmbTransportWrite},
@@ -91,7 +93,6 @@ impl ThreadingBackend {
     }
 }
 
-#[cfg(not(feature = "async"))]
 impl MultiWorkerBackend for ThreadingBackend {
     type SendMessage = Option<IoVec>;
 

@@ -1,6 +1,7 @@
+#![cfg(feature = "async")]
+
 use crate::connection::transport::traits::{SmbTransport, SmbTransportRead, SmbTransportWrite};
 use crate::msg_handler::IncomingMessage;
-#[cfg(feature = "async")]
 use crate::util::iovec::IoVec;
 use crate::{error::*, sync_helpers::*};
 use std::sync::Arc;
@@ -18,7 +19,6 @@ pub struct AsyncBackend {
     token: CancellationToken,
 }
 
-#[cfg(feature = "async")]
 impl AsyncBackend {
     fn is_cancelled(&self) -> bool {
         self.token.is_cancelled()
@@ -132,7 +132,6 @@ impl AsyncBackend {
     }
 }
 
-#[cfg(feature = "async")]
 impl MultiWorkerBackend for AsyncBackend {
     type SendMessage = IoVec;
 

@@ -7,9 +7,6 @@ use std::io::Cursor;
 
 use smb_msg::SmbTcpMessageHeader;
 
-#[cfg(not(feature = "async"))]
-use crate::util::iovec::IoVec;
-#[cfg(feature = "async")]
 use crate::util::iovec::IoVec;
 
 #[allow(async_fn_in_trait)]
