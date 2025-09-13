@@ -21,7 +21,7 @@ impl MessageSigner {
 
     /// Verifies the signature of a message.
     ///
-    /// This function assumes that the provided raw_data contains the plain message header is the beginning of the first buffer.
+    /// This function assumes that the provided raw_data contains the plain message header at the beginning of the first buffer.
     pub fn verify_signature(&mut self, header: &mut Header, data: &IoVec) -> crate::Result<()> {
         let calculated_signature = self._calculate_signature(header, data)?;
         if calculated_signature != header.signature {
@@ -32,7 +32,7 @@ impl MessageSigner {
 
     /// Signs a message.
     ///
-    /// This function assumes that the provided iovec contains the plain message header in the beginning of the first buffer.
+    /// This function assumes that the provided iovec contains the plain message header at the beginning of the first buffer.
     pub fn sign_message(&mut self, header: &mut Header, all_data: &mut IoVec) -> crate::Result<()> {
         header.signature = self._calculate_signature(header, all_data)?;
 
@@ -49,11 +49,11 @@ impl MessageSigner {
 
     fn _calculate_signature(&mut self, header: &mut Header, data: &IoVec) -> crate::Result<u128> {
         // Write header with signature set to 0.
-        let signture_backup = header.signature;
+        let signature_backup = header.signature;
         header.signature = 0;
         let mut header_bytes = Cursor::new([0; Header::STRUCT_SIZE]);
         header.write(&mut header_bytes)?;
-        header.signature = signture_backup;
+        header.signature = signature_backup;
 
         // Start signing session with the header.
         self.signing_algo.start(header);

@@ -59,7 +59,7 @@ impl IoVec {
         self.0.iter().map(|buf| buf.len()).sum()
     }
 
-    /// Inserts a new shared buffer to the IoVec, and returns a mutable reference to it.
+    /// Inserts a new owned buffer to the IoVec, and returns a mutable reference to it.
     pub fn insert_owned(&mut self, at: usize, buf: Vec<u8>) -> &mut Vec<u8> {
         let to_add = IoVecBuf::Owned(buf);
         self.0.insert(at, to_add);

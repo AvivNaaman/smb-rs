@@ -177,7 +177,7 @@ impl Transformer {
         }
 
         // 0. Update preauth hash as needed.
-        // it is assumed zero-copy is not used for non-data messages,
+        // It is assumed zero-copy is not used for non-data messages,
         // such as negotiate/session setup, and so, we ignore additional data here.
         self.step_preauth_hash(&outgoing_data).await?;
 
