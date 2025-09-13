@@ -340,6 +340,7 @@ pub struct CompressionCapabilities {
 
 #[derive(BinRead, BinWrite, Debug, PartialEq, Eq, Clone, Copy)]
 #[brw(repr(u16))]
+#[repr(u16)]
 pub enum CompressionAlgorithm {
     None = 0x0000,
     LZNT1 = 0x0001,

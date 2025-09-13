@@ -3,6 +3,7 @@ use crate::connection::transport::{SmbTransport, SmbTransportWrite};
 use crate::connection::worker::Worker;
 use crate::msg_handler::ReceiveOptions;
 use crate::sync_helpers::*;
+use crate::util::iovec::IoVec;
 use maybe_async::*;
 use smb_msg::ResponseContent;
 use std::sync::atomic::AtomicBool;
@@ -184,7 +185,7 @@ where
     #[maybe_async]
     pub async fn outgoing_data_callback(
         self: &Arc<Self>,
-        message: Option<Vec<u8>>,
+        message: Option<IoVec>,
         wtransport: &mut dyn SmbTransportWrite,
     ) -> crate::Result<()> {
         let message = match message {
@@ -199,7 +200,7 @@ where
                 }
             }
         };
-        wtransport.send(message.as_ref()).await?;
+        wtransport.send(&message).await?;
 
         Ok(())
     }

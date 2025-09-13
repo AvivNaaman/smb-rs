@@ -1,7 +1,10 @@
-use std::ops::{Deref, DerefMut};
+use std::{
+    ops::{Deref, DerefMut},
+    sync::Arc,
+};
 
 use super::ResourceHandle;
-use crate::msg_handler::ReceiveOptions;
+use crate::msg_handler::{OutgoingMessage, ReceiveOptions};
 use maybe_async::*;
 use smb_msg::{IoctlBuffer, PipeTransceiveRequest, ReadRequest, WriteRequest};
 use smb_rpc::{SmbRpcError, interface::*, ndr64::NDR64_SYNTAX_ID, pdu::*};
@@ -170,14 +173,17 @@ impl PipeRpcConnection {
         .try_into()?;
         let exp_write_size = dcerpc_request_buffer.len() as u32;
         let write_result = pipe
-            .send_recvo(
-                WriteRequest {
-                    offset: READ_WRITE_PIPE_OFFSET,
-                    file_id,
-                    flags: Default::default(),
-                    buffer: dcerpc_request_buffer,
-                }
-                .into(),
+            .sendo_recvo(
+                OutgoingMessage::new(
+                    WriteRequest::new(
+                        READ_WRITE_PIPE_OFFSET,
+                        file_id,
+                        Default::default(),
+                        dcerpc_request_buffer.len() as u32,
+                    )
+                    .into(),
+                )
+                .with_additional_data(Arc::from(dcerpc_request_buffer)),
                 ReceiveOptions::new().with_allow_async(true),
             )
             .await?;

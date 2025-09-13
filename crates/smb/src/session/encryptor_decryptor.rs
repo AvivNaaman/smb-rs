@@ -5,7 +5,7 @@ use rand::RngCore;
 use rand::rngs::OsRng;
 use std::io::Cursor;
 
-use crate::crypto;
+use crate::{crypto, util::iovec::IoVec};
 use smb_msg::{Response, encrypted::*};
 
 #[derive(Debug)]
@@ -21,31 +21,32 @@ impl MessageEncryptor {
     /// Encrypts message in-place.
     pub fn encrypt_message(
         &mut self,
-        mut message: Vec<u8>,
+        message: &mut IoVec,
         session_id: u64,
-    ) -> crate::Result<EncryptedMessage> {
+    ) -> crate::Result<EncryptedHeader> {
         debug_assert!(session_id != 0);
 
         // Serialize message:
         let mut header = EncryptedHeader {
             signature: 0,
             nonce: self.gen_nonce(),
-            original_message_size: message.len().try_into()?,
+            original_message_size: message.total_size() as u32,
             session_id,
         };
 
-        let result = self
-            .algo
-            .encrypt(&mut message, &header.aead_bytes(), &header.nonce)?;
+        message.consolidate();
+
+        let result = self.algo.encrypt(
+            message.first_mut().unwrap(),
+            &header.aead_bytes(),
+            &header.nonce,
+        )?;
 
         header.signature = result.signature;
 
         log::debug!("Encrypted message with signature: {:?}", header.signature);
 
-        Ok(EncryptedMessage {
-            header,
-            encrypted_message: message,
-        })
+        Ok(header)
     }
 
     fn gen_nonce(&self) -> [u8; 16] {

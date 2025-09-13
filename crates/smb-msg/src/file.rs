@@ -127,17 +127,26 @@ pub enum CommunicationChannel {
     RdmaV1Invalidate = 2,
 }
 
+/// Zero-copy write request.
+///
+///
+/// i.e. the data is not included in the message, but is sent separately.
+///
+/// **note:** it is currently assumed that the data is sent immediately after the message.
 #[binrw::binrw]
 #[derive(Debug)]
+#[allow(clippy::manual_non_exhaustive)]
 pub struct WriteRequest {
     #[bw(calc = 49)]
     #[br(assert(_structure_size == 49))]
     _structure_size: u16,
     /// internal buffer offset in packet, relative to header.
-    #[bw(calc = PosMarker::default())]
+    #[bw(calc = PosMarker::new(0))]
     _data_offset: PosMarker<u16>,
-    #[bw(try_calc = buffer.len().try_into())]
-    _length: u32,
+
+    /// Length of data to write.
+    pub length: u32,
+    /// Offset in file to write to.
     pub offset: u64,
     pub file_id: FileId,
     // Again, RDMA off, all 0.
@@ -154,10 +163,21 @@ pub struct WriteRequest {
     #[br(assert(_write_channel_info_length == 0))]
     _write_channel_info_length: u16,
     pub flags: WriteFlags,
-    #[br(seek_before = SeekFrom::Start(_data_offset.value as u64))]
-    #[br(count = _length)]
+
     #[bw(write_with = PosMarker::write_aoff, args(&_data_offset))]
-    pub buffer: Vec<u8>,
+    _write_offset: (),
+}
+
+impl WriteRequest {
+    pub fn new(offset: u64, file_id: FileId, flags: WriteFlags, length: u32) -> Self {
+        Self {
+            length,
+            offset,
+            file_id,
+            flags,
+            _write_offset: (),
+        }
+    }
 }
 
 #[binrw::binrw]
@@ -278,16 +298,16 @@ mod tests {
     #[test]
     pub fn test_write_req_write() {
         let data = encode_content(
-            WriteRequest {
-                offset: 0x1234abcd,
-                file_id: [
+            WriteRequest::new(
+                0x1234abcd,
+                [
                     0x14, 0x04, 0x00, 0x00, 0x0c, 0x00, 0x00, 0x00, 0x51, 0x00, 0x10, 0x00, 0x0c,
                     0x00, 0x00, 0x00,
                 ]
                 .into(),
-                flags: WriteFlags::new(),
-                buffer: "MeFriend!THIS IS FINE!".as_bytes().to_vec(),
-            }
+                WriteFlags::new(),
+                "MeFriend!THIS IS FINE!".as_bytes().to_vec().len() as u32,
+            )
             .into(),
         );
         assert_eq!(
@@ -296,8 +316,7 @@ mod tests {
                 0x31, 0x0, 0x70, 0x0, 0x16, 0x0, 0x0, 0x0, 0xcd, 0xab, 0x34, 0x12, 0x0, 0x0, 0x0,
                 0x0, 0x14, 0x4, 0x0, 0x0, 0xc, 0x0, 0x0, 0x0, 0x51, 0x0, 0x10, 0x0, 0xc, 0x0, 0x0,
                 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                0x0, 0x4d, 0x65, 0x46, 0x72, 0x69, 0x65, 0x6e, 0x64, 0x21, 0x54, 0x48, 0x49, 0x53,
-                0x20, 0x49, 0x53, 0x20, 0x46, 0x49, 0x4e, 0x45, 0x21
+                0x0
             ]
         );
     }

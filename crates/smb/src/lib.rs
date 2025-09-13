@@ -28,6 +28,7 @@ pub mod msg_handler;
 pub mod resource;
 pub mod session;
 pub mod tree;
+pub mod util;
 
 pub use client::{Client, ClientConfig, UncPath};
 pub use connection::{Connection, ConnectionConfig, transport::*};

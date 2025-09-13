@@ -1,3 +1,5 @@
+#![cfg(feature = "single_threaded")]
+
 use crate::{
     connection::{transformer::Transformer, transport::SmbTransport},
     error::*,
@@ -48,7 +50,7 @@ impl Worker for SingleWorker {
         let mut t = self.transport.lock()?;
         t.get_mut()
             .ok_or(crate::Error::NotConnected)?
-            .send(msg_to_send.as_ref())?;
+            .send(&msg_to_send)?;
 
         let hash = match finalize_preauth_hash {
             true => self.transformer.finalize_preauth_hash()?,

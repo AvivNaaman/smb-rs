@@ -686,6 +686,7 @@ impl ResourceHandle {
     }
 
     #[maybe_async]
+    #[inline]
     async fn send_recvo(
         &self,
         msg: RequestContent,
@@ -694,6 +695,16 @@ impl ResourceHandle {
         self.handler
             .sendo_recvo(OutgoingMessage::new(msg), options)
             .await
+    }
+
+    #[maybe_async]
+    #[inline]
+    async fn sendo_recvo(
+        &self,
+        msg: OutgoingMessage,
+        options: ReceiveOptions<'_>,
+    ) -> crate::Result<IncomingMessage> {
+        self.handler.sendo_recvo(msg, options).await
     }
 
     /// Returns whether current resource is opened from the same tree as the other resource.

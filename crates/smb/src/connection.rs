@@ -8,6 +8,7 @@ pub mod worker;
 use crate::Error;
 use crate::dialects::DialectImpl;
 use crate::session::SessionMessageHandler;
+use crate::util::IoVec;
 use crate::{compression, sync_helpers::*};
 use crate::{crypto, msg_handler::*, session::Session};
 use binrw::prelude::*;
@@ -141,7 +142,7 @@ impl Connection {
             log::debug!("Negotiating multi-protocol: Sending SMB1");
             // 1. Send SMB1 negotiate request
             let msg_bytes: Vec<u8> = SMB1NegotiateMessage::default().try_into()?;
-            transport.send(&msg_bytes).await?;
+            transport.send(&IoVec::from(msg_bytes)).await?;
 
             log::debug!("Sent SMB1 negotiate request, Receieving SMB2 response");
             // 2. Expect SMB2 negotiate response

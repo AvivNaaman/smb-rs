@@ -1,4 +1,4 @@
-use crate::{connection::transport::SmbTransport, sync_helpers::*};
+use crate::{connection::transport::SmbTransport, sync_helpers::*, util::iovec::IoVec};
 use maybe_async::*;
 use std::{sync::Arc, time::Duration};
 
@@ -23,7 +23,7 @@ pub trait MultiWorkerBackend {
         Self::AwaitingNotifier: std::fmt::Debug;
     async fn stop(&self) -> crate::Result<()>;
 
-    fn wrap_msg_to_send(msg: Vec<u8>) -> Self::SendMessage;
+    fn wrap_msg_to_send(msg: IoVec) -> Self::SendMessage;
     fn make_notifier_awaiter_pair() -> (Self::AwaitingNotifier, Self::AwaitingWaiter);
     // TODO: Consider typing the tx/rx in the trait, like the notifier/awaiter.
     fn make_send_channel_pair() -> (

@@ -22,6 +22,10 @@ pub struct Cli {
     #[arg(long)]
     pub no_dfs: bool,
 
+    /// Opts-in to use SMB compression if the server supports it.
+    #[arg(long)]
+    pub compress: bool,
+
     /// Disables NTLM authentication.
     #[arg(long)]
     pub no_ntlm: bool,
@@ -83,6 +87,7 @@ impl Cli {
                     kerberos: !self.no_kerberos,
                 },
                 allow_unsigned_guest_access: self.disable_message_signing,
+                compression_enabled: self.compress,
                 ..Default::default()
             },
         }

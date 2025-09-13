@@ -32,6 +32,7 @@ impl FromStr for Path {
     type Err = smb::Error;
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
+        let input = input.replace('/', r"\");
         if input.starts_with(r"\\") {
             Ok(Path::Remote(input.parse()?))
         } else {

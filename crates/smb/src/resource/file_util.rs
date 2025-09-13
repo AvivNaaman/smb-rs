@@ -117,7 +117,7 @@ mod copy {
     use std::sync::{Arc, atomic::AtomicU64};
 
     #[derive(Debug)]
-    struct CopyState {
+    pub struct CopyState {
         current_block: AtomicU64,
 
         last_block: u64,
@@ -127,7 +127,51 @@ mod copy {
         num_jobs: usize,
     }
 
+    impl CopyState {
+        /// Returns the total size of the file being copied (in bytes).
+        pub fn total_size(&self) -> u64 {
+            self.total_size
+        }
+
+        /// Returns the number of bytes copied so far.
+        pub fn bytes_copied(&self) -> u64 {
+            let current_block = self.current_block.load(std::sync::atomic::Ordering::SeqCst);
+            if current_block > self.last_block {
+                self.total_size
+            } else {
+                current_block * self.max_chunk_size
+            }
+        }
+
+        /// Returns the progress of the copy operation as a value between 0.0 and 1.0.
+        pub fn progress(&self) -> f64 {
+            if self.total_size == 0 {
+                1.0
+            } else {
+                self.bytes_copied() as f64 / self.total_size as f64
+            }
+        }
+
+        /// Returns the number of parallel jobs being used for the copy operation.
+        pub fn num_jobs(&self) -> usize {
+            self.num_jobs
+        }
+    }
+
     /// Generic block copy function.
+    ///
+    /// # Parameters
+    /// - `from`: The source to read from. Must implement `ReadAt` and `GetLen`.
+    /// - `to`: The destination to write to. Must implement `WriteAt` and `SetLen`.
+    /// - `jobs`: The number of parallel jobs to use. If 0, a default value will be used.
+    ///
+    /// # Returns
+    /// - `Ok(())` if the copy was successful.
+    /// - `Err(crate::Error)` if an error occurred.
+    ///
+    /// # Notes
+    /// - To report progress, use the [`prepare_parallel_copy`] function to get a `CopyState`, and then
+    ///   use that to report progress while the copy is running.
     #[maybe_async]
     pub async fn block_copy<
         F: ReadAt + GetLen + Send + Sync + 'static,
@@ -137,6 +181,30 @@ mod copy {
         to: T,
         jobs: usize,
     ) -> crate::Result<()> {
+        let copy_state = prepare_parallel_copy(&from, &to, jobs).await?;
+
+        log::debug!("Starting parallel copy: {copy_state:?}",);
+        start_parallel_copy(from, to, Arc::new(copy_state)).await?;
+
+        Ok(())
+    }
+
+    /// Returns a CopyState that can be used to start a parallel copy.
+    ///
+    /// pass the return value to start_parallel_copy to start the copy.
+    ///
+    /// this is mostly useful for cases that require an additional interaction with the
+    /// state, beyond the copy workers themselves - for example, reporting progress.
+    /// if you don't need that, just use the [`block_copy`] function directly.
+    #[maybe_async]
+    pub async fn prepare_parallel_copy<
+        F: ReadAt + GetLen + Send + Sync + 'static,
+        T: WriteAt + SetLen + Send + Sync + 'static,
+    >(
+        from: &F,
+        to: &T,
+        jobs: usize,
+    ) -> crate::Result<CopyState> {
         const MAX_JOBS: usize = 128;
         if jobs > MAX_JOBS {
             return Err(crate::Error::InvalidArgument(format!(
@@ -159,30 +227,35 @@ mod copy {
 
         if file_length == 0 {
             log::debug!("Source file is empty, nothing to copy.");
-            return Ok(());
+            return Ok(CopyState {
+                current_block: AtomicU64::new(0),
+                last_block: 0,
+                total_size: 0,
+                max_chunk_size: CHUNK_SIZE,
+                num_jobs: jobs,
+            });
         }
 
-        let copy_state = CopyState {
+        Ok(CopyState {
             current_block: AtomicU64::new(0),
             last_block: file_length / CHUNK_SIZE,
             total_size: file_length,
             max_chunk_size: CHUNK_SIZE,
             num_jobs: jobs,
-        };
-        log::debug!("Starting parallel copy: {copy_state:?}",);
-        start_parallel_copy(from, to, copy_state).await?;
-
-        Ok(())
+        })
     }
 
+    /// Starts a parallel copy using the provided [`CopyState`].
+    ///
+    /// See [`prepare_parallel_copy`] for more details.
     #[cfg(feature = "async")]
-    async fn start_parallel_copy<
+    pub async fn start_parallel_copy<
         F: ReadAt + GetLen + Send + Sync + 'static,
         T: WriteAt + SetLen + Send + Sync + 'static,
     >(
         from: F,
         to: T,
-        state: CopyState,
+        state: Arc<CopyState>,
     ) -> crate::Result<()> {
         use tokio::task::JoinSet;
 
@@ -190,7 +263,6 @@ mod copy {
 
         let to = Arc::new(to);
         let from = Arc::new(from);
-        let state = Arc::new(state);
 
         let mut handles = JoinSet::new();
         for task_id in 0..state.num_jobs {
@@ -204,18 +276,20 @@ mod copy {
         Ok(())
     }
 
+    /// Starts a parallel copy using the provided [`CopyState`].
+    ///
+    /// See [`prepare_parallel_copy`] for more details.
     #[cfg(feature = "multi_threaded")]
-    fn start_parallel_copy<
+    pub fn start_parallel_copy<
         F: ReadAt + GetLen + Send + Sync + 'static,
         T: WriteAt + SetLen + Send + Sync + 'static,
     >(
         from: F,
         to: T,
-        state: CopyState,
+        state: Arc<CopyState>,
     ) -> crate::Result<()> {
         let from = Arc::new(from);
         let to = Arc::new(to);
-        let state = Arc::new(state);
 
         let mut handles = Vec::new();
         for task_id in 0..state.num_jobs {
@@ -288,7 +362,15 @@ mod copy {
     pub fn block_copy<F: ReadAt + GetLen, T: WriteAt + SetLen>(
         from: F,
         to: T,
-        _jobs: usize,
+    ) -> crate::Result<()> {
+        block_copy_progress(from, to, None)
+    }
+
+    /// Generic block copy function with progress callback.
+    pub fn block_copy_progress<F: ReadAt + GetLen, T: WriteAt + SetLen>(
+        from: F,
+        to: T,
+        progress_callback: Option<&dyn Fn(u64)>,
     ) -> crate::Result<()> {
         let file_length = from.get_len()?;
         to.set_len(file_length)?;
@@ -315,6 +397,9 @@ mod copy {
             }
             to.write_at(&curr_chunk[..bytes_read], offset)?;
             offset += bytes_read as u64;
+            if let Some(callback) = progress_callback {
+                callback(offset);
+            }
         }
         Ok(())
     }

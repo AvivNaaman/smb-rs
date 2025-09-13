@@ -49,6 +49,7 @@ macro_rules! make_content {
 
 #[derive(BinRead, BinWrite, Debug)]
 #[brw(import(command: &Command))]
+#[brw(little)]
 pub enum RequestContent {
     $(
         #[br(pre_assert(matches!(command, Command::$cmd)))]
@@ -68,6 +69,7 @@ pub enum RequestContent {
 
 #[derive(BinRead, BinWrite, Debug)]
 #[brw(import(command: &Command))]
+#[brw(little)]
 pub enum ResponseContent {
     $(
         #[br(pre_assert(matches!(command, Command::$cmd)))]
@@ -202,7 +204,7 @@ impl RequestContent {
         use RequestContent::*;
         match self {
             // 3.3.5.13
-            Write(req) => req.buffer.len() as u32,
+            Write(req) => req.length,
             // 3.3.5.15: InputCount + OutputCount
             Ioctl(req) => req.buffer.get_size() + req.max_output_response,
             _ => 0,
