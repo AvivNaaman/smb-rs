@@ -1,11 +1,10 @@
 use crate::connection::transformer::Transformer;
-use crate::connection::transport::{SmbTransport, SmbTransportWrite, TransportError};
 use crate::connection::worker::Worker;
 use crate::msg_handler::ReceiveOptions;
 use crate::sync_helpers::*;
-use crate::util::iovec::IoVec;
 use maybe_async::*;
 use smb_msg::ResponseContent;
+use smb_transport::{IoVec, SmbTransport, SmbTransportWrite, TransportError};
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};

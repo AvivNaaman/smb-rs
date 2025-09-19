@@ -412,7 +412,7 @@ impl Client {
         }
     }
 
-
+    #[cfg(feature = "rdma")]
     #[maybe_async]
     async fn _setup_multi_channel(
         &mut self,
@@ -421,9 +421,8 @@ impl Client {
         password: String,
     ) -> crate::Result<()> {
         {
-            let opened_conn_info = self.get_opened_conn_for_path(unc)?;
+            let opened_conn_info = self.get_connection(unc.server()).await?;
             if !opened_conn_info
-                .conn
                 .conn_info()
                 .unwrap()
                 .negotiation
@@ -443,12 +442,17 @@ impl Client {
         // Connect IPC and query network interfaces.
         if !unc.is_ipc_share() {
             log::debug!("Connecting to IPC$ share for {unc} to scan for alternate channels.");
-            self.ipc_connect(unc.server(), user_name, password.clone()).await?;
+            self.ipc_connect(unc.server(), user_name, password.clone())
+                .await?;
         }
 
-        let ipc_share = UncPath::ipc_share(unc.server().clone());
-        let ipc_conn_info = self.get_opened_conn_for_path(&ipc_share)?;
-        let network_interfaces = ipc_conn_info.tree.query_network_interfaces().await?;
+        let ipc_share = UncPath::ipc_share(unc.server())?;
+        let ipc_conn_info = self.get_tree(&ipc_share).await?;
+        let network_interfaces = ipc_conn_info
+            .as_ipc_tree()
+            .unwrap()
+            .query_network_interfaces()
+            .await?;
 
         // TODO: Improve this algorithm
         let first_rdma_interface = network_interfaces
@@ -460,11 +464,12 @@ impl Client {
         }
         let first_rdma_interface = first_rdma_interface.unwrap();
 
-        sleep(std::time::Duration::from_secs(5)).await; // Allow some time for the connection to stabilize.
-        let opened_conn_info = self.get_opened_conn_for_path(unc)?;
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await; // Allow some time for the connection to stabilize.
+        let opened_conn_info = self.get_connection(unc.server()).await?;
+        let session = self.get_session(unc).await?;
         Connection::build_alternate(
-            &opened_conn_info.conn,
-            &opened_conn_info.session,
+            &opened_conn_info,
+            &session,
             first_rdma_interface.sockaddr.socket_addr(),
             user_name,
             password,

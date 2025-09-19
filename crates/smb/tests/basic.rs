@@ -7,7 +7,7 @@ use std::time::Duration;
 use common::{TestConstants, TestEnv, make_server_connection};
 use serial_test::serial;
 use smb::error::TimedOutTask;
-use smb::{Client, ClientConfig, UncPath};
+use smb::{Client, ClientConfig, TransportConfig, UncPath};
 use smb::{ConnectionConfig, FileCreateArgs};
 use smb_fscc::FileDispositionInformation;
 use smb_msg::Status;
@@ -50,8 +50,6 @@ async fn test_basic_integration() -> Result<(), Box<dyn std::error::Error>> {
 ))]
 #[serial]
 async fn test_basic_netbios() -> Result<(), Box<dyn std::error::Error>> {
-    use smb::connection::TransportConfig;
-
     let conn_config = ConnectionConfig {
         transport: TransportConfig::NetBios,
         ..Default::default()

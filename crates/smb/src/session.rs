@@ -239,9 +239,9 @@ impl Session {
     }
 
     #[maybe_async]
-    async fn bind(
+    pub(crate) async fn bind(
         primary: &Session,
-        handler: &HandlerReference<SessionMessageHandler>,
+        handler: &HandlerReference<ConnectionMessageHandler>,
         conn_info: &Arc<ConnectionInfo>,
     ) -> crate::Result<Session> {
         let rebind_setup_request = OutgoingMessage::new(
@@ -257,7 +257,7 @@ impl Session {
             session_state.signer()?.clone()
         };
 
-        Ok(())
+        unimplemented!();
     }
 
     /// Connects to the specified tree using the current session.

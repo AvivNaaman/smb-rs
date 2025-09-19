@@ -29,8 +29,8 @@ use futures_util::FutureExt;
 use quinn::{Endpoint, crypto::rustls::QuicClientConfig};
 use rustls::pki_types::CertificateDer;
 use rustls_platform_verifier::ConfigVerifierExt;
-use tokio::select;
 use thiserror::Error;
+use tokio::select;
 
 pub struct QuicTransport {
     recv_stream: Option<quinn::RecvStream>,

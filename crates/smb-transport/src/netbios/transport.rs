@@ -1,10 +1,7 @@
 use std::{io::Cursor, time::Duration};
 
-use super::{SmbTransport, SmbTransportRead, SmbTransportWrite, tcp::TcpTransport};
-use crate::Error;
-use smb_msg::netbios::{
-    NBSSPacketHeader, NBSSPacketType, NBSSTrailer, NBSessionRequest, NetBiosName,
-};
+use super::msg::*;
+use crate::{TcpTransport, TransportError, traits::*};
 
 use binrw::{BinRead, BinWrite};
 #[cfg(feature = "async")]
@@ -15,7 +12,7 @@ use maybe_async::*;
 pub struct NetBiosTransport {
     tcp: Box<dyn SmbTransport>,
 }
-use super::error::Result;
+use crate::error::Result;
 
 impl NetBiosTransport {
     pub fn new(timeout: Duration) -> NetBiosTransport {
@@ -108,12 +105,7 @@ impl SmbTransport for NetBiosTransport {
         139
     }
 
-    fn split(
-        self: Box<Self>,
-    ) -> Result<(
-        Box<dyn super::SmbTransportRead>,
-        Box<dyn super::SmbTransportWrite>,
-    )> {
+    fn split(self: Box<Self>) -> Result<(Box<dyn SmbTransportRead>, Box<dyn SmbTransportWrite>)> {
         // SMB2 default transport (TCP) is actuall compatible with NetBIOS,
         // after setting up the session as performed in `connect()` above.
         // So we can just return the TCP transport as the read/write transport.

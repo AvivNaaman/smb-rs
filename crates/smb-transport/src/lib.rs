@@ -1,15 +1,19 @@
 use std::time::Duration;
 
-use super::TransportConfig;
-
-pub mod nb;
+pub mod config;
 pub mod error;
+pub mod iovec;
+pub mod netbios;
 pub mod quic;
 pub mod tcp;
 pub mod traits;
 pub mod utils;
 
+pub use config::TransportConfig;
 pub use error::TransportError;
+pub use iovec::*;
+pub use netbios::NetBiosTransport;
+pub use tcp::{SmbTcpMessageHeader, TcpTransport};
 pub use traits::*;
 
 /// Creates [`SmbTransport`] out of [`TransportConfig`].
@@ -23,26 +27,25 @@ pub fn make_transport(
 ) -> Result<Box<dyn SmbTransport>, TransportError> {
     match transport {
         TransportConfig::Tcp => Ok(Box::new(tcp::TcpTransport::new(timeout))),
+        TransportConfig::NetBios => Ok(Box::new(NetBiosTransport::new(timeout))),
+
         #[cfg(feature = "quic")]
         TransportConfig::Quic(quic_config) => {
             Ok(Box::new(quic::QuicTransport::new(quic_config, timeout)?))
         }
-        #[cfg(not(feature = "quic"))]
-        TransportConfig::Quic(_) => Err(crate::Error::InvalidState(
-            "Quic transport is not available in this build.".into(),
-        )),
-        TransportConfig::NetBios => Ok(Box::new(nb::NetBiosTransport::new(timeout))),
+
+        #[cfg(feature = "rdma")]
+        TransportConfig::Rdma(_rdma_config) => Ok(Box::new(rdma::RdmaTransport::new(timeout)?)),
     }
 }
 
-
 // Force async if QUIC/RDMA are enabled
-#[cfg(all(not(feature = "async"), feature = "quic"))]
+#[cfg(all(feature = "is_sync", feature = "quic"))]
 compile_error!(
     "QUIC transport requires the async feature to be enabled. \
     Please enable the async feature in your Cargo.toml."
 );
-#[cfg(all(not(feature = "async"), feature = "rdma"))]
+#[cfg(all(feature = "is_sync", feature = "rdma"))]
 compile_error!(
     "RDMA transport requires the async feature to be enabled. \
     Please enable the async feature in your Cargo.toml."

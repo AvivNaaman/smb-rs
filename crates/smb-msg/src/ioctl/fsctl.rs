@@ -11,6 +11,7 @@ use smb_fscc::*;
 
 use super::common::IoctlRequestContent;
 use crate::IoctlBuffer;
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 use std::ops::{Deref, DerefMut};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -5,9 +5,7 @@ use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
 use std::io::Cursor;
 
-use smb_msg::SmbTcpMessageHeader;
-
-use crate::util::iovec::IoVec;
+use crate::{IoVec, SmbTcpMessageHeader, error::Result};
 
 #[allow(async_fn_in_trait)]
 pub trait SmbTransport: Send + SmbTransportRead + SmbTransportWrite {
@@ -31,7 +29,7 @@ pub trait SmbTransportWrite: Send {
     fn send_raw(&mut self, buf: &[u8]) -> Result<()>;
 
     #[cfg(feature = "async")]
-    fn send<'a>(&'a mut self, data: &'a IoVec) -> BoxFuture<'a, crate::Result<()>> {
+    fn send<'a>(&'a mut self, data: &'a IoVec) -> BoxFuture<'a, Result<()>> {
         async {
             // Transport Header
             let header = SmbTcpMessageHeader {
@@ -51,7 +49,7 @@ pub trait SmbTransportWrite: Send {
     }
 
     #[cfg(not(feature = "async"))]
-    fn send(&mut self, data: &IoVec) -> crate::Result<()> {
+    fn send(&mut self, data: &IoVec) -> Result<()> {
         // Transport Header
         let header = SmbTcpMessageHeader {
             stream_protocol_length: data.total_size() as u32,

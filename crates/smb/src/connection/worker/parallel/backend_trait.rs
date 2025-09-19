@@ -1,5 +1,6 @@
-use crate::{connection::transport::SmbTransport, sync_helpers::*, util::iovec::IoVec};
+use crate::sync_helpers::*;
 use maybe_async::*;
+use smb_transport::{IoVec, SmbTransport};
 use std::{sync::Arc, time::Duration};
 
 use crate::msg_handler::IncomingMessage;

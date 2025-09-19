@@ -28,4 +28,7 @@ sign = ["smb/sign"]
 encrypt = ["smb/encrypt"]
 compress = ["smb/compress"]
 
+quic = ["smb/quic"]
+rdma = ["smb/rdma"]
+
 profiling = []

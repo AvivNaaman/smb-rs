@@ -3,8 +3,9 @@
 use binrw::prelude::*;
 use std::io::Cursor;
 
-use crate::{Error, crypto, util::iovec::IoVec};
+use crate::{Error, crypto};
 use smb_msg::Header;
+use smb_transport::IoVec;
 
 /// A struct for writing and verifying SMB message signatures.
 ///
@@ -98,8 +99,8 @@ mod tests {
     fn test_calc_signature() {
         // Some random session logoff request for testing.
 
-        use crate::util::iovec::{IoVec, IoVecBuf};
         use smb_msg::SigningAlgorithmId;
+        use smb_transport::{IoVec, IoVecBuf};
 
         let header_data = vec![
             0xfeu8, 0x53, 0x4d, 0x42, 0x40, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2, 0x0, 0x1, 0x0,

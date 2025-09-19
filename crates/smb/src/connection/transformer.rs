@@ -1,9 +1,9 @@
 use crate::sync_helpers::*;
-use crate::util::iovec::IoVec;
 use crate::{compression::*, msg_handler::*, session::SessionInfo};
 use binrw::prelude::*;
 use maybe_async::*;
 use smb_msg::*;
+use smb_transport::IoVec;
 use std::{collections::HashMap, io::Cursor, sync::Arc};
 
 use super::connection_info::ConnectionInfo;

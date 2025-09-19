@@ -14,6 +14,22 @@ readme.workspace = true
 [dependencies]
 smb-dtyp = { path = "../smb-dtyp" }
 
+log = { workspace = true }
+tokio = { workspace = true, optional = true }
+futures-core = { workspace = true, optional = true }
+futures-util = { workspace = true, optional = true }
+
+# QUIC
+quinn = { workspace = true, optional = true }
+rustls = { workspace = true, default-features = false, optional = true }
+rustls-platform-verifier = { workspace = true, default-features = false, optional = true }
+
+# RDMA
+async-rdma = { git = "https://github.com/AvivNaaman/async-rdma.git", rev = "b6f23d21806cfee5583b77f5f68f5e8184d50891", features = [
+    "cm",
+    "raw",
+], optional = true }
+
 binrw = { workspace = true }
 modular-bitfield = { workspace = true }
 time = { workspace = true }
@@ -23,4 +39,8 @@ thiserror = { workspace = true }
 
 [features]
 default = []
+async = ["tokio", "futures-core", "futures-util"]
 is_sync = ["maybe-async/is_sync"]
+
+quic = ["dep:quinn", "dep:rustls", "dep:rustls-platform-verifier"]
+rdma = []

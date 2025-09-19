@@ -959,7 +959,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1632,7 +1632,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.53.3",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -2580,7 +2580,7 @@ dependencies = [
  "errno 0.3.14",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2958,19 +2958,16 @@ dependencies = [
  "maybe-async",
  "modular-bitfield",
  "paste",
- "quinn",
  "rand 0.8.5",
  "reqwest",
  "rust-kbkdf",
- "rustls",
- "rustls-platform-verifier",
  "serial_test",
  "sha2",
- "smb-direct",
  "smb-dtyp",
  "smb-fscc",
  "smb-msg",
  "smb-rpc",
+ "smb-transport",
  "sspi",
  "temp-env",
  "test-log",
@@ -2993,20 +2990,6 @@ dependencies = [
  "maybe-async",
  "smb",
  "tokio",
-]
-
-[[package]]
-name = "smb-direct"
-version = "0.9.0"
-dependencies = [
- "async-rdma",
- "binrw",
- "maybe-async",
- "modular-bitfield",
- "paste",
- "smb-transport",
- "thiserror 2.0.16",
- "time",
 ]
 
 [[package]]
@@ -3062,13 +3045,21 @@ dependencies = [
 name = "smb-transport"
 version = "0.9.0"
 dependencies = [
+ "async-rdma",
  "binrw",
+ "futures-core",
+ "futures-util",
+ "log",
  "maybe-async",
  "modular-bitfield",
  "paste",
+ "quinn",
+ "rustls",
+ "rustls-platform-verifier",
  "smb-dtyp",
  "thiserror 2.0.16",
  "time",
+ "tokio",
 ]
 
 [[package]]

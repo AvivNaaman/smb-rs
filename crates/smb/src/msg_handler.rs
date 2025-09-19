@@ -1,6 +1,7 @@
-use crate::{connection::preauth_hash::PreauthHashValue, util::IoVec};
+use crate::connection::preauth_hash::PreauthHashValue;
 use maybe_async::*;
 use smb_msg::{Command, PlainRequest, PlainResponse, RequestContent, Status};
+use smb_transport::IoVec;
 use std::sync::Arc;
 
 #[derive(Debug)]

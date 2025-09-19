@@ -1,11 +1,10 @@
 use std::{sync::Arc, time::Duration};
 
 use crate::{
-    Error,
-    connection::{connection_info::ConnectionInfo, transport::traits::SmbTransport},
-    msg_handler::ReceiveOptions,
+    Error, connection::connection_info::ConnectionInfo, msg_handler::ReceiveOptions,
     sync_helpers::*,
 };
+use smb_transport::SmbTransport;
 
 use maybe_async::*;
 use smb_msg::Status;

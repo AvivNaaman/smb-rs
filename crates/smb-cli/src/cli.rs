@@ -1,11 +1,11 @@
 use crate::{copy::CopyCmd, info::InfoCmd, security::SecurityCmd};
 use clap::{Parser, Subcommand, ValueEnum};
 use smb::Dialect;
+#[cfg(feature = "quic")]
+use smb::connection::{QuicCertValidationOptions, QuicConfig};
 use smb::{
-    ClientConfig, ConnectionConfig,
-    connection::{
-        AuthMethodsConfig, EncryptionMode, QuicCertValidationOptions, QuicConfig, TransportConfig,
-    },
+    ClientConfig, ConnectionConfig, TransportConfig,
+    connection::{AuthMethodsConfig, EncryptionMode},
 };
 
 #[derive(Parser)]
@@ -58,6 +58,7 @@ pub struct Cli {
 pub enum CliUseTransport {
     Default,
     Netbios,
+    #[cfg(feature = "quic")]
     Quic,
 }
 
@@ -77,6 +78,7 @@ impl Cli {
                     .as_ref()
                     .unwrap_or(&CliUseTransport::Default)
                 {
+                    #[cfg(feature = "quic")]
                     CliUseTransport::Quic => TransportConfig::Quic(QuicConfig {
                         local_address: None,
                         cert_validation: QuicCertValidationOptions::PlatformVerifier,
@@ -91,6 +93,7 @@ impl Cli {
                 },
                 allow_unsigned_guest_access: self.disable_message_signing,
                 compression_enabled: self.compress,
+                #[cfg(feature = "rdma")]
                 multichannel: smb::connection::MultiChannelConfig {
                     enabled: self.multichannel,
                     rdma: Some(smb::connection::RdmaConfig {}),

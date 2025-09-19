@@ -2,13 +2,11 @@ pub mod config;
 pub mod connection_info;
 pub mod preauth_hash;
 pub mod transformer;
-pub mod transport;
 pub mod worker;
 
 use crate::Error;
 use crate::dialects::DialectImpl;
 use crate::session::SessionMessageHandler;
-use crate::util::IoVec;
 use crate::{compression, sync_helpers::*};
 use crate::{crypto, msg_handler::*, session::Session};
 use binrw::prelude::*;
@@ -19,6 +17,8 @@ use rand::RngCore;
 use rand::rngs::OsRng;
 use smb_dtyp::*;
 use smb_msg::{Command, Response, negotiate::*, plain::*, smb1::SMB1NegotiateMessage};
+use smb_transport::IoVec;
+use smb_transport::{SmbTransport, make_transport};
 use std::cmp::max;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -27,7 +27,6 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 pub use transformer::TransformError;
-use transport::{SmbTransport, make_transport};
 use worker::{Worker, WorkerImpl};
 
 /// Represents an SMB connection.
@@ -44,7 +43,7 @@ pub struct Connection {
 impl Connection {
     /// Creates a new SMB connection, specifying a server configuration, without connecting to a server.
     /// Use the [`connect`](Connection::connect) method to establish a connection.
-    pub fn build(server: String, config: ConnectionConfig) -> crate::Result<Self> {
+    pub fn build(server: &str, config: ConnectionConfig) -> crate::Result<Self> {
         config.validate()?;
         let client_guid = config.client_guid.unwrap_or_else(Guid::generate);
         Ok(Connection {
@@ -71,17 +70,18 @@ impl Connection {
         log::info!("Connecting alternate connection: {}", target);
         transport.connect(target.to_string().as_str()).await?;
         log::debug!("Connected to alternate connection: {}", target);
-        let mut result = Connection::build(primary.server.clone(), primary.config.clone())?;
+        let result = Connection::build(&primary.server, primary.config.clone())?;
         const PRIMARY_USES_SMB2: bool = true;
         result
-            .negotiate(Box::from(transport), PRIMARY_USES_SMB2)
+            ._negotiate(Box::from(transport), PRIMARY_USES_SMB2)
             .await?;
         let session = Session::bind(
             primary_session,
             &result.handler,
             result.handler.conn_info.get().unwrap(),
-        ).await?;
-        Ok(result)
+        )
+        .await?;
+        Ok((result, session))
     }
 
     /// Connects to the specified server, if it is not already connected, and negotiates the connection.

@@ -1,9 +1,8 @@
 #![cfg(feature = "async")]
 
-use crate::connection::transport::traits::{SmbTransport, SmbTransportRead, SmbTransportWrite};
 use crate::msg_handler::IncomingMessage;
-use crate::util::iovec::IoVec;
 use crate::{error::*, sync_helpers::*};
+use smb_transport::{IoVec, SmbTransport, SmbTransportRead, SmbTransportWrite};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::{select, sync::oneshot};

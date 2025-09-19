@@ -1,7 +1,7 @@
 use std::net::{SocketAddr, ToSocketAddrs};
 
 pub struct TransportUtils;
-use crate::connection::transport::TransportError;
+use crate::TransportError;
 
 impl TransportUtils {
     pub fn parse_socket_address(endpoint: &str) -> super::error::Result<SocketAddr> {
