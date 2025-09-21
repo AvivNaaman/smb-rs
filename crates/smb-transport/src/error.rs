@@ -1,10 +1,5 @@
 use thiserror::Error;
 
-#[cfg(feature = "quic")]
-use crate::connection::transport::quic::QuicError;
-#[cfg(feature = "rdma")]
-use crate::connection::transport::rdma::RdmaError;
-
 /// Transport-related errors.
 #[derive(Error, Debug)]
 pub enum TransportError {
@@ -27,11 +22,11 @@ pub enum TransportError {
 
     #[cfg(feature = "quic")]
     #[error("QUIC error: {0}")]
-    QuicError(#[from] QuicError),
+    QuicError(#[from] crate::quic::QuicError),
 
     #[cfg(feature = "rdma")]
     #[error("RDMA error: {0}")]
-    RdmaError(#[from] RdmaError),
+    RdmaError(#[from] crate::rdma::RdmaError),
 }
 
 pub type Result<T> = std::result::Result<T, TransportError>;

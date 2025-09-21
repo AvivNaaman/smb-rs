@@ -4,6 +4,8 @@ use crate::{
 use maybe_async::maybe_async;
 use smb_msg::{ReferralEntry, ReferralEntryValue, Status};
 use smb_rpc::interface::{ShareInfo1, SrvSvc};
+#[cfg(feature = "rdma")]
+use smb_transport::RdmaTransport;
 use std::sync::Arc;
 use std::{collections::HashMap, str::FromStr};
 
@@ -145,6 +147,27 @@ impl Client {
     /// #   Ok(()) }
     #[maybe_async]
     pub async fn share_connect(
+        &self,
+        target: &UncPath,
+        user_name: &str,
+        password: String,
+    ) -> crate::Result<()> {
+        self._share_connect(target, user_name, password.clone()).await?;
+
+        // Establish an additional channel if multi-channel is enabled.
+        #[cfg(feature = "rdma")]
+        self._setup_multi_channel(&target, user_name, password)
+            .await?;
+
+        Ok(())
+    }
+
+    /// (Internal)
+    /// 
+    /// Performs the actual share connection logic,
+    /// without setting up multi-channel.
+    #[maybe_async]
+    async fn _share_connect(
         &self,
         target: &UncPath,
         user_name: &str,
@@ -379,7 +402,7 @@ impl Client {
         password: String,
     ) -> crate::Result<()> {
         let ipc_share = UncPath::ipc_share(server)?;
-        self.share_connect(&ipc_share, user_name, password).await
+        self._share_connect(&ipc_share, user_name, password).await
     }
 
     /// Opens a named pipe on the specified server.
@@ -415,7 +438,7 @@ impl Client {
     #[cfg(feature = "rdma")]
     #[maybe_async]
     async fn _setup_multi_channel(
-        &mut self,
+        &self,
         unc: &UncPath,
         user_name: &str,
         password: String,
@@ -471,9 +494,7 @@ impl Client {
             &opened_conn_info,
             &session,
             first_rdma_interface.sockaddr.socket_addr(),
-            user_name,
-            password,
-            RdmaTransport::new(),
+            RdmaTransport::new(self.config.connection.timeout()),
         )
         .await?;
 

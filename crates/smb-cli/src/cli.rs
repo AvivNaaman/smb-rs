@@ -1,10 +1,9 @@
 use crate::{copy::CopyCmd, info::InfoCmd, security::SecurityCmd};
 use clap::{Parser, Subcommand, ValueEnum};
 use smb::Dialect;
-#[cfg(feature = "quic")]
-use smb::connection::{QuicCertValidationOptions, QuicConfig};
+use smb::transport::config::*;
 use smb::{
-    ClientConfig, ConnectionConfig, TransportConfig,
+    ClientConfig, ConnectionConfig,
     connection::{AuthMethodsConfig, EncryptionMode},
 };
 
@@ -96,7 +95,7 @@ impl Cli {
                 #[cfg(feature = "rdma")]
                 multichannel: smb::connection::MultiChannelConfig {
                     enabled: self.multichannel,
-                    rdma: Some(smb::connection::RdmaConfig {}),
+                    rdma: Some(RdmaConfig {}),
                 },
                 ..Default::default()
             },

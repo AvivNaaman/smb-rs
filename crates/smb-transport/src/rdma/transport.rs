@@ -1,42 +1,19 @@
-#![cfg(feature = "rdma")]
-
 use std::alloc::Layout;
 use std::sync::Arc;
 
-use super::traits::*;
-use crate::connection::transport::TransportError;
-use crate::packets::smbd::{SmbdDataTransferFlags, SmbdDataTransferHeader};
-use crate::sync_helpers::*;
-use crate::{
-    connection::transport::{SmbTransport, SmbTransportRead},
-    packets::smbd::{SmbdNegotiateRequest, SmbdNegotiateResponse},
+use super::error::*;
+use super::smbd::{
+    SmbdDataTransferFlags, SmbdDataTransferHeader, SmbdNegotiateRequest, SmbdNegotiateResponse,
 };
+use crate::traits::*;
+use crate::{IoVec, error::TransportError};
 use async_rdma::{
     ConnectionType, LocalMr, LocalMrReadAccess, LocalMrWriteAccess, Rdma, RdmaBuilder,
 };
 use binrw::prelude::*;
 use futures_util::FutureExt;
-use thiserror::Error;
-
-#[derive(Error, Debug)]
-pub enum RdmaError {
-    #[error("SMBD negotiation error: {0}")]
-    NegotiateError(String),
-    #[error("IO Error: {0}")]
-    IoError(#[from] std::io::Error),
-    #[error("Already connected")]
-    AlreadyConnected,
-    #[error("Not connected")]
-    NotConnected,
-    #[error("Request data too large. Requested size: {0}, max size allowed: {1}")]
-    RequestTooLarge(usize, usize),
-    #[error("Failed to parse SMB message: {0}")]
-    SmbdParseError(#[from] binrw::Error),
-    #[error("Invalid endpoint format: {0}")]
-    InvalidEndpoint(String),
-}
-
-type Result<T> = std::result::Result<T, RdmaError>;
+use tokio::{select, sync::mpsc, task::JoinHandle};
+use tokio_util::sync::CancellationToken;
 
 #[derive(Debug)]
 struct RdmaRunningRo {
@@ -72,7 +49,8 @@ pub struct RdmaTransport {
 }
 
 impl RdmaTransport {
-    pub fn new() -> Self {
+    pub fn new(_timeout: std::time::Duration) -> Self {
+        // TODO: use timeout
         RdmaTransport {
             state: RdmaTransportState::Init,
         }
@@ -183,7 +161,7 @@ impl RdmaTransport {
             .await?;
         let mut cursor = std::io::Cursor::new(neg_res_data.as_slice().as_ref());
         let neg_res: SmbdNegotiateResponse = SmbdNegotiateResponse::read(&mut cursor)?;
-        if neg_res.status != crate::packets::smb2::Status::Success {
+        if neg_res.status != smb_msg::Status::Success {
             return Err(RdmaError::NegotiateError(
                 "Negotiation failed - non-success status".to_string(),
             ));
@@ -320,7 +298,7 @@ impl RdmaTransport {
 
     async fn _send_fragmented_data(
         &mut self,
-        message: &[u8],
+        message: &IoVec,
     ) -> std::result::Result<(), RdmaError> {
         log::trace!(
             "RDMA _send_fragmented_data called with message length: {}",
@@ -335,9 +313,18 @@ impl RdmaTransport {
             ));
         }
 
-        let total_data_to_send = message.len() as u32;
+        let total_data_to_send = message.total_size() as u32;
+        if total_data_to_send == 0 {
+            log::trace!("Sending empty message, nothing to do.");
+            return Ok(());
+        }
+
         let mut data_sent: u32 = 0;
         let mut fragment_num = 0;
+
+        let mut buf_iterator = message.iter();
+        let mut current_buf = buf_iterator.next().unwrap();
+        let mut current_buf_offset = 0usize;
         while data_sent < total_data_to_send {
             /// The offset must be 8-byte aligned.
             const OFFSET: u32 = (SmbdDataTransferHeader::ENCODED_SIZE as u32)
@@ -346,6 +333,11 @@ impl RdmaTransport {
 
             let remaining = total_data_to_send - data_sent;
             let data_sending = remaining.min(running.max_rw_size - OFFSET);
+            if data_sending == 0 {
+                current_buf = buf_iterator.next().unwrap();
+                current_buf_offset = 0;
+                continue;
+            }
 
             let header = SmbdDataTransferHeader {
                 data_length: data_sending,
@@ -367,7 +359,8 @@ impl RdmaTransport {
                 header.write(&mut cursor)?;
 
                 mr_data[OFFSET as usize..data_end].copy_from_slice(
-                    &message[data_sent as usize..data_sent as usize + data_sending as usize],
+                    &current_buf[current_buf_offset as usize
+                        ..current_buf_offset as usize + data_sending as usize],
                 );
 
                 log::trace!(
@@ -386,6 +379,7 @@ impl RdmaTransport {
             );
 
             data_sent += data_sending;
+            current_buf_offset += data_sending as usize;
             fragment_num += 1;
         }
 
@@ -397,7 +391,7 @@ impl SmbTransport for RdmaTransport {
     fn connect<'a>(
         &'a mut self,
         endpoint: &'a str,
-    ) -> futures_core::future::BoxFuture<'a, super::error::Result<()>> {
+    ) -> futures_core::future::BoxFuture<'a, crate::error::Result<()>> {
         async move { Ok(self.connect_and_negotiate(endpoint).await?) }.boxed()
     }
 
@@ -407,7 +401,7 @@ impl SmbTransport for RdmaTransport {
 
     fn split(
         self: Box<Self>,
-    ) -> super::error::Result<(Box<dyn SmbTransportRead>, Box<dyn SmbTransportWrite>)> {
+    ) -> crate::error::Result<(Box<dyn SmbTransportRead>, Box<dyn SmbTransportWrite>)> {
         let (ro, wo) = match self.state {
             RdmaTransportState::RunningRw((ro, wo)) => (ro, wo),
             _ => return Err(TransportError::AlreadySplit),
@@ -427,29 +421,29 @@ impl SmbTransportRead for RdmaTransport {
     fn receive_exact<'a>(
         &'a mut self,
         _out_buf: &'a mut [u8],
-    ) -> futures_core::future::BoxFuture<'a, super::error::Result<()>> {
+    ) -> futures_core::future::BoxFuture<'a, crate::error::Result<()>> {
         unimplemented!("RDMA does not support receive_exact directly. Use receive instead.");
     }
 
     fn receive<'a>(
         &'a mut self,
-    ) -> futures_core::future::BoxFuture<'a, super::error::Result<Vec<u8>>> {
+    ) -> futures_core::future::BoxFuture<'a, crate::error::Result<Vec<u8>>> {
         async { Ok(self._receive_fragmented_data().await?) }.boxed()
     }
 }
 
-impl super::SmbTransportWrite for RdmaTransport {
+impl SmbTransportWrite for RdmaTransport {
     fn send_raw<'a>(
         &'a mut self,
         _buf: &'a [u8],
-    ) -> futures_core::future::BoxFuture<'a, super::error::Result<()>> {
+    ) -> futures_core::future::BoxFuture<'a, crate::error::Result<()>> {
         unimplemented!("RDMA does not support send_raw directly. Use send instead.");
     }
 
     fn send<'a>(
         &'a mut self,
-        message: &'a [u8],
-    ) -> futures_core::future::BoxFuture<'a, super::error::Result<()>> {
+        message: &'a IoVec,
+    ) -> futures_core::future::BoxFuture<'a, crate::error::Result<()>> {
         async { Ok(self._send_fragmented_data(message).await?) }.boxed()
     }
 }

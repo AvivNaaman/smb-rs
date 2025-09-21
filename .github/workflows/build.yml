@@ -35,9 +35,9 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - name: Add QUIC tests
+    - name: Add QUIC/RDMA tests
       if: ${{ matrix.compile_features == 'async' }}
-      run: echo "COMMON_FEATURES=${COMMON_FEATURES},quic" >> $GITHUB_ENV
+      run: echo "COMMON_FEATURES=${COMMON_FEATURES},quic,rdma" >> $GITHUB_ENV
     - name: Format/${{ matrix.compile_features }}
       run: |
         rustup component add rustfmt

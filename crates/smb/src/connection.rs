@@ -17,8 +17,7 @@ use rand::RngCore;
 use rand::rngs::OsRng;
 use smb_dtyp::*;
 use smb_msg::{Command, Response, negotiate::*, plain::*, smb1::SMB1NegotiateMessage};
-use smb_transport::IoVec;
-use smb_transport::{SmbTransport, make_transport};
+use smb_transport::*;
 use std::cmp::max;
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -63,8 +62,6 @@ impl Connection {
         primary: &Connection,
         primary_session: &Session,
         target: SocketAddr,
-        user_name: &str,
-        password: String,
         mut transport: T,
     ) -> crate::Result<(Self, Session)> {
         log::info!("Connecting alternate connection: {}", target);

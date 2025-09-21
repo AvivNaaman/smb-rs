@@ -4,7 +4,7 @@ use std::time::Duration;
 
 use smb_dtyp::Guid;
 use smb_msg::Dialect;
-use smb_transport::TransportConfig;
+use smb_transport::config::*;
 
 /// Specifies the encryption mode for the connection.
 /// Use this as part of the [ConnectionConfig] to specify the encryption mode for the connection.
@@ -29,17 +29,6 @@ pub struct MultiChannelConfig {
     /// If this is set, the client will attempt to use RDMA transport if available.
     #[cfg(feature = "rdma")]
     pub rdma: Option<RdmaConfig>,
-}
-
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub enum QuicCertValidationOptions {
-    /// Use the default platform verifier for the certificate.
-    /// See `quinn::ClientConfig::with_platform_verifier`.
-    /// This is the default option.
-    #[default]
-    PlatformVerifier,
-    /// Use a store with the provided root certificates.
-    CustomRootCerts(Vec<String>),
 }
 
 impl EncryptionMode {

@@ -1,7 +1,7 @@
 services:
   tests:
     build:
-      context: smb/tests
+      context: crates/smb/tests
       dockerfile: Dockerfile
       tags:
         - ghcr.io/avivnaaman/smb-tests:latest

@@ -1,3 +1,9 @@
+
+#[cfg(feature = "rdma")]
+pub use crate::rdma::config::*;
+#[cfg(feature = "quic")]
+pub use crate::quic::config::*;
+
 /// Specifies the transport protocol to be used for the connection.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub enum TransportConfig {
@@ -14,14 +20,3 @@ pub enum TransportConfig {
     #[cfg(feature = "rdma")]
     Rdma(RdmaConfig),
 }
-
-#[cfg(feature = "quic")]
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct QuicConfig {
-    pub local_address: Option<SocketAddr>,
-    pub cert_validation: QuicCertValidationOptions,
-}
-
-#[cfg(feature = "rdma")]
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct RdmaConfig {}

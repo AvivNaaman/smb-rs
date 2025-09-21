@@ -7,7 +7,7 @@ use std::time::Duration;
 use common::{TestConstants, TestEnv, make_server_connection};
 use serial_test::serial;
 use smb::error::TimedOutTask;
-use smb::{Client, ClientConfig, TransportConfig, UncPath};
+use smb::{Client, ClientConfig, transport::TransportConfig, UncPath};
 use smb::{ConnectionConfig, FileCreateArgs};
 use smb_fscc::FileDispositionInformation;
 use smb_msg::Status;

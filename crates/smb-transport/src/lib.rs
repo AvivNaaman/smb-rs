@@ -5,14 +5,20 @@ pub mod error;
 pub mod iovec;
 pub mod netbios;
 pub mod quic;
+pub mod rdma;
 pub mod tcp;
 pub mod traits;
 pub mod utils;
 
-pub use config::TransportConfig;
+pub use config::*;
 pub use error::TransportError;
 pub use iovec::*;
-pub use netbios::NetBiosTransport;
+#[cfg(feature = "netbios")]
+pub use netbios::*;
+#[cfg(feature = "rdma")]
+pub use rdma::*;
+#[cfg(feature = "quic")]
+pub use quic::*;
 pub use tcp::{SmbTcpMessageHeader, TcpTransport};
 pub use traits::*;
 
@@ -35,7 +41,7 @@ pub fn make_transport(
         }
 
         #[cfg(feature = "rdma")]
-        TransportConfig::Rdma(_rdma_config) => Ok(Box::new(rdma::RdmaTransport::new(timeout)?)),
+        TransportConfig::Rdma(_rdma_config) => Ok(Box::new(RdmaTransport::new(timeout))),
     }
 }
 
