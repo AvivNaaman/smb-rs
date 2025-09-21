@@ -1,4 +1,3 @@
-use crate::connection::preauth_hash::PreauthHashValue;
 use maybe_async::*;
 use smb_msg::{Command, PlainRequest, PlainResponse, RequestContent, Status};
 use smb_transport::IoVec;
@@ -256,8 +255,7 @@ pub trait MessageHandler: Send + Sync {
         &self,
         msg: OutgoingMessage,
     ) -> crate::Result<(SendMessageResult, IncomingMessage)> {
-        self.sendor_recvo(msg, ReceiveOptions::new())
-            .await
+        self.sendor_recvo(msg, ReceiveOptions::new()).await
     }
 }
 

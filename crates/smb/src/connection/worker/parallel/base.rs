@@ -257,7 +257,7 @@ where
     async fn send(&self, msg: OutgoingMessage) -> crate::Result<SendMessageResult> {
         log::trace!("ParallelWorker::send({msg:?}) called");
         let return_raw_data = msg.return_raw_data;
-        
+
         let id = msg.message.header.message_id;
         let message = { self.transformer.transform_outgoing(msg).await? };
 

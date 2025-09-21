@@ -59,4 +59,7 @@ pub struct ConnectionInfo {
     pub config: ConnectionConfig,
     /// Preauthentication hash state, if applicable.
     pub preauth_hash: PreauthHashState,
+
+    /// The client GUID used for the connection.
+    pub client_guid: Guid,
 }

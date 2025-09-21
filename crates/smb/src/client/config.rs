@@ -1,3 +1,5 @@
+use smb_dtyp::Guid;
+
 use crate::ConnectionConfig;
 
 /// Configuration for the SMB client.
@@ -13,6 +15,8 @@ pub struct ClientConfig {
     /// Configuration related to the SMB connections made by the client.
     /// See [`ConnectionConfig`] for more details.
     pub connection: ConnectionConfig,
+
+    pub client_guid: Guid,
 }
 
 impl Default for ClientConfig {
@@ -20,6 +24,7 @@ impl Default for ClientConfig {
         Self {
             dfs: true,
             connection: ConnectionConfig::default(),
+            client_guid: Guid::generate(),
         }
     }
 }

@@ -15,10 +15,10 @@ pub use error::TransportError;
 pub use iovec::*;
 #[cfg(feature = "netbios")]
 pub use netbios::*;
-#[cfg(feature = "rdma")]
-pub use rdma::*;
 #[cfg(feature = "quic")]
 pub use quic::*;
+#[cfg(feature = "rdma")]
+pub use rdma::*;
 pub use tcp::{SmbTcpMessageHeader, TcpTransport};
 pub use traits::*;
 

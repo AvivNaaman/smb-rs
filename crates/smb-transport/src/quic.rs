@@ -2,10 +2,10 @@
 
 //! SMB over QUIC transport for SMB.
 
-mod transport;
 pub mod config;
 mod error;
+mod transport;
 
-pub use transport::{QuicTransport};
-pub use error::QuicError;
 pub use config::QuicConfig;
+pub use error::QuicError;
+pub use transport::QuicTransport;

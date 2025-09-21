@@ -306,7 +306,11 @@ impl Client {
 
             log::debug!("Creating new connection to {server}",);
 
-            let conn = Connection::build(server, self.config.connection.clone())?;
+            let conn = Connection::build(
+                server,
+                self.config.client_guid,
+                self.config.connection.clone(),
+            )?;
             let conn = Arc::new(conn);
 
             connections.insert(
@@ -502,7 +506,6 @@ impl Client {
         }
         let first_rdma_interface = first_rdma_interface.unwrap();
 
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await; // Allow some time for the connection to stabilize.
         let opened_conn_info = self.get_connection(unc.server()).await?;
         let session = self.get_session(unc).await?;
         Connection::build_alternate(

@@ -1,11 +1,11 @@
 use crate::{copy::CopyCmd, info::InfoCmd, security::SecurityCmd};
 use clap::{Parser, Subcommand, ValueEnum};
-use smb::Dialect;
 use smb::transport::config::*;
 use smb::{
     ClientConfig, ConnectionConfig,
     connection::{AuthMethodsConfig, EncryptionMode},
 };
+use smb::{Dialect, Guid};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -65,6 +65,7 @@ impl Cli {
     pub fn make_smb_client_config(&self) -> ClientConfig {
         ClientConfig {
             dfs: !self.no_dfs,
+            client_guid: Guid::generate(),
             connection: ConnectionConfig {
                 max_dialect: Some(Dialect::MAX),
                 encryption_mode: EncryptionMode::Allowed,

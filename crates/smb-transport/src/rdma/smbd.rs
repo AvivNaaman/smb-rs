@@ -2,12 +2,10 @@
 ///! SMB-Direct (SMBD) packets & structures
 ///
 /// [MS-SMBD](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-smbd/b25587c4-2507-47a4-aa89-e5d3f04f7197)
-
 use binrw::prelude::*;
 use modular_bitfield::prelude::*;
 
 use smb_msg::Status;
-
 
 const SMBD_VERSION: u16 = 0x100; // SMBD v1.0
 

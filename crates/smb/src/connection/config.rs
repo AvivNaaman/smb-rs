@@ -2,7 +2,6 @@
 
 use std::time::Duration;
 
-use smb_dtyp::Guid;
 use smb_msg::Dialect;
 use smb_transport::config::*;
 
@@ -109,10 +108,6 @@ pub struct ConnectionConfig {
 
     /// Specifies the client host name to be used in the SMB2 negotiation & session setup.
     pub client_name: Option<String>,
-
-    /// Specifies the GUID of the client to be used in the SMB2 negotiate request.
-    /// If not set, a random GUID will be generated.
-    pub client_guid: Option<Guid>,
 
     /// Specifies whether to disable support for Server-to-client notifications.
     /// If set to true, the client will NOT support notifications.

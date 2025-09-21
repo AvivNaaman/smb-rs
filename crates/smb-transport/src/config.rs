@@ -1,8 +1,7 @@
-
-#[cfg(feature = "rdma")]
-pub use crate::rdma::config::*;
 #[cfg(feature = "quic")]
 pub use crate::quic::config::*;
+#[cfg(feature = "rdma")]
+pub use crate::rdma::config::*;
 
 /// Specifies the transport protocol to be used for the connection.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]

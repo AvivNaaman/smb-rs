@@ -17,7 +17,7 @@ pub enum PreauthHashState {
 }
 
 impl PreauthHashState {
-    pub fn new() -> PreauthHashState {
+    pub fn begin() -> PreauthHashState {
         PreauthHashState::InProgress([0; 64])
     }
 

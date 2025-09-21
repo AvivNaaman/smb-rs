@@ -11,12 +11,12 @@ use super::connection_info::ConnectionInfo;
 /// The [`Transformer`] structure is responsible for transforming messages to and from bytes,
 /// send over NetBios TCP connection.
 /// See [`Transformer::transform_outgoing`] and [`Transformer::transform_incoming`] for transformation functions.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Transformer {
     /// Sessions opened from this connection.
     sessions: Mutex<HashMap<u64, Arc<Mutex<SessionInfo>>>>,
 
-    config: RwLock<TransformerConfig>
+    config: RwLock<TransformerConfig>,
 }
 
 #[derive(Default, Debug)]
@@ -315,15 +315,6 @@ impl Transformer {
         );
         form.signed = true;
         Ok(())
-    }
-}
-
-impl Default for Transformer {
-    fn default() -> Self {
-        Self {
-            sessions: Default::default(),
-            config: Default::default(),
-        }
     }
 }
 

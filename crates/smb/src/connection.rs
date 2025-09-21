@@ -43,9 +43,8 @@ pub struct Connection {
 impl Connection {
     /// Creates a new SMB connection, specifying a server configuration, without connecting to a server.
     /// Use the [`connect`](Connection::connect) method to establish a connection.
-    pub fn build(server: &str, config: ConnectionConfig) -> crate::Result<Self> {
+    pub fn build(server: &str, client_guid: Guid, config: ConnectionConfig) -> crate::Result<Self> {
         config.validate()?;
-        let client_guid = config.client_guid.unwrap_or_else(Guid::generate);
         Ok(Connection {
             handler: HandlerReference::new(ConnectionMessageHandler::new(
                 client_guid,
@@ -65,14 +64,27 @@ impl Connection {
         target: SocketAddr,
         mut transport: T,
     ) -> crate::Result<(Self, Session)> {
-        log::info!("Connecting alternate connection: {}", target);
+        if primary.handler.worker().is_none() {
+            return Err(Error::InvalidState(
+                "Specified primary connection is not connected".into(),
+            ));
+        }
+
+        log::info!("Starting alternate connection transport: {}", target);
         transport.connect(target.to_string().as_str()).await?;
-        log::debug!("Connected to alternate connection: {}", target);
-        let result = Connection::build(&primary.server, primary.config.clone())?;
+
+        log::debug!("Negotiating alternate connection to {}", target);
+        let result = Connection::build(
+            &primary.server,
+            primary.handler.client_guid,
+            primary.config.clone(),
+        )?;
         const PRIMARY_USES_SMB2: bool = true;
         result
             ._negotiate(Box::from(transport), PRIMARY_USES_SMB2)
             .await?;
+
+        log::debug!("Binding alternate session to new connection");
         let session = Session::bind(
             primary_session,
             &result.handler,
@@ -133,9 +145,10 @@ impl Connection {
     pub async fn from_transport(
         transport: Box<dyn SmbTransport>,
         server: &str,
+        client_guid: Guid,
         config: ConnectionConfig,
     ) -> crate::Result<Self> {
-        let conn = Self::build(server, config)?;
+        let conn = Self::build(server, client_guid, config)?;
         conn._negotiate(transport, conn.config.smb2_only_negotiate)
             .await?;
         Ok(conn)
@@ -299,7 +312,7 @@ impl Connection {
         );
 
         let preauth_hash = if dialect_impl.preauth_hash_supported() {
-            PreauthHashState::new()
+            PreauthHashState::begin()
                 .next(&request_status.raw.unwrap())
                 .next(&response.raw)
         } else {
@@ -312,6 +325,7 @@ impl Connection {
             config: self.config.clone(),
             server: self.server.clone(),
             preauth_hash,
+            client_guid: self.handler.client_guid,
         })
     }
 
