@@ -152,7 +152,8 @@ impl Client {
         user_name: &str,
         password: String,
     ) -> crate::Result<()> {
-        self._share_connect(target, user_name, password.clone()).await?;
+        self._share_connect(target, user_name, password.clone())
+            .await?;
 
         // Establish an additional channel if multi-channel is enabled.
         #[cfg(feature = "rdma")]
@@ -163,7 +164,7 @@ impl Client {
     }
 
     /// (Internal)
-    /// 
+    ///
     /// Performs the actual share connection logic,
     /// without setting up multi-channel.
     #[maybe_async]
@@ -200,15 +201,28 @@ impl Client {
                 target.server()
             ))
         })?;
-        let session = connection
-            .connection
-            .authenticate(user_name, password.clone())
-            .await?;
-        log::debug!(
-            "Successfully authenticated to {} as {}",
-            target.server(),
-            user_name
-        );
+
+        if connection.share_connects.contains_key(&target) {
+            log::warn!(
+                "Share {} is already connected, ignoring duplicate connection attempt.",
+                target
+            );
+            return Ok(());
+        }
+
+        let session = {
+            let session = connection
+                .connection
+                .authenticate(user_name, password.clone())
+                .await?;
+            log::debug!(
+                "Successfully authenticated to {} as {}",
+                target.server(),
+                user_name
+            );
+            Arc::new(session)
+        };
+
         let tree = session.tree_connect(&target.to_string()).await?;
 
         let credentials = if tree.is_dfs_root()? {
@@ -218,7 +232,7 @@ impl Client {
         };
 
         let connect_share_info = ClientConectedTree {
-            session: Arc::new(session),
+            session,
             tree: Arc::new(tree),
             credentials,
         };
@@ -443,6 +457,10 @@ impl Client {
         user_name: &str,
         password: String,
     ) -> crate::Result<()> {
+        if unc.is_ipc_share() {
+            log::debug!("Not checking multi-channel for IPC$ share.");
+        }
+
         {
             let opened_conn_info = self.get_connection(unc.server()).await?;
             if !opened_conn_info
@@ -462,16 +480,13 @@ impl Client {
         log::debug!(
             "Multi-channel is enabled for connection to {unc}. Scanning for alternate channels."
         );
-        // Connect IPC and query network interfaces.
-        if !unc.is_ipc_share() {
-            log::debug!("Connecting to IPC$ share for {unc} to scan for alternate channels.");
-            self.ipc_connect(unc.server(), user_name, password.clone())
-                .await?;
-        }
 
+        // Connect IPC and query network interfaces.
         let ipc_share = UncPath::ipc_share(unc.server())?;
-        let ipc_conn_info = self.get_tree(&ipc_share).await?;
-        let network_interfaces = ipc_conn_info
+        self.ipc_connect(ipc_share.server(), user_name, password)
+            .await?;
+        let ipc_tree = self.get_tree(&ipc_share).await?;
+        let network_interfaces = ipc_tree
             .as_ipc_tree()
             .unwrap()
             .query_network_interfaces()

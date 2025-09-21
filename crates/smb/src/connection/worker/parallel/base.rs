@@ -256,17 +256,18 @@ where
     #[maybe_async]
     async fn send(&self, msg: OutgoingMessage) -> crate::Result<SendMessageResult> {
         log::trace!("ParallelWorker::send({msg:?}) called");
-
-        let finalize_preauth_hash = msg.finalize_preauth_hash;
+        let return_raw_data = msg.return_raw_data;
+        
         let id = msg.message.header.message_id;
         let message = { self.transformer.transform_outgoing(msg).await? };
 
-        let hash = match finalize_preauth_hash {
-            true => self.transformer.finalize_preauth_hash().await?,
-            false => None,
-        };
-
         log::trace!("Message with ID {id} is passed to the worker for sending",);
+
+        let raw_message_copy = if return_raw_data {
+            Some(message.clone())
+        } else {
+            None
+        };
 
         let message = T::wrap_msg_to_send(message);
 
@@ -274,7 +275,7 @@ where
             Error::MessageProcessingError("Failed to send message to worker!".to_string())
         })?;
 
-        Ok(SendMessageResult::new(id, hash))
+        Ok(SendMessageResult::new(id, raw_message_copy))
     }
 
     #[maybe_async]

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::dialects::DialectImpl;
+use crate::{connection::preauth_hash::PreauthHashState, dialects::DialectImpl};
 use binrw::prelude::*;
 use smb_dtyp::Guid;
 use smb_msg::*;
@@ -57,4 +57,6 @@ pub struct ConnectionInfo {
     pub dialect: Arc<DialectImpl>,
     /// Contains the configuration of the connection, as specified by the user when the connection was established.
     pub config: ConnectionConfig,
+    /// Preauthentication hash state, if applicable.
+    pub preauth_hash: PreauthHashState,
 }

@@ -7,7 +7,6 @@ use smb_transport::IoVec;
 use std::{collections::HashMap, io::Cursor, sync::Arc};
 
 use super::connection_info::ConnectionInfo;
-use super::preauth_hash::{PreauthHashState, PreauthHashValue};
 
 /// The [`Transformer`] structure is responsible for transforming messages to and from bytes,
 /// send over NetBios TCP connection.
@@ -17,9 +16,7 @@ pub struct Transformer {
     /// Sessions opened from this connection.
     sessions: Mutex<HashMap<u64, Arc<Mutex<SessionInfo>>>>,
 
-    config: RwLock<TransformerConfig>,
-
-    preauth_hash: Mutex<Option<PreauthHashState>>,
+    config: RwLock<TransformerConfig>
 }
 
 #[derive(Default, Debug)]
@@ -55,10 +52,6 @@ impl Transformer {
         }
 
         config.negotiated = true;
-
-        if !neg_info.dialect.preauth_hash_supported() {
-            *self.preauth_hash.lock().await? = None;
-        }
 
         Ok(())
     }
@@ -111,53 +104,6 @@ impl Transformer {
             )))
     }
 
-    /// (Internal)
-    ///
-    ///  Calculates the next preauth integrity hash value, if required.
-    #[maybe_async]
-    async fn step_preauth_hash(&self, raw: &IoVec) -> crate::Result<()> {
-        let mut pa_hash = self.preauth_hash.lock().await?;
-        // If already finished -- do nothing.
-        if matches!(*pa_hash, Some(PreauthHashState::Finished(_))) {
-            return Ok(());
-        }
-        // Do not touch if not set at all.
-        if pa_hash.is_none() {
-            return Ok(());
-        }
-        // Otherwise, update the hash!
-        for buf in raw.iter() {
-            *pa_hash = pa_hash.take().unwrap().next(buf).into();
-        }
-        Ok(())
-    }
-
-    /// Finalizes the preauth hash. if it's not already finalized, and returns the value.
-    /// If the hash is not supported, returns None.
-    #[maybe_async]
-    pub async fn finalize_preauth_hash(&self) -> crate::Result<Option<PreauthHashValue>> {
-        let mut pa_hash = self.preauth_hash.lock().await?;
-        if let Some(PreauthHashState::Finished(hash)) = &*pa_hash {
-            return Ok(Some(*hash));
-        }
-
-        *pa_hash = match pa_hash.take() {
-            Some(x) => Some(x.finish()),
-            None => {
-                return Ok(None);
-            }
-        };
-
-        Ok(Some(
-            *pa_hash
-                .as_ref()
-                .ok_or_else(|| {
-                    crate::Error::InvalidState("Preauth hash is not supported!".to_string())
-                })?
-                .unwrap_final_hash(),
-        ))
-    }
-
     /// Transforms an outgoing message to a raw SMB message.
     #[maybe_async]
     pub async fn transform_outgoing(&self, mut msg: OutgoingMessage) -> crate::Result<IoVec> {
@@ -175,11 +121,6 @@ impl Transformer {
         if msg.additional_data.as_ref().is_some_and(|d| !d.is_empty()) {
             outgoing_data.add_shared(msg.additional_data.unwrap().clone());
         }
-
-        // 0. Update preauth hash as needed.
-        // It is assumed zero-copy is not used for non-data messages,
-        // such as negotiate/session setup, and so, we ignore additional data here.
-        self.step_preauth_hash(&outgoing_data).await?;
 
         // 1. Sign
         if should_sign {
@@ -334,8 +275,6 @@ impl Transformer {
             }
         };
 
-        self.step_preauth_hash(&iovec).await?;
-
         Ok(IncomingMessage {
             message,
             raw: iovec,
@@ -384,8 +323,6 @@ impl Default for Transformer {
         Self {
             sessions: Default::default(),
             config: Default::default(),
-            // if not supported, will be set to None post-negotiation.
-            preauth_hash: Mutex::new(Some(PreauthHashState::default())),
         }
     }
 }

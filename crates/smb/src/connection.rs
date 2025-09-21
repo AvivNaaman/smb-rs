@@ -5,6 +5,7 @@ pub mod transformer;
 pub mod worker;
 
 use crate::Error;
+use crate::connection::preauth_hash::PreauthHashState;
 use crate::dialects::DialectImpl;
 use crate::session::SessionMessageHandler;
 use crate::{compression, sync_helpers::*};
@@ -237,16 +238,19 @@ impl Connection {
         };
 
         // Send SMB2 negotiate request
-        let response = self
+        let (request_status, response) = self
             .handler
-            .send_recv(
-                self._make_smb2_neg_request(
-                    dialects,
-                    crypto::SIGNING_ALGOS.to_vec(),
-                    encryption_algos,
-                    compression::SUPPORTED_ALGORITHMS.to_vec(),
+            .sendor_recv(
+                OutgoingMessage::new(
+                    self._make_smb2_neg_request(
+                        dialects,
+                        crypto::SIGNING_ALGOS.to_vec(),
+                        encryption_algos,
+                        compression::SUPPORTED_ALGORITHMS.to_vec(),
+                    )
+                    .into(),
                 )
-                .into(),
+                .with_return_raw_data(true),
             )
             .await?;
 
@@ -294,11 +298,20 @@ impl Connection {
             &negotiation
         );
 
+        let preauth_hash = if dialect_impl.preauth_hash_supported() {
+            PreauthHashState::new()
+                .next(&request_status.raw.unwrap())
+                .next(&response.raw)
+        } else {
+            PreauthHashState::unsupported()
+        };
+
         Ok(ConnectionInfo {
             negotiation,
             dialect: dialect_impl,
             config: self.config.clone(),
             server: self.server.clone(),
+            preauth_hash,
         })
     }
 

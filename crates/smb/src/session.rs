@@ -4,6 +4,7 @@
 //! including encryption and signing of messages.
 
 use crate::connection::connection_info::ConnectionInfo;
+use crate::connection::preauth_hash::PreauthHashState;
 use crate::connection::worker::Worker;
 use crate::sync_helpers::*;
 use crate::{
@@ -73,11 +74,11 @@ impl Session {
         };
         let request = OutgoingMessage::new(
             SessionSetupRequest::new(next_buf, req_security_mode, SetupRequestFlags::new()).into(),
-        );
+        ).with_return_raw_data(true);
 
         // response hash is processed later, in the loop.
-        let init_response = upstream
-            .sendo_recvo(
+        let (send_result, init_response) = upstream
+            .sendor_recvo(
                 request,
                 ReceiveOptions::new()
                     .with_status(&[Status::MoreProcessingRequired, Status::Success]),
@@ -89,6 +90,10 @@ impl Session {
         let session_state = Arc::new(Mutex::new(SessionInfo::new(session_id)));
         let handler = SessionMessageHandler::new(session_id, upstream, session_state.clone());
 
+        // Update preauth hash
+        let mut session_preauth_hash = conn_info.preauth_hash.clone().next(&send_result.raw.unwrap());
+        session_preauth_hash = session_preauth_hash.next(&init_response.raw);
+
         let setup_result = if init_response.message.header.status == Status::Success as u32 {
             unimplemented!()
         } else {
@@ -99,6 +104,7 @@ impl Session {
                 req_security_mode,
                 &handler,
                 conn_info,
+                session_preauth_hash,
             )
             .await
         };
@@ -142,6 +148,7 @@ impl Session {
         req_security_mode: SessionSecurityMode,
         handler: &HandlerReference<SessionMessageHandler>,
         conn_info: &Arc<ConnectionInfo>,
+        mut preauth_hash: PreauthHashState
     ) -> crate::Result<SessionFlags> {
         let mut last_setup_response = Some(init_response);
         let mut flags = None;
@@ -165,18 +172,20 @@ impl Session {
                             SetupRequestFlags::new(),
                         )
                         .into(),
-                    );
-                    request.finalize_preauth_hash = is_auth_done;
+                    ).with_return_raw_data(true);
                     let result = handler.sendo(request).await?;
+
+                    preauth_hash = preauth_hash.next(&result.raw.unwrap());
 
                     // If keys are exchanged, set them up, to enable validation of next response!
 
                     if is_auth_done {
                         let session_key: KeyToDerive = authenticator.session_key()?;
+                        preauth_hash = preauth_hash.finish();
 
                         session_state.lock().await?.setup(
                             &session_key,
-                            &result.preauth_hash,
+                            &preauth_hash.unwrap_final_hash().map(|h| h.clone()),
                             conn_info,
                         )?;
                         log::trace!("Session signing key set.");

@@ -8,9 +8,7 @@ use std::sync::Arc;
 pub struct OutgoingMessage {
     pub message: PlainRequest,
 
-    /// Whether to finalize the preauth hash after sending this message.
-    /// If this is set to true twice per connection, an error will be thrown.
-    pub finalize_preauth_hash: bool,
+    pub return_raw_data: bool,
 
     /// Ask the sender to compress the message before sending, if possible.
     pub compress: bool,
@@ -29,7 +27,7 @@ impl OutgoingMessage {
     pub fn new(content: RequestContent) -> OutgoingMessage {
         OutgoingMessage {
             message: PlainRequest::new(content),
-            finalize_preauth_hash: false,
+            return_raw_data: false,
             compress: true,
             encrypt: false,
             has_response: true,
@@ -41,6 +39,11 @@ impl OutgoingMessage {
         self.additional_data = Some(data);
         self
     }
+
+    pub fn with_return_raw_data(mut self, return_raw_data: bool) -> Self {
+        self.return_raw_data = return_raw_data;
+        self
+    }
 }
 
 #[derive(Debug)]
@@ -48,15 +51,12 @@ pub struct SendMessageResult {
     // The message ID for the sent message.
     pub msg_id: u64,
     // If finalized, this is set.
-    pub preauth_hash: Option<PreauthHashValue>,
+    pub raw: Option<IoVec>,
 }
 
 impl SendMessageResult {
-    pub fn new(msg_id: u64, preauth_hash: Option<PreauthHashValue>) -> SendMessageResult {
-        SendMessageResult {
-            msg_id,
-            preauth_hash,
-        }
+    pub fn new(msg_id: u64, raw: Option<IoVec>) -> SendMessageResult {
+        SendMessageResult { msg_id, raw }
     }
 }
 
@@ -191,28 +191,43 @@ pub trait MessageHandler: Send + Sync {
 
     // -- Utility functions, accessible from references via Deref.
     #[maybe_async]
+    #[inline]
     async fn send(&self, msg: RequestContent) -> crate::Result<SendMessageResult> {
         self.sendo(OutgoingMessage::new(msg)).await
     }
 
     #[maybe_async]
+    #[inline]
     async fn recv(&self, cmd: Command) -> crate::Result<IncomingMessage> {
         self.recvo(ReceiveOptions::new().with_cmd(Some(cmd))).await
     }
 
     #[maybe_async]
-    async fn sendo_recvo(
+    #[inline]
+    async fn sendor_recvo(
         &self,
         msg: OutgoingMessage,
         mut options: ReceiveOptions<'_>,
-    ) -> crate::Result<IncomingMessage> {
+    ) -> crate::Result<(SendMessageResult, IncomingMessage)> {
         // Send the message and wait for the matching response.
         let send_result = self.sendo(msg).await?;
         options.msg_id = send_result.msg_id;
-        self.recvo(options).await
+        let in_result = self.recvo(options).await?;
+        Ok((send_result, in_result))
     }
 
     #[maybe_async]
+    #[inline]
+    async fn sendo_recvo(
+        &self,
+        msg: OutgoingMessage,
+        options: ReceiveOptions<'_>,
+    ) -> crate::Result<IncomingMessage> {
+        self.sendor_recvo(msg, options).await.map(|(_, r)| r)
+    }
+
+    #[maybe_async]
+    #[inline]
     async fn send_recvo(
         &self,
         msg: RequestContent,
@@ -222,6 +237,7 @@ pub trait MessageHandler: Send + Sync {
     }
 
     #[maybe_async]
+    #[inline]
     async fn sendo_recv(&self, msg: OutgoingMessage) -> crate::Result<IncomingMessage> {
         let cmd = msg.message.content.associated_cmd();
         let options = ReceiveOptions::new().with_cmd(Some(cmd));
@@ -229,8 +245,19 @@ pub trait MessageHandler: Send + Sync {
     }
 
     #[maybe_async]
+    #[inline]
     async fn send_recv(&self, msg: RequestContent) -> crate::Result<IncomingMessage> {
         self.sendo_recv(OutgoingMessage::new(msg)).await
+    }
+
+    #[maybe_async]
+    #[inline]
+    async fn sendor_recv(
+        &self,
+        msg: OutgoingMessage,
+    ) -> crate::Result<(SendMessageResult, IncomingMessage)> {
+        self.sendor_recvo(msg, ReceiveOptions::new())
+            .await
     }
 }
 
