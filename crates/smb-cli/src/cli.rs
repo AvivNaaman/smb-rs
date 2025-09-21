@@ -93,9 +93,9 @@ impl Cli {
                 },
                 allow_unsigned_guest_access: self.disable_message_signing,
                 compression_enabled: self.compress,
-                #[cfg(feature = "rdma")]
                 multichannel: smb::connection::MultiChannelConfig {
                     enabled: self.multichannel,
+                    #[cfg(feature = "rdma")]
                     rdma: Some(RdmaConfig {}),
                 },
                 ..Default::default()

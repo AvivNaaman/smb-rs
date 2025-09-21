@@ -178,9 +178,9 @@ impl Session {
                         .into(),
                     )
                     .with_return_raw_data(true);
-                    let result = handler.sendo(request).await?;
+                    let send_result = handler.sendo(request).await?;
 
-                    preauth_hash = preauth_hash.next(&result.raw.unwrap());
+                    preauth_hash = preauth_hash.next(&send_result.raw.unwrap());
 
                     // If keys are exchanged, set them up, to enable validation of next response!
 
@@ -218,7 +218,7 @@ impl Session {
                         .recvo_internal(
                             ReceiveOptions::new()
                                 .with_status(&[expected_status])
-                                .with_msg_id_filter(result.msg_id),
+                                .with_msg_id_filter(send_result.msg_id),
                             skip_security_validation,
                         )
                         .await?;
@@ -238,6 +238,8 @@ impl Session {
                                 "Expected a signed message!".to_string(),
                             ));
                         }
+                    } else {
+                        preauth_hash = preauth_hash.next(&response.raw);
                     }
 
                     flags = Some(session_setup_response.session_flags);
