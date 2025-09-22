@@ -15,7 +15,7 @@ use super::{MessageDecryptor, MessageEncryptor, MessageSigner};
 
 /// Holds the algorithms used for the session --
 /// signing, encryption, and decryption algorithms.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct SessionAlgos {
     signer: MessageSigner,
     encryptor: Option<MessageEncryptor>,
@@ -176,7 +176,7 @@ impl SessionAlgos {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 enum SessionInfoState {
     #[default]
     /// Initial state.
@@ -199,7 +199,7 @@ enum SessionInfoState {
 /// Holds the information of a session, to be used for actions requiring data from session,
 /// without accessing the entire session object.
 /// This struct should be single-per-session, and wrapped in a shared pointer.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SessionInfo {
     session_id: u64,
     state: Option<SessionInfoState>,

@@ -12,3 +12,4 @@ RUN apt update && \
     neovim \
     net-tools 
 
+ENV RUST_BACKTRACE=1 RUST_LOG=DEBUG

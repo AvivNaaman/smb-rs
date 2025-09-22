@@ -87,7 +87,6 @@ impl RdmaTransport {
         if endpoint_parts.len() != 2 {
             return Err(RdmaError::InvalidEndpoint(endpoint.to_string()));
         }
-        let node = dbg!(endpoint_parts[0].to_owned()) + "\0";
         let service = "445\0";
 
         log::info!("RDMA connecting...");

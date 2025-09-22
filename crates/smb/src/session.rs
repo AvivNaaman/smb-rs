@@ -197,15 +197,17 @@ impl Session {
                         )?;
                         log::trace!("Session signing key set.");
 
-                        handler
-                            .upstream
-                            .handler
-                            .worker()
-                            .ok_or_else(|| {
-                                Error::InvalidState("Worker not available!".to_string())
-                            })?
-                            .session_started(session_state.clone())
-                            .await?;
+                        let worker = handler.upstream.handler.worker().ok_or_else(|| {
+                            Error::InvalidState("Worker not available!".to_string())
+                        })?;
+
+                        if binding {
+                            log::trace!(
+                                "Binding to existing session, notifying worker that primary session shall be replaced."
+                            );
+                            worker.session_ended(handler.session_id).await?;
+                        }
+                        worker.session_started(session_state.clone()).await?;
                         log::trace!("Session inserted into worker.");
                     }
 
@@ -284,6 +286,8 @@ impl Session {
             ));
         }
 
+        let primary_session_state_copy = Arc::new(Mutex::new((*primary_session_state).clone()));
+
         let identity = AuthIdentity {
             username: Username::new("LocalAdmin", None).unwrap(),
             password: "123456".to_string().into(),
@@ -318,18 +322,18 @@ impl Session {
         rebind_setup_request.message.header.flags.set_signed(true);
         drop(primary_session_state);
 
-        let handler =
+        let new_handler =
             SessionMessageHandler::new(session_id, handler, primary.handler.session_state.clone());
 
-        handler
+        new_handler
             .upstream
             .handler
             .worker()
             .ok_or_else(|| Error::InvalidState("Worker not available!".to_string()))?
-            .session_started(primary.handler.session_state.clone())
+            .session_started(primary_session_state_copy)
             .await?;
 
-        let (send_result, rebind_response) = handler
+        let (send_result, rebind_response) = new_handler
             .sendor_recvo(
                 rebind_setup_request,
                 ReceiveOptions::new()
@@ -337,24 +341,13 @@ impl Session {
             )
             .await?;
 
-        // Do not use the old session state anymore from this point.
-        // - We're setting up a new session.
-        // handler
-        //     .upstream
-        //     .handler
-        //     .worker()
-        //     .ok_or_else(|| Error::InvalidState("Worker not available!".to_string()))?
-        //     .session_ended(session_id)
-        //     .await?;
-
         let preauth_hash = conn_info
             .preauth_hash
             .clone()
             .next(&send_result.raw.unwrap())
             .next(&rebind_response.raw);
 
-        dbg!(&rebind_response);
-        let session_state = Arc::new(Mutex::new(SessionInfo::new(
+        let new_session = Arc::new(Mutex::new(SessionInfo::new(
             rebind_response.message.header.session_id,
         )));
 
@@ -370,18 +363,21 @@ impl Session {
         let flags = Session::_setup_more_processing(
             &mut authenticator,
             rebind_response,
-            &session_state,
+            &new_session,
             security_mode,
-            &handler,
+            &new_handler,
             conn_info,
             preauth_hash,
             true, // binding to existing session
         )
         .await?;
 
-        dbg!(&flags);
+        dbg!(&flags, &new_session);
 
-        unimplemented!();
+        return Ok(Self {
+            handler: new_handler,
+            conn_info: conn_info.clone(),
+        });
     }
 
     /// Connects to the specified tree using the current session.
