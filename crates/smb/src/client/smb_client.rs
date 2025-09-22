@@ -6,6 +6,7 @@ use smb_msg::{ReferralEntry, ReferralEntryValue, Status};
 use smb_rpc::interface::{ShareInfo1, SrvSvc};
 #[cfg(feature = "rdma")]
 use smb_transport::RdmaTransport;
+use smb_transport::TcpTransport;
 use std::sync::Arc;
 use std::{collections::HashMap, str::FromStr};
 
@@ -156,8 +157,8 @@ impl Client {
             .await?;
 
         // Establish an additional channel if multi-channel is enabled.
-        #[cfg(feature = "rdma")]
-        self._setup_multi_channel(&target, user_name, password)
+        // #[cfg(feature = "rdma")]
+        self._setup_multi_channel(target, user_name, password)
             .await?;
 
         Ok(())
@@ -453,7 +454,7 @@ impl Client {
         }
     }
 
-    #[cfg(feature = "rdma")]
+    // #[cfg(feature = "rdma")]
     #[maybe_async]
     async fn _setup_multi_channel(
         &self,
@@ -496,25 +497,44 @@ impl Client {
             .query_network_interfaces()
             .await?;
 
+        let opened_conn_info = self.get_connection(unc.server()).await?;
+
+        let mut current_conn_address = opened_conn_info.conn_info().unwrap().server_address;
+        current_conn_address.set_port(0);
         // TODO: Improve this algorithm
-        let first_rdma_interface = network_interfaces
+        let default_ip_iface_index = network_interfaces
             .iter()
-            .find(|iface| iface.capability.rdma());
+            .find(|iface| iface.sockaddr.socket_addr() == current_conn_address)
+            .unwrap()
+            .if_index;
+
+        let first_rdma_interface = network_interfaces.iter().find(|iface| {
+            (iface.capability.rdma() || iface.if_index != default_ip_iface_index)
+                && iface.sockaddr.socket_addr().is_ipv4()
+        });
         if first_rdma_interface.is_none() {
             log::debug!("No RDMA-capable interface found for multi-channel.");
             return Ok(());
         }
-        let first_rdma_interface = first_rdma_interface.unwrap();
+        let interface_to_mc = first_rdma_interface.unwrap();
+        log::debug!("Found interface for multi-channel: {:?}", interface_to_mc);
 
-        let opened_conn_info = self.get_connection(unc.server()).await?;
         let session = self.get_session(unc).await?;
-        Connection::build_alternate(
+
+        let (_new_connection, new_session) = Connection::build_alternate(
             &opened_conn_info,
             &session,
-            first_rdma_interface.sockaddr.socket_addr(),
-            RdmaTransport::new(self.config.connection.timeout()),
+            interface_to_mc.sockaddr.socket_addr(),
+            TcpTransport::new(self.config.connection.timeout()),
+            // RdmaTransport::new(self.config.connection.timeout()),
         )
         .await?;
+
+        let alt_channel_tree = new_session.tree_connect(unc.share().unwrap()).await?;
+
+        dbg!(&alt_channel_tree.is_dfs_root()?);
+
+        alt_channel_tree.disconnect().await?;
 
         Ok(())
     }

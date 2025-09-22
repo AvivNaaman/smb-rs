@@ -12,6 +12,7 @@ services:
       - 139:139
     networks:
       - default
+      - default2
     cap_add:
       - SYS_ADMIN
       - SYS_PTRACE
@@ -22,8 +23,10 @@ services:
       SAMBA_VOLUME_CONFIG_PublicShare: "[PublicShare]; path=/shares/PublicShare; read only = no; browseable = yes; guest ok = yes; smb encrypt = disabled"
       SAMBA_GLOBAL_CONFIG_smb_SPACE_ports: "139 445"
       SAMBA_GLOBAL_CONFIG_smb_SPACE_encrypt: "auto"
+      SAMBA_GLOBAL_CONFIG_server_SPACE_multi_SPACE_channel_SPACE_support: "yes"
   dev:
-    image: rust:latest
+    build:
+      dockerfile: dev.Dockerfile
     environment:
       CARGO_TERM_COLOR: always
       RUST_BACKTRACE: 1
@@ -31,9 +34,12 @@ services:
     entrypoint: tail -f /dev/null
     networks:
       - default
+      - default2
     volumes: 
       - .:/smb
 
 networks:
   default:
+    driver: bridge
+  default2:
     driver: bridge

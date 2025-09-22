@@ -3,7 +3,7 @@ use binrw::{BinRead, BinWrite};
 use futures_core::future::BoxFuture;
 #[cfg(feature = "async")]
 use futures_util::FutureExt;
-use std::io::Cursor;
+use std::{io::Cursor, net::SocketAddr};
 
 use crate::{IoVec, SmbTcpMessageHeader, error::Result};
 
@@ -20,6 +20,9 @@ pub trait SmbTransport: Send + SmbTransportRead + SmbTransportWrite {
     /// One for reading, and one for writing,
     /// given that the transport has both the reading and writing capabilities.
     fn split(self: Box<Self>) -> Result<(Box<dyn SmbTransportRead>, Box<dyn SmbTransportWrite>)>;
+
+    /// Returns the local address of the transport.
+    fn remote_address(&self) -> Result<SocketAddr>;
 }
 
 pub trait SmbTransportWrite: Send {

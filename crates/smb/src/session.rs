@@ -109,6 +109,7 @@ impl Session {
                 &handler,
                 conn_info,
                 session_preauth_hash,
+                false, // not binding to existing session
             )
             .await
         };
@@ -153,6 +154,7 @@ impl Session {
         handler: &HandlerReference<SessionMessageHandler>,
         conn_info: &Arc<ConnectionInfo>,
         mut preauth_hash: PreauthHashState,
+        binding: bool,
     ) -> crate::Result<SessionFlags> {
         let mut last_setup_response = Some(init_response);
         let mut flags = None;
@@ -173,7 +175,7 @@ impl Session {
                         SessionSetupRequest::new(
                             next_buf,
                             req_security_mode,
-                            SetupRequestFlags::new(),
+                            SetupRequestFlags::new().with_binding(binding),
                         )
                         .into(),
                     )
@@ -337,13 +339,13 @@ impl Session {
 
         // Do not use the old session state anymore from this point.
         // - We're setting up a new session.
-        handler
-            .upstream
-            .handler
-            .worker()
-            .ok_or_else(|| Error::InvalidState("Worker not available!".to_string()))?
-            .session_ended(session_id)
-            .await?;
+        // handler
+        //     .upstream
+        //     .handler
+        //     .worker()
+        //     .ok_or_else(|| Error::InvalidState("Worker not available!".to_string()))?
+        //     .session_ended(session_id)
+        //     .await?;
 
         let preauth_hash = conn_info
             .preauth_hash
@@ -358,6 +360,13 @@ impl Session {
 
         let rebind_response = rebind_response.message.content.to_sessionsetup()?;
 
+        // Now we switch to a new session state and handler.
+        // let handler = SessionMessageHandler::new(
+        //     session_state.lock().await?.id(),
+        //     &handler.upstream,
+        //     session_state.clone(),
+        // );
+
         let flags = Session::_setup_more_processing(
             &mut authenticator,
             rebind_response,
@@ -366,6 +375,7 @@ impl Session {
             &handler,
             conn_info,
             preauth_hash,
+            true, // binding to existing session
         )
         .await?;
 

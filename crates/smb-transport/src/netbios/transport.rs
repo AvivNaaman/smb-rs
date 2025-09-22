@@ -112,6 +112,10 @@ impl SmbTransport for NetBiosTransport {
         // That's also why we don't need to override send/receive methods in trait impls below.
         self.tcp.split()
     }
+
+    fn remote_address(&self) -> Result<std::net::SocketAddr> {
+        self.tcp.remote_address()
+    }
 }
 
 impl SmbTransportRead for NetBiosTransport {

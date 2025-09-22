@@ -197,6 +197,14 @@ impl SmbTransport for TcpTransport {
     fn default_port(&self) -> u16 {
         445
     }
+
+    fn remote_address(&self) -> Result<SocketAddr> {
+        self.reader
+            .as_ref()
+            .ok_or(TransportError::NotConnected)?
+            .peer_addr()
+            .map_err(Into::into)
+    }
 }
 
 impl SmbTransportWrite for TcpTransport {

@@ -58,16 +58,20 @@ impl Connection {
     /// Creates a SMB connection for an alternate channel,
     /// for the specified existing, primary connection.
     #[maybe_async]
-    pub async fn build_alternate<T: SmbTransport + 'static>(
+    pub async fn build_alternate<T: SmbTransport + 'static>( // TODO: Split.
         primary: &Connection,
         primary_session: &Session,
-        target: SocketAddr,
+        mut target: SocketAddr,
         mut transport: T,
     ) -> crate::Result<(Self, Session)> {
         if primary.handler.worker().is_none() {
             return Err(Error::InvalidState(
                 "Specified primary connection is not connected".into(),
             ));
+        }
+
+        if target.port() == 0 && transport.default_port() != 0 {
+            target.set_port(transport.default_port());
         }
 
         log::info!("Starting alternate connection transport: {}", target);
@@ -221,7 +225,10 @@ impl Connection {
 
     /// This method perofrms the SMB2 negotiation.
     #[maybe_async]
-    async fn _negotiate_smb2(&self) -> crate::Result<ConnectionInfo> {
+    async fn _negotiate_smb2(
+        &self,
+        server_address: std::net::SocketAddr,
+    ) -> crate::Result<ConnectionInfo> {
         // Confirm that we're not already negotiated.
         if self.handler.conn_info.get().is_some() {
             return Err(Error::InvalidState("Already negotiated".into()));
@@ -326,6 +333,7 @@ impl Connection {
             server: self.server.clone(),
             preauth_hash,
             client_guid: self.handler.client_guid,
+            server_address,
         })
     }
 
@@ -463,6 +471,7 @@ impl Connection {
             return Err(Error::InvalidState("Already negotiated".into()));
         }
 
+        let server_address = transport.remote_address()?;
         // Negotiate SMB1, Switch to SMB2
         let worker = self
             ._negotiate_switch_to_smb2(transport, smb2_only_neg)
@@ -471,7 +480,7 @@ impl Connection {
         self.handler.worker.set(worker).unwrap();
 
         // Negotiate SMB2
-        let info = self._negotiate_smb2().await?;
+        let info = self._negotiate_smb2(server_address).await?;
 
         self.handler
             .worker
