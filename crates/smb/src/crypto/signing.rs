@@ -11,6 +11,13 @@ pub fn make_signing_algo(
     if !SIGNING_ALGOS.contains(&signing_algorithm) {
         return Err(CryptoError::UnsupportedSigningAlgorithm(signing_algorithm));
     }
+    if cfg!(feature = "_dump-keys") {
+        log::debug!(
+            "Using signing algorithm {:?} with key {:02x?}",
+            signing_algorithm,
+            signing_key
+        );
+    }
     match signing_algorithm {
         #[cfg(feature = "sign_hmac")]
         SigningAlgorithmId::HmacSha256 => Ok(hmac_signer::HmacSha256Signer::build(signing_key)),

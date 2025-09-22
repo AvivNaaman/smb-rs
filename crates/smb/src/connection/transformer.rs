@@ -10,6 +10,7 @@ use super::connection_info::ConnectionInfo;
 
 /// The [`Transformer`] structure is responsible for transforming messages to and from bytes,
 /// send over NetBios TCP connection.
+///
 /// See [`Transformer::transform_outgoing`] and [`Transformer::transform_incoming`] for transformation functions.
 #[derive(Debug, Default)]
 pub struct Transformer {

@@ -39,6 +39,15 @@ impl SessionAlgos {
             ));
         }
 
+        if cfg!(feature = "_dump-keys") {
+            log::debug!(
+                "Building session algorithms for dialect {:?} with session key {:02x?} and preauth hash {:02x?}",
+                info.negotiation.dialect_rev,
+                session_key,
+                preauth_hash.as_ref().map(|h| h.as_ref())
+            );
+        }
+
         let algos = if info.negotiation.dialect_rev.is_smb3() {
             Self::smb3xx_make_ciphers(session_key, preauth_hash, info)?
         } else {
@@ -249,11 +258,42 @@ impl SessionInfo {
     /// Turns the session into a ready state.
     ///
     /// Verifies the session flags against the connection config, and sets them in the session info.
-    pub fn ready(&mut self, flags: SessionFlags, conn_info: &ConnectionInfo) -> crate::Result<()> {
+    pub fn ready(
+        &mut self,
+        flags: SessionFlags,
+        conn_info: &ConnectionInfo,
+        bound_to: Option<&SessionInfo>,
+    ) -> crate::Result<()> {
         if !self.is_setting_up() {
             return Err(crate::Error::InvalidState(
                 "Session is not set up, cannot set flags.".to_string(),
             ));
+        }
+
+        // Session keys are global per-session :/
+        if bound_to.is_some() {
+            if !bound_to.unwrap().is_ready() {
+                return Err(crate::Error::InvalidState(
+                    "Session to bind to is not setting up, cannot bind.".to_string(),
+                ));
+            }
+
+            // Use the same encryption key as the bound session.
+            let bind_to_state = bound_to.unwrap().state.as_ref();
+            match self.state.as_mut().unwrap() {
+                SessionInfoState::SettingUp { algos, .. } => {
+                    if let SessionInfoState::Ready {
+                        algos: bound_algos, ..
+                    } = bind_to_state.unwrap()
+                    {
+                        algos.encryptor = bound_algos.encryptor.clone();
+                        algos.decryptor = bound_algos.decryptor.clone();
+                    } else {
+                        unreachable!()
+                    }
+                }
+                _ => unreachable!(),
+            }
         }
 
         // When session flags are finally set, make sure the server accepts encryption,

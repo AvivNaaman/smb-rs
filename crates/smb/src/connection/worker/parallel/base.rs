@@ -191,7 +191,7 @@ where
             Some(m) => m,
             None => {
                 if self.stopped() {
-                    return Err(Error::NotConnected);
+                    return Err(Error::ConnectionStopped);
                 } else {
                     return Err(Error::MessageProcessingError(
                         "Empty message cannot be sent to the server.".to_string(),
@@ -284,7 +284,7 @@ where
             let mut state = self.state.lock().await?;
             if self.stopped() {
                 log::trace!("Connection is closed, avoid receiving.");
-                return Err(Error::NotConnected);
+                return Err(Error::ConnectionStopped);
             }
             if state.pending.contains_key(&options.msg_id) {
                 log::trace!(

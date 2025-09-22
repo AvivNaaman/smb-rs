@@ -112,6 +112,10 @@ rdma = ["smb-transport/rdma"]
 # Kerberos requires reqwest for HTTP transport, for kerberos
 kerberos = ["reqwest", "dep:byteorder"]
 
+
+# Debugging
+_dump-keys = []
+
 [package.metadata.docs.rs]
 features = ["async", "sign", "encrypt", "compress", "kerberos", "quic"]
 no-default-features = true

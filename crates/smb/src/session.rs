@@ -21,6 +21,7 @@ use binrw::prelude::*;
 use maybe_async::*;
 use smb_msg::{Notification, ResponseContent, Status, session_setup::*};
 use sspi::{AuthIdentity, Secret, Username};
+use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 type Upstream = HandlerReference<ConnectionMessageHandler>;
@@ -130,7 +131,7 @@ impl Session {
             }
         };
 
-        session_state.lock().await?.ready(flags, conn_info)?;
+        session_state.lock().await?.ready(flags, conn_info, None)?;
 
         log::info!("Session setup complete.");
         if flags.is_guest_or_null_session() {
@@ -195,7 +196,7 @@ impl Session {
                             &preauth_hash.unwrap_final_hash().copied(),
                             conn_info,
                         )?;
-                        log::trace!("Session signing key set.");
+                        log::trace!("Session keys are set.");
 
                         let worker = handler.upstream.handler.worker().ok_or_else(|| {
                             Error::InvalidState("Worker not available!".to_string())
@@ -353,13 +354,6 @@ impl Session {
 
         let rebind_response = rebind_response.message.content.to_sessionsetup()?;
 
-        // Now we switch to a new session state and handler.
-        // let handler = SessionMessageHandler::new(
-        //     session_state.lock().await?.id(),
-        //     &handler.upstream,
-        //     session_state.clone(),
-        // );
-
         let flags = Session::_setup_more_processing(
             &mut authenticator,
             rebind_response,
@@ -372,7 +366,12 @@ impl Session {
         )
         .await?;
 
-        dbg!(&flags, &new_session);
+        let primary_session_state = primary.handler.session_state.lock().await?;
+        let primary_session_state_as_ref = primary_session_state.deref();
+        new_session
+            .lock()
+            .await?
+            .ready(flags, conn_info, Some(primary_session_state_as_ref))?;
 
         return Ok(Self {
             handler: new_handler,

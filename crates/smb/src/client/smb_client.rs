@@ -2,6 +2,7 @@ use crate::{
     Connection, Error, FileCreateArgs, Resource, Session, Tree, resource::Pipe, sync_helpers::*,
 };
 use maybe_async::maybe_async;
+use smb_fscc::FileAccessMask;
 use smb_msg::{ReferralEntry, ReferralEntryValue, Status};
 use smb_rpc::interface::{ShareInfo1, SrvSvc};
 #[cfg(feature = "rdma")]
@@ -533,6 +534,14 @@ impl Client {
         let alt_channel_tree = new_session.tree_connect(unc.share().unwrap()).await?;
 
         dbg!(&alt_channel_tree.is_dfs_root()?);
+
+        let file_in_alt = alt_channel_tree
+            .create_file(
+                unc.path().unwrap_or(""),
+                smb_msg::CreateDisposition::Open,
+                FileAccessMask::new().with_generic_read(true),
+            )
+            .await?;
 
         alt_channel_tree.disconnect().await?;
 

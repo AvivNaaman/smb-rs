@@ -58,7 +58,8 @@ impl Connection {
     /// Creates a SMB connection for an alternate channel,
     /// for the specified existing, primary connection.
     #[maybe_async]
-    pub async fn build_alternate<T: SmbTransport + 'static>( // TODO: Split.
+    pub async fn build_alternate<T: SmbTransport + 'static>(
+        // TODO: Split.
         primary: &Connection,
         primary_session: &Session,
         mut target: SocketAddr,

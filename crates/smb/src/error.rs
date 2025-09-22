@@ -25,8 +25,13 @@ pub enum Error {
     BinRWError(#[from] binrw::Error),
     #[error("Int parsing Error: {0}")]
     ParsingError(#[from] TryFromIntError),
-    #[error("Client is not connected.")]
-    NotConnected,
+
+    /// Indicates connection stopped - due to error or closed by user.
+    /// See [`TransportError::NotConnected`] for transport-level disconnection.
+    /// Usually, this is the actual error returned when trying to use a stopped connection, anyway.
+    #[error("Client connection is stopped")]
+    ConnectionStopped,
+
     #[error("Invalid state: {0}")]
     InvalidState(String),
     #[error("Unable to transform message: {0}")]

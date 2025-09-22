@@ -276,10 +276,10 @@ impl TreeMessageHandler {
     }
 
     #[maybe_async]
-    async fn _disconnect(upstream: Upstream, tree_id: u32) -> crate::Result<()> {
+    async fn _disconnect(upstream: Upstream, tree_id: u32, encrypt: bool) -> crate::Result<()> {
         // send and receive tree disconnect request & response.
         let request_content: RequestContent = TreeDisconnectRequest::default().into();
-        let mut message = OutgoingMessage::new(request_content);
+        let mut message = OutgoingMessage::new(request_content).with_encrypt(encrypt);
         message.message.header.tree_id = Some(tree_id);
 
         let _response = upstream.sendo_recv(message).await?;
@@ -294,7 +294,8 @@ impl TreeMessageHandler {
             // Already disconnected
             return Ok(());
         }
-        Self::_disconnect(self.upstream.clone(), tree_id).await
+        let encrypt = self.info.share_flags.encrypt_data();
+        Self::_disconnect(self.upstream.clone(), tree_id, encrypt).await
     }
 
     pub fn info(&self) -> crate::Result<&TreeConnectInfo> {
@@ -368,8 +369,9 @@ impl Drop for TreeMessageHandler {
 
         let upstream = self.upstream.clone();
         let tree_name = self.tree_name.clone();
+        let encrypt = self.info.share_flags.encrypt_data();
         tokio::task::spawn(async move {
-            Self::_disconnect(upstream, tree_id)
+            Self::_disconnect(upstream, tree_id, encrypt)
                 .await
                 .map_err(|e| {
                     log::error!("Failed to disconnect from tree {}: {e}", tree_name);

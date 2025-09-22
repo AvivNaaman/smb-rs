@@ -43,6 +43,11 @@ impl OutgoingMessage {
         self.return_raw_data = return_raw_data;
         self
     }
+
+    pub fn with_encrypt(mut self, encrypt: bool) -> Self {
+        self.encrypt = encrypt;
+        self
+    }
 }
 
 #[derive(Debug)]

@@ -71,6 +71,13 @@ pub fn make_encrypting_algo(
             encrypting_algorithm,
         ));
     }
+    if cfg!(feature = "_dump-keys") {
+        log::debug!(
+            "Using encryption algorithm {:?} with key {:02x?}",
+            encrypting_algorithm,
+            encrypting_key
+        );
+    }
     match encrypting_algorithm {
         #[cfg(feature = "encrypt_aes128ccm")]
         EncryptionCipher::Aes128Ccm => Ok(encrypt_ccm::Aes128CcmEncryptor::build(
