@@ -71,7 +71,7 @@ pub fn make_encrypting_algo(
             encrypting_algorithm,
         ));
     }
-    if cfg!(feature = "_dump-keys") {
+    if cfg!(feature = "__debug-dump-keys") {
         log::debug!(
             "Using encryption algorithm {:?} with key {:02x?}",
             encrypting_algorithm,

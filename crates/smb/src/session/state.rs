@@ -39,7 +39,7 @@ impl SessionAlgos {
             ));
         }
 
-        if cfg!(feature = "_dump-keys") {
+        if cfg!(feature = "__debug-dump-keys") {
             log::debug!(
                 "Building session algorithms for dialect {:?} with session key {:02x?} and preauth hash {:02x?}",
                 info.negotiation.dialect_rev,

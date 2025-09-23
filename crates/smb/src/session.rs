@@ -290,8 +290,8 @@ impl Session {
         let primary_session_state_copy = Arc::new(Mutex::new((*primary_session_state).clone()));
 
         let identity = AuthIdentity {
-            username: Username::new("LocalAdmin", None).unwrap(),
-            password: "123456".to_string().into(),
+            username: Username::new("Administrator", "aviv.local".into()).unwrap(),
+            password: "Aa123456".to_string().into(),
         };
         let mut authenticator = Authenticator::build(identity, conn_info)?;
         let next_buf = match authenticator

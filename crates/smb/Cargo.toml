@@ -114,7 +114,11 @@ kerberos = ["reqwest", "dep:byteorder"]
 
 
 # Debugging
-_dump-keys = []
+__debug-dump-keys = []
+
+# Tests
+test-multichannel = []
+test-ndr64 = []
 
 [package.metadata.docs.rs]
 features = ["async", "sign", "encrypt", "compress", "kerberos", "quic"]
