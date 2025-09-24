@@ -495,7 +495,7 @@ impl Connection {
     /// * Use the [`ConnectionConfig`] to configure authentication options.
     #[maybe_async]
     pub async fn authenticate(&self, user_name: &str, password: String) -> crate::Result<Session> {
-        let session = Session::setup(
+        let session = Session::create(
             user_name,
             password,
             &self.handler,

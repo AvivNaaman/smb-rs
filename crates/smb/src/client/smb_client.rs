@@ -522,7 +522,10 @@ impl Client {
 
         let session = self.get_session(unc).await?;
 
-        let connect_to = interface_to_mc.sockaddr.socket_addr().to_string();
+        let connect_to = match interface_to_mc.sockaddr.socket_addr() {
+            std::net::SocketAddr::V4(socket_addr_v4) => socket_addr_v4.ip().to_string(),
+            std::net::SocketAddr::V6(socket_addr_v6) => socket_addr_v6.ip().to_string(),
+        };
         let alt_connection = self.connect(&connect_to).await?;
 
         alt_connection
@@ -530,8 +533,6 @@ impl Client {
             .await?;
 
         let alt_channel_tree = session.tree_connect(unc.share().unwrap()).await?;
-
-        dbg!(&alt_channel_tree.is_dfs_root()?);
 
         let file_in_alt = alt_channel_tree
             .create_file(
