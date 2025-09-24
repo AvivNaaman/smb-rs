@@ -20,8 +20,8 @@ use crate::{
 use binrw::prelude::*;
 use maybe_async::*;
 use smb_msg::{Notification, ResponseContent, Status, session_setup::*};
+use smb_transport::IoVec;
 use sspi::{AuthIdentity, Secret, Username};
-use std::ops::Deref;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 type Upstream = HandlerReference<ConnectionMessageHandler>;
@@ -35,10 +35,10 @@ mod state;
 use authenticator::{AuthenticationStep, Authenticator};
 pub use encryptor_decryptor::{MessageDecryptor, MessageEncryptor};
 pub use signer::MessageSigner;
-pub use state::SessionInfo;
+pub use state::{ChannelInfo, SessionInfo};
 
 pub struct Session {
-    pub(crate) handler: HandlerReference<SessionMessageHandler>,
+    pub(crate) handler: HandlerReference<ChannelMessageHandler>,
     conn_info: Arc<ConnectionInfo>,
 }
 
@@ -51,92 +51,21 @@ impl Session {
         upstream: &Upstream,
         conn_info: &Arc<ConnectionInfo>,
     ) -> crate::Result<Session> {
-        let req_security_mode = SessionSecurityMode::new().with_signing_enabled(true);
-
-        log::debug!("Setting up session for user {user_name}.");
-
-        let username = Username::parse(user_name).map_err(|e| Error::SspiError(e.into()))?;
-        let identity = AuthIdentity {
-            username,
-            password: Secret::new(password),
-        };
-        // Build the authenticator.
-        let mut authenticator = Authenticator::build(identity, conn_info)?;
-        let next_buf = match authenticator
-            .next(&conn_info.negotiation.auth_buffer)
-            .await?
-        {
-            AuthenticationStep::NextToken(buf) => buf,
-            AuthenticationStep::Complete => {
-                return Err(Error::InvalidState(
-                    "Authentication completed before session setup.".to_string(),
-                ));
+        let setup_result =
+            SessionSetup::<SmbSessionNew>::new(user_name, password, upstream, conn_info, None)?
+                .setup()
+                .await?;
+        let session_id = {
+            let session = setup_result.lock().await?;
+            let session = session.session.lock().await?;
+            log::info!("Session setup complete.");
+            if session.allow_unsigned()? {
+                log::info!("Session is guest/anonymous.");
             }
+
+            session.id()
         };
-        let request = OutgoingMessage::new(
-            SessionSetupRequest::new(next_buf, req_security_mode, SetupRequestFlags::new()).into(),
-        )
-        .with_return_raw_data(true);
-
-        // response hash is processed later, in the loop.
-        let (send_result, init_response) = upstream
-            .sendor_recvo(
-                request,
-                ReceiveOptions::new()
-                    .with_status(&[Status::MoreProcessingRequired, Status::Success]),
-            )
-            .await?;
-
-        let session_id = init_response.message.header.session_id;
-        // Construct info object and handler.
-        let session_state = Arc::new(Mutex::new(SessionInfo::new(session_id)));
-        let handler = SessionMessageHandler::new(session_id, upstream, session_state.clone());
-
-        // Update preauth hash
-        let session_preauth_hash = conn_info
-            .preauth_hash
-            .clone()
-            .next(&send_result.raw.unwrap())
-            .next(&init_response.raw);
-
-        let setup_result = if init_response.message.header.status == Status::Success as u32 {
-            unimplemented!()
-        } else {
-            Self::_setup_more_processing(
-                &mut authenticator,
-                init_response.message.content.to_sessionsetup()?,
-                &session_state,
-                req_security_mode,
-                &handler,
-                conn_info,
-                session_preauth_hash,
-                false, // not binding to existing session
-            )
-            .await
-        };
-
-        let flags = match setup_result {
-            Ok(flags) => flags,
-            Err(e) => {
-                // Notify the worker that the session is invalid.
-                if let Err(x) = upstream
-                    .worker()
-                    .ok_or_else(|| Error::InvalidState("Worker not available!".to_string()))?
-                    .session_ended(handler.session_id)
-                    .await
-                {
-                    log::debug!("Failed to notify worker about session end: {x}!");
-                }
-                return Err(e);
-            }
-        };
-
-        session_state.lock().await?.ready(flags, conn_info, None)?;
-
-        log::info!("Session setup complete.");
-        if flags.is_guest_or_null_session() {
-            log::info!("Session is guest/anonymous.");
-        }
+        let handler = ChannelMessageHandler::new(session_id, upstream, &setup_result);
 
         let session = Session {
             handler,
@@ -147,236 +76,50 @@ impl Session {
     }
 
     #[maybe_async]
-    async fn _setup_more_processing(
-        authenticator: &mut Authenticator,
-        init_response: SessionSetupResponse,
-        session_state: &Arc<Mutex<SessionInfo>>,
-        req_security_mode: SessionSecurityMode,
-        handler: &HandlerReference<SessionMessageHandler>,
-        conn_info: &Arc<ConnectionInfo>,
-        mut preauth_hash: PreauthHashState,
-        binding: bool,
-    ) -> crate::Result<SessionFlags> {
-        let mut last_setup_response = Some(init_response);
-        let mut flags = None;
-
-        // While there's a response to process, do so.
-        while !authenticator.is_authenticated()? {
-            let next_buf = match last_setup_response.as_ref() {
-                Some(response) => authenticator.next(&response.buffer).await?,
-                None => authenticator.next(&[]).await?,
-            };
-            let is_auth_done = authenticator.is_authenticated()?;
-
-            last_setup_response = match next_buf {
-                AuthenticationStep::NextToken(next_buf) => {
-                    // We'd like to update preauth hash with the last request before accept.
-                    // therefore we update it here for the PREVIOUS repsponse, assuming that we get an empty request when done.
-                    let request = OutgoingMessage::new(
-                        SessionSetupRequest::new(
-                            next_buf,
-                            req_security_mode,
-                            SetupRequestFlags::new().with_binding(binding),
-                        )
-                        .into(),
-                    )
-                    .with_return_raw_data(true);
-                    let send_result = handler.sendo(request).await?;
-
-                    preauth_hash = preauth_hash.next(&send_result.raw.unwrap());
-
-                    // If keys are exchanged, set them up, to enable validation of next response!
-
-                    if is_auth_done {
-                        let session_key: KeyToDerive = authenticator.session_key()?;
-                        preauth_hash = preauth_hash.finish();
-
-                        session_state.lock().await?.setup(
-                            &session_key,
-                            &preauth_hash.unwrap_final_hash().copied(),
-                            conn_info,
-                        )?;
-                        log::trace!("Session keys are set.");
-
-                        let worker = handler.upstream.handler.worker().ok_or_else(|| {
-                            Error::InvalidState("Worker not available!".to_string())
-                        })?;
-
-                        if binding {
-                            log::trace!(
-                                "Binding to existing session, notifying worker that primary session shall be replaced."
-                            );
-                            worker.session_ended(handler.session_id).await?;
-                        }
-                        worker.session_started(session_state.clone()).await?;
-                        log::trace!("Session inserted into worker.");
-                    }
-
-                    let expected_status = if is_auth_done {
-                        Status::Success
-                    } else {
-                        Status::MoreProcessingRequired
-                    };
-
-                    let skip_security_validation = !is_auth_done;
-                    let response = handler
-                        .recvo_internal(
-                            ReceiveOptions::new()
-                                .with_status(&[expected_status])
-                                .with_msg_id_filter(send_result.msg_id),
-                            skip_security_validation,
-                        )
-                        .await?;
-
-                    let message_form = response.form;
-                    let session_setup_response = response.message.content.to_sessionsetup()?;
-
-                    if is_auth_done {
-                        // Important: If we did NOT make sure the message's signature is valid,
-                        // we should do it now, as long as the session is not anonymous or guest.
-                        if !session_setup_response
-                            .session_flags
-                            .is_guest_or_null_session()
-                            && !message_form.signed_or_encrypted()
-                        {
-                            return Err(Error::InvalidMessage(
-                                "Expected a signed message!".to_string(),
-                            ));
-                        }
-                    } else {
-                        preauth_hash = preauth_hash.next(&response.raw);
-                    }
-
-                    flags = Some(session_setup_response.session_flags);
-                    Some(session_setup_response)
-                }
-                AuthenticationStep::Complete => None,
-            };
-        }
-
-        flags.ok_or(Error::InvalidState(
-            "Failed to complete authentication properly.".to_string(),
-        ))
-    }
-
-    #[maybe_async]
     pub(crate) async fn bind(
-        primary: &Session,
+        self: &Session,
+        user_name: &str,
+        password: String,
         handler: &HandlerReference<ConnectionMessageHandler>,
         conn_info: &Arc<ConnectionInfo>,
-    ) -> crate::Result<Session> {
-        if primary.conn_info.negotiation.dialect_rev != conn_info.negotiation.dialect_rev {
+    ) -> crate::Result<()> {
+        if self.conn_info.negotiation.dialect_rev != conn_info.negotiation.dialect_rev {
             return Err(Error::InvalidState(
                 "Cannot bind session to connection with different dialect.".to_string(),
             ));
         }
-        if primary.conn_info.client_guid != conn_info.client_guid {
+        if self.conn_info.client_guid != conn_info.client_guid {
             return Err(Error::InvalidState(
                 "Cannot bind session to connection with different client GUID.".to_string(),
             ));
         }
-        let primary_session_state = primary.handler.session_state.lock().await?;
-        if !primary_session_state.is_ready() {
-            return Err(Error::InvalidState(
-                "Cannot bind session that is not ready.".to_string(),
-            ));
-        }
-        if primary_session_state.allow_unsigned()? {
-            return Err(Error::InvalidState(
-                "Cannot bind session that allows unsigned messages.".to_string(),
-            ));
-        }
 
-        let primary_session_state_copy = Arc::new(Mutex::new((*primary_session_state).clone()));
+        let primary_session_state = self.handler.session_state.lock().await?;
 
-        let identity = AuthIdentity {
-            username: Username::new("Administrator", "aviv.local".into()).unwrap(),
-            password: "Aa123456".to_string().into(),
-        };
-        let mut authenticator = Authenticator::build(identity, conn_info)?;
-        let next_buf = match authenticator
-            .next(&conn_info.negotiation.auth_buffer)
-            .await?
         {
-            AuthenticationStep::NextToken(buf) => buf,
-            AuthenticationStep::Complete => {
+            let session = primary_session_state.session.lock().await?;
+            if !session.is_ready() {
                 return Err(Error::InvalidState(
-                    "Authentication completed before session setup.".to_string(),
+                    "Cannot bind session that is not ready.".to_string(),
                 ));
             }
-        };
+            if session.allow_unsigned()? {
+                return Err(Error::InvalidState(
+                    "Cannot bind session that allows unsigned messages.".to_string(),
+                ));
+            }
+        }
 
-        let security_mode = SessionSecurityMode::new().with_signing_enabled(true);
-
-        let mut rebind_setup_request = OutgoingMessage::new(
-            SessionSetupRequest::new(
-                next_buf,
-                security_mode,
-                SetupRequestFlags::new().with_binding(true),
-            )
-            .into(),
-        )
-        .with_return_raw_data(true);
-
-        let session_id = primary_session_state.id();
-        rebind_setup_request.message.header.session_id = session_id;
-        rebind_setup_request.message.header.flags.set_signed(true);
-        drop(primary_session_state);
-
-        let new_handler =
-            SessionMessageHandler::new(session_id, handler, primary.handler.session_state.clone());
-
-        new_handler
-            .upstream
-            .handler
-            .worker()
-            .ok_or_else(|| Error::InvalidState("Worker not available!".to_string()))?
-            .session_started(primary_session_state_copy)
-            .await?;
-
-        let (send_result, rebind_response) = new_handler
-            .sendor_recvo(
-                rebind_setup_request,
-                ReceiveOptions::new()
-                    .with_status(&[Status::MoreProcessingRequired, Status::Success]),
-            )
-            .await?;
-
-        let preauth_hash = conn_info
-            .preauth_hash
-            .clone()
-            .next(&send_result.raw.unwrap())
-            .next(&rebind_response.raw);
-
-        let new_session = Arc::new(Mutex::new(SessionInfo::new(
-            rebind_response.message.header.session_id,
-        )));
-
-        let rebind_response = rebind_response.message.content.to_sessionsetup()?;
-
-        let flags = Session::_setup_more_processing(
-            &mut authenticator,
-            rebind_response,
-            &new_session,
-            security_mode,
-            &new_handler,
+        let setup_result = SessionSetup::<SmbSessionBind>::new(
+            user_name,
+            password,
+            handler,
             conn_info,
-            preauth_hash,
-            true, // binding to existing session
-        )
+            Some(&self.handler.session_state),
+        )?
+        .setup()
         .await?;
-
-        let primary_session_state = primary.handler.session_state.lock().await?;
-        let primary_session_state_as_ref = primary_session_state.deref();
-        new_session
-            .lock()
-            .await?
-            .ready(flags, conn_info, Some(primary_session_state_as_ref))?;
-
-        return Ok(Self {
-            handler: new_handler,
-            conn_info: conn_info.clone(),
-        });
+        Ok(())
     }
 
     /// Connects to the specified tree using the current session.
@@ -408,25 +151,458 @@ impl Session {
     }
 }
 
-pub struct SessionMessageHandler {
+struct SessionSetup<'a, T>
+where
+    T: SessionSetupProperties,
+{
+    last_setup_response: Option<SessionSetupResponse>,
+    flags: Option<SessionFlags>,
+
+    handler: Option<HandlerReference<ChannelMessageHandler>>,
+
+    /// should always be set; this is Option to allow moving it out during setup,
+    /// when it is being updated.
+    preauth_hash: Option<PreauthHashState>,
+
+    result: Option<Arc<Mutex<SessionAndChannel>>>,
+
+    authenticator: Authenticator,
+    upstream: &'a Upstream,
+    conn_info: &'a Arc<ConnectionInfo>,
+
+    _phantom: std::marker::PhantomData<T>,
+}
+
+impl<'a, T> SessionSetup<'a, T>
+where
+    T: SessionSetupProperties,
+{
+    fn new(
+        user_name: &str,
+        password: String,
+        upstream: &'a Upstream,
+        conn_info: &'a Arc<ConnectionInfo>,
+        primary_session: Option<&Arc<Mutex<SessionAndChannel>>>,
+    ) -> crate::Result<Self> {
+        let username = Username::parse(user_name).map_err(|e| Error::SspiError(e.into()))?;
+        let identity = AuthIdentity {
+            username,
+            password: Secret::new(password),
+        };
+        let authenticator = Authenticator::build(identity, conn_info)?;
+        Ok(Self {
+            last_setup_response: None,
+            flags: None,
+            result: primary_session.map(|x| x.clone()),
+            handler: None,
+            preauth_hash: Some(conn_info.preauth_hash.clone()),
+            authenticator,
+            upstream: upstream,
+            conn_info: conn_info,
+            _phantom: std::marker::PhantomData,
+        })
+    }
+
+    /// Common session setup logic.
+    ///
+    /// This function sets up a session against a connection, and it is somewhat abstrace.
+    /// by calling impl functions, this function's behavior is modified to support both new sessions and binding to existing sessions.
+    async fn setup(&mut self) -> crate::Result<Arc<Mutex<SessionAndChannel>>> {
+        log::debug!(
+            "Setting up session for user {} (@{}).",
+            self.authenticator.user_name().account_name(),
+            self.authenticator.user_name().domain_name().unwrap_or("")
+        );
+
+        let result = self._setup_loop().await;
+        match result {
+            Ok(()) => Ok(self.result.take().unwrap()),
+            Err(e) => {
+                log::error!("Failed to setup session: {}", e);
+                T::error_cleanup(self)
+                    .await
+                    .or_else(|ce| {
+                        log::error!("Failed to cleanup after setup error: {}", ce);
+                        crate::Result::Ok(())
+                    })
+                    .or_else(|e| {
+                        log::error!("Cleanup after setup error failed: {e}");
+                        crate::Result::Ok(())
+                    })?;
+                return Err(e);
+            }
+        }
+    }
+
+    /// *DO NOT OVERLOAD*
+    ///
+    /// Performs the session setup negotiation.
+    ///
+    /// this function loops until the authentication is complete, requesting GSS tokens
+    /// and passing them to the server.
+    async fn _setup_loop(&mut self) -> crate::Result<()> {
+        // While there's a response to process, do so.
+        while !self.authenticator.is_authenticated()? {
+            let next_buf = match self.last_setup_response.as_ref() {
+                Some(response) => self.authenticator.next(&response.buffer).await?,
+                None => self.authenticator.next(&[]).await?,
+            };
+            let is_auth_done = self.authenticator.is_authenticated()?;
+
+            self.last_setup_response = match next_buf {
+                AuthenticationStep::NextToken(next_buf) => {
+                    // If keys are exchanged, set them up, to enable validation of next response!
+                    let request = self.send_setup_request(next_buf).await?;
+                    if is_auth_done {
+                        self.preauth_hash = self.preauth_hash.take().unwrap().finish().into();
+                        self.make_channel().await?;
+                    }
+
+                    let response = self.receive_setup_response(request.msg_id).await?;
+                    let message_form = response.form;
+                    let session_id = response.message.header.session_id;
+                    let session_setup_response = response.message.content.to_sessionsetup()?;
+
+                    // First iteration: construct a session state object.
+                    // TODO: currently, there's a bug which prevents authentication on first attempt
+                    // to complete successfully: since we need the session ID to construct the session state,
+                    // which is required for channel construction and signature validation,
+                    // the first request must arrive here, and then be validated.
+                    if self.result.is_none() {
+                        log::trace!("Creating session state with id {session_id}.");
+                        self.result = T::init_session(self, session_id).await?.into();
+                        self.handler = Some(ChannelMessageHandler::new(
+                            session_id,
+                            self.upstream,
+                            self.result.as_ref().unwrap(),
+                        ));
+                    }
+
+                    if is_auth_done {
+                        // Important: If we did NOT make sure the message's signature is valid,
+                        // we should do it now, as long as the session is not anonymous or guest.
+                        if !session_setup_response
+                            .session_flags
+                            .is_guest_or_null_session()
+                            && !message_form.signed_or_encrypted()
+                        {
+                            return Err(Error::InvalidMessage(
+                                "Expected a signed message!".to_string(),
+                            ));
+                        }
+                    } else {
+                        self.next_preauth_hash(&response.raw);
+                    }
+
+                    self.flags = Some(session_setup_response.session_flags);
+                    Some(session_setup_response)
+                }
+                AuthenticationStep::Complete => None,
+            };
+        }
+
+        self.flags.ok_or(Error::InvalidState(
+            "Failed to complete authentication properly.".to_string(),
+        ))?;
+
+        T::on_setup_success(self).await?;
+
+        Ok(())
+    }
+
+    async fn receive_setup_response(&mut self, for_msg_id: u64) -> crate::Result<IncomingMessage> {
+        let is_auth_done = self.authenticator.is_authenticated()?;
+
+        let expected_status = if is_auth_done {
+            &[Status::Success]
+        } else {
+            &[Status::MoreProcessingRequired]
+        };
+
+        let roptions = ReceiveOptions::new()
+            .with_status(expected_status)
+            .with_msg_id_filter(for_msg_id);
+        let skip_security_validation = !is_auth_done;
+        if self.handler.is_some() {
+            log::trace!(
+                "setup loop: receiving with channel handler; skip_security_validation={skip_security_validation}"
+            );
+            self.handler
+                .as_ref()
+                .unwrap()
+                .recvo_internal(roptions, skip_security_validation)
+                .await
+        } else {
+            assert!(skip_security_validation);
+            log::trace!("setup loop: receiving with upstream handler");
+            self.upstream.handler.recvo(roptions).await
+        }
+    }
+
+    async fn send_setup_request(&mut self, buf: Vec<u8>) -> crate::Result<SendMessageResult> {
+        // We'd like to update preauth hash with the last request before accept.
+        // therefore we update it here for the PREVIOUS repsponse, assuming that we get an empty request when done.
+        let mut request = T::make_request(self, buf).await?;
+
+        let send_result = if self.handler.is_some() {
+            log::trace!("setup loop: sending with channel handler");
+            self.handler.as_ref().unwrap().sendo(request).await?
+        } else {
+            log::trace!("setup loop: sending with upstream handler");
+            self.upstream.sendo(request).await?
+        };
+
+        self.next_preauth_hash(&send_result.raw.as_ref().unwrap());
+        Ok(send_result)
+    }
+
+    async fn make_channel(&mut self) -> crate::Result<Arc<Mutex<ChannelInfo>>> {
+        let session_key: KeyToDerive = self.authenticator.session_key()?;
+        let preauth_hash = self
+            .preauth_hash
+            .as_ref()
+            .unwrap()
+            .unwrap_final_hash()
+            .copied();
+        T::on_session_key_exchanged(self).await;
+        log::trace!("Session keys are set.");
+
+        let channel_info = ChannelInfo::new(
+            &session_key,
+            &preauth_hash,
+            &self.conn_info,
+            T::is_session_primary(),
+        )?;
+        let channel_info = Arc::new(Mutex::new(channel_info));
+
+        // Once channel is made, push it into the common information;
+        // that is enough to provide secure messaging.
+        {
+            let mut session_lock = self.result.as_ref().unwrap().lock().await?;
+            session_lock.set_channel(channel_info.lock().await?.clone());
+        }
+
+        log::trace!("Session inserted into worker.");
+        Ok(channel_info)
+    }
+
+    fn next_preauth_hash(&mut self, data: &IoVec) -> &PreauthHashState {
+        self.preauth_hash = Some(self.preauth_hash.take().unwrap().next(data));
+        self.preauth_hash.as_ref().unwrap()
+    }
+}
+
+#[maybe_async(AFIT)]
+trait SessionSetupProperties {
+    /// This function is called when setup error is encountered, to perform any necessary cleanup.
+    async fn error_cleanup<T>(setup: &mut SessionSetup<'_, T>) -> crate::Result<()>
+    where
+        T: SessionSetupProperties;
+
+    fn _make_default_request(buffer: Vec<u8>) -> OutgoingMessage {
+        OutgoingMessage::new(
+            SessionSetupRequest::new(
+                buffer,
+                SessionSecurityMode::new().with_signing_enabled(true),
+                SetupRequestFlags::new(),
+            )
+            .into(),
+        )
+        .with_return_raw_data(true)
+    }
+
+    async fn make_request<T>(
+        _setup: &mut SessionSetup<'_, T>,
+        buffer: Vec<u8>,
+    ) -> crate::Result<OutgoingMessage>
+    where
+        T: SessionSetupProperties,
+    {
+        Ok(Self::_make_default_request(buffer))
+    }
+
+    async fn init_session<T>(
+        _setup: &'_ SessionSetup<'_, T>,
+        _session_id: u64,
+    ) -> crate::Result<Arc<Mutex<SessionAndChannel>>>
+    where
+        T: SessionSetupProperties;
+
+    async fn on_session_key_exchanged<T>(_setup: &mut SessionSetup<'_, T>)
+    where
+        T: SessionSetupProperties,
+    {
+        // Default implementation does nothing.
+    }
+
+    async fn on_setup_success<T>(_setup: &SessionSetup<'_, T>) -> crate::Result<()>
+    where
+        T: SessionSetupProperties,
+    {
+        Ok(())
+    }
+
+    fn is_session_primary() -> bool;
+}
+
+struct SmbSessionBind;
+impl SessionSetupProperties for SmbSessionBind {
+    async fn make_request<T>(
+        setup: &mut SessionSetup<'_, T>,
+        buffer: Vec<u8>,
+    ) -> crate::Result<OutgoingMessage>
+    where
+        T: SessionSetupProperties,
+    {
+        let mut request = Self::_make_default_request(buffer);
+        request
+            .message
+            .content
+            .as_mut_sessionsetup()
+            .unwrap()
+            .flags
+            .set_binding(true);
+        Ok(request)
+    }
+
+    async fn error_cleanup<T>(setup: &mut SessionSetup<'_, T>) -> crate::Result<()>
+    where
+        T: SessionSetupProperties,
+    {
+        if setup.result.is_none() {
+            log::warn!("No session to cleanup in binding.");
+            return Ok(());
+        }
+        setup
+            .upstream
+            .worker()
+            .ok_or_else(|| Error::InvalidState("Worker not available!".to_string()))?
+            .session_ended(setup.result.as_ref().unwrap())
+            .await
+    }
+
+    async fn init_session<T>(
+        _setup: &SessionSetup<'_, T>,
+        _session_id: u64,
+    ) -> crate::Result<Arc<Mutex<SessionAndChannel>>>
+    where
+        T: SessionSetupProperties,
+    {
+        panic!("(Primary) Session should be provided in construction, rather than during setup!");
+    }
+
+    fn is_session_primary() -> bool {
+        false
+    }
+}
+
+struct SmbSessionNew;
+impl SessionSetupProperties for SmbSessionNew {
+    async fn error_cleanup<T>(setup: &mut SessionSetup<'_, T>) -> crate::Result<()>
+    where
+        T: SessionSetupProperties,
+    {
+        if setup.result.is_none() {
+            log::trace!("No session to cleanup in setup.");
+            return Ok(());
+        }
+
+        log::trace!("Invalidating session before cleanup.");
+        let session = setup.result.as_ref().unwrap();
+        {
+            let session_lock = session.lock().await?;
+            session_lock.session.lock().await?.invalidate();
+        }
+
+        setup
+            .upstream
+            .worker()
+            .ok_or_else(|| Error::InvalidState("Worker not available!".to_string()))?
+            .session_ended(setup.result.as_ref().unwrap())
+            .await
+    }
+
+    async fn on_setup_success<T>(setup: &SessionSetup<'_, T>) -> crate::Result<()>
+    where
+        T: SessionSetupProperties,
+    {
+        log::trace!("Session setup successful");
+        let result = setup.result.as_ref().unwrap().lock().await?;
+        let mut session = result.session.lock().await?;
+        session.ready(setup.flags.unwrap(), &setup.conn_info)
+    }
+
+    fn is_session_primary() -> bool {
+        false
+    }
+
+    async fn init_session<T>(
+        _setup: &SessionSetup<'_, T>,
+        session_id: u64,
+    ) -> crate::Result<Arc<Mutex<SessionAndChannel>>>
+    where
+        T: SessionSetupProperties,
+    {
+        let session_info = SessionInfo::new(session_id);
+        let session_info = Arc::new(Mutex::new(session_info));
+
+        let result = SessionAndChannel::new(session_id, session_info.clone());
+        let session_info = Arc::new(Mutex::new(result));
+
+        _setup
+            .upstream
+            .worker()
+            .ok_or_else(|| Error::InvalidState("Worker not available!".to_string()))
+            .unwrap()
+            .session_started(&session_info)
+            .await
+            .unwrap();
+
+        Ok(session_info)
+    }
+}
+
+#[derive(Clone)]
+pub struct SessionAndChannel {
+    pub session_id: u64,
+
+    pub session: Arc<Mutex<SessionInfo>>,
+    pub channel: Option<ChannelInfo>,
+}
+
+impl SessionAndChannel {
+    pub fn new(session_id: u64, session: Arc<Mutex<SessionInfo>>) -> Self {
+        Self {
+            session_id,
+            session,
+            channel: None,
+        }
+    }
+
+    pub fn set_channel(&mut self, channel: ChannelInfo) {
+        self.channel = Some(channel);
+    }
+}
+
+pub struct ChannelMessageHandler {
     session_id: u64,
     upstream: Upstream,
 
-    session_state: Arc<Mutex<SessionInfo>>,
-
+    session_state: Arc<Mutex<SessionAndChannel>>,
+    // channel_info: Arc<ChannelInfo>,
     dropping: AtomicBool,
 }
 
-impl SessionMessageHandler {
+impl ChannelMessageHandler {
     fn new(
         session_id: u64,
         upstream: &Upstream,
-        session_state: Arc<Mutex<SessionInfo>>,
-    ) -> HandlerReference<SessionMessageHandler> {
-        HandlerReference::new(SessionMessageHandler {
+        setup_result: &Arc<Mutex<SessionAndChannel>>,
+    ) -> HandlerReference<ChannelMessageHandler> {
+        HandlerReference::new(ChannelMessageHandler {
             session_id,
             upstream: upstream.clone(),
-            session_state,
+            session_state: setup_result.clone(),
             dropping: AtomicBool::new(false),
         })
     }
@@ -442,6 +618,7 @@ impl SessionMessageHandler {
 
         {
             let state = self.session_state.lock().await?;
+            let state = state.session.lock().await?;
             if !state.is_ready() {
                 log::trace!("Session not ready, or logged-off already, skipping logoff.");
                 return Ok(());
@@ -467,7 +644,7 @@ impl SessionMessageHandler {
             .handler
             .worker()
             .ok_or_else(|| Error::InvalidState("Worker not available!".to_string()))?
-            .session_ended(self.session_id)
+            .session_ended(&self.session_state)
             .await
     }
 
@@ -486,30 +663,6 @@ impl SessionMessageHandler {
 
     /// (Internal)
     ///
-    /// # Returns
-    /// whether allowing unsigned incoming messages is okay for this session.
-    /// * If the session is ready, it checks whether signing is required by session flags.
-    /// * If the session is being set up, it allows unsigned messages if allowed in the configuration.
-    #[maybe_async]
-    #[inline]
-    async fn _is_incoming_unsigned_allowed(&self) -> crate::Result<bool> {
-        let session = self.session_state.lock().await?;
-        session.allow_unsigned()
-    }
-
-    /// (Internal)
-    ///
-    /// # Returns
-    /// whether incoming messages encryption should be enforced for this session.
-    #[maybe_async]
-    #[inline]
-    async fn _is_incoming_encrypted_required(&self) -> crate::Result<bool> {
-        let session = self.session_state.lock().await?;
-        Ok(session.is_ready() && session.should_encrypt()?)
-    }
-
-    /// (Internal)
-    ///
     /// Verifies an [`IncomingMessage`] for the current session.
     /// This is trustworthy only since we trust the [`Transformer`][crate::connection::transformer::Transformer] implementation
     /// to provide the correct IDs and verify signatures and encryption.
@@ -520,10 +673,12 @@ impl SessionMessageHandler {
     /// An empty [`crate::Result`] if the message is valid, or an error if the message is invalid.
     #[maybe_async]
     async fn _verify_incoming(&self, incoming: &IncomingMessage) -> crate::Result<()> {
+        let session = self.session_state.lock().await?;
+        let session = session.session.lock().await?;
         // allow unsigned messages only if the session is anonymous or guest.
         // this is enforced against configuration when setting up the session.
-        let unsigned_allowed = self._is_incoming_unsigned_allowed().await?;
-        let encryption_required = self._is_incoming_encrypted_required().await?;
+        let unsigned_allowed = session.allow_unsigned()?;
+        let encryption_required = session.is_ready() && session.should_encrypt()?;
 
         // Make sure that it's our session.
         if incoming.message.header.session_id == 0 {
@@ -555,7 +710,7 @@ impl SessionMessageHandler {
 
     /// **Insecure! Insecure! Insecure!**
     ///
-    /// Same as [`SessionMessageHandler::recvo`], but possible skips security validation.
+    /// Same as [`ChannelMessageHandler::recvo`], but possible skips security validation.
     /// # Arguments
     /// * `options` - The options for receiving the message.
     /// * `skip_security_validation` - Whether to skip security validation of the incoming message.
@@ -577,6 +732,7 @@ impl SessionMessageHandler {
             // while we could have just checked the session state, let's require
             // the caller to explicitly state that it is okay to skip security validation.
             let session = self.session_state.lock().await?;
+            let session = session.session.lock().await?;
             assert!(session.is_initial());
         }
 
@@ -584,11 +740,12 @@ impl SessionMessageHandler {
     }
 }
 
-impl MessageHandler for SessionMessageHandler {
+impl MessageHandler for ChannelMessageHandler {
     #[maybe_async]
     async fn sendo(&self, mut msg: OutgoingMessage) -> crate::Result<SendMessageResult> {
         {
             let session = self.session_state.lock().await?;
+            let session = session.session.lock().await?;
             if session.is_invalid() {
                 return Err(Error::InvalidState("Session is invalid".to_string()));
             }
@@ -650,7 +807,7 @@ impl MessageHandler for SessionMessageHandler {
 }
 
 #[cfg(not(feature = "async"))]
-impl Drop for SessionMessageHandler {
+impl Drop for ChannelMessageHandler {
     fn drop(&mut self) {
         self.logoff().unwrap_or_else(|e| {
             log::error!("Failed to logoff: {e}",);
@@ -659,7 +816,7 @@ impl Drop for SessionMessageHandler {
 }
 
 #[cfg(feature = "async")]
-impl Drop for SessionMessageHandler {
+impl Drop for ChannelMessageHandler {
     fn drop(&mut self) {
         if self
             .dropping
@@ -672,7 +829,7 @@ impl Drop for SessionMessageHandler {
         let upstream = self.upstream.clone();
         let session_state = self.session_state.clone();
         tokio::task::spawn(async move {
-            let temp_handler = SessionMessageHandler {
+            let temp_handler = ChannelMessageHandler {
                 session_id,
                 upstream,
                 session_state,

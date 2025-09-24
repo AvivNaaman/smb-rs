@@ -9,11 +9,12 @@ use sspi::{
     DataRepresentation, InitializeSecurityContextResult, Negotiate, SecurityBuffer, Sspi,
     ntlm::NtlmConfig,
 };
-use sspi::{CredentialsBuffers, NegotiateConfig, SspiImpl};
+use sspi::{CredentialsBuffers, NegotiateConfig, SspiImpl, Username};
 
 #[derive(Debug)]
 pub struct Authenticator {
     server_hostname: String,
+    user_name: Username,
 
     ssp: Negotiate,
     cred_handle: AcquireCredentialsHandleResult<Option<CredentialsBuffers>>,
@@ -41,10 +42,12 @@ impl Authenticator {
             Some(Self::get_available_ssp_pkgs(&conn_info.config.auth_methods)),
             client_computer_name,
         ))?;
+        let user_name = identity.username.clone();
+
         let cred_handle = negotiate_ssp
             .acquire_credentials_handle()
             .with_credential_use(CredentialUse::Outbound)
-            .with_auth_data(&sspi::Credentials::AuthIdentity(identity))
+            .with_auth_data(&sspi::Credentials::AuthIdentity(identity.clone()))
             .execute(&mut negotiate_ssp)?;
 
         Ok(Authenticator {
@@ -52,7 +55,12 @@ impl Authenticator {
             ssp: negotiate_ssp,
             cred_handle,
             current_state: None,
+            user_name,
         })
+    }
+
+    pub fn user_name(&self) -> &Username {
+        &self.user_name
     }
 
     pub fn is_authenticated(&self) -> crate::Result<bool> {

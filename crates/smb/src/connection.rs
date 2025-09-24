@@ -7,7 +7,7 @@ pub mod worker;
 use crate::Error;
 use crate::connection::preauth_hash::PreauthHashState;
 use crate::dialects::DialectImpl;
-use crate::session::SessionMessageHandler;
+use crate::session::ChannelMessageHandler;
 use crate::{compression, sync_helpers::*};
 use crate::{crypto, msg_handler::*, session::Session};
 use binrw::prelude::*;
@@ -58,45 +58,22 @@ impl Connection {
     /// Creates a SMB connection for an alternate channel,
     /// for the specified existing, primary connection.
     #[maybe_async]
-    pub async fn build_alternate<T: SmbTransport + 'static>(
-        // TODO: Split.
-        primary: &Connection,
+    pub async fn bind_session(
+        &self,
         primary_session: &Session,
-        mut target: SocketAddr,
-        mut transport: T,
-    ) -> crate::Result<(Self, Session)> {
-        if primary.handler.worker().is_none() {
-            return Err(Error::InvalidState(
-                "Specified primary connection is not connected".into(),
-            ));
-        }
-
-        if target.port() == 0 && transport.default_port() != 0 {
-            target.set_port(transport.default_port());
-        }
-
-        log::info!("Starting alternate connection transport: {}", target);
-        transport.connect(target.to_string().as_str()).await?;
-
-        log::debug!("Negotiating alternate connection to {}", target);
-        let result = Connection::build(
-            &primary.server,
-            primary.handler.client_guid,
-            primary.config.clone(),
-        )?;
-        const PRIMARY_USES_SMB2: bool = true;
-        result
-            ._negotiate(Box::from(transport), PRIMARY_USES_SMB2)
-            .await?;
-
+        user_name: &str,
+        password: String,
+    ) -> crate::Result<()> {
         log::debug!("Binding alternate session to new connection");
-        let session = Session::bind(
-            primary_session,
-            &result.handler,
-            result.handler.conn_info.get().unwrap(),
-        )
-        .await?;
-        Ok((result, session))
+        primary_session
+            .bind(
+                user_name,
+                password,
+                &self.handler,
+                self.handler.conn_info.get().unwrap(),
+            )
+            .await?;
+        Ok(())
     }
 
     /// Connects to the specified server, if it is not already connected, and negotiates the connection.
@@ -557,7 +534,7 @@ pub(crate) struct ConnectionMessageHandler {
     stop_notifications: Arc<AtomicBool>,
 
     /// Holds the sessions created by this connection.
-    sessions: Mutex<HashMap<u64, Weak<SessionMessageHandler>>>,
+    sessions: Mutex<HashMap<u64, Weak<ChannelMessageHandler>>>,
 
     // Negotiation-related state.
     conn_info: OnceCell<Arc<ConnectionInfo>>,

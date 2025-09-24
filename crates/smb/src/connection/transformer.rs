@@ -1,5 +1,6 @@
+use crate::session::SessionAndChannel;
 use crate::sync_helpers::*;
-use crate::{compression::*, msg_handler::*, session::SessionInfo};
+use crate::{compression::*, msg_handler::*};
 use binrw::prelude::*;
 use maybe_async::*;
 use smb_msg::*;
@@ -12,10 +13,10 @@ use super::connection_info::ConnectionInfo;
 /// send over NetBios TCP connection.
 ///
 /// See [`Transformer::transform_outgoing`] and [`Transformer::transform_incoming`] for transformation functions.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct Transformer {
     /// Sessions opened from this connection.
-    sessions: Mutex<HashMap<u64, Arc<Mutex<SessionInfo>>>>,
+    sessions: Mutex<HashMap<u64, Arc<Mutex<SessionAndChannel>>>>,
 
     config: RwLock<TransformerConfig>,
 }
@@ -59,7 +60,10 @@ impl Transformer {
 
     /// Notifies that a session has started.
     #[maybe_async]
-    pub async fn session_started(&self, session: Arc<Mutex<SessionInfo>>) -> crate::Result<()> {
+    pub async fn session_started(
+        &self,
+        session: &Arc<Mutex<SessionAndChannel>>,
+    ) -> crate::Result<()> {
         let rconfig = self.config.read().await?;
         if !rconfig.negotiated {
             return Err(crate::Error::InvalidState(
@@ -67,7 +71,7 @@ impl Transformer {
             ));
         }
 
-        let session_id = session.lock().await?.id();
+        let session_id = session.lock().await?.session_id;
         self.sessions
             .lock()
             .await?
@@ -78,15 +82,19 @@ impl Transformer {
 
     /// Notifies that a session has ended.
     #[maybe_async]
-    pub async fn session_ended(&self, session_id: u64) -> crate::Result<()> {
-        let s = { self.sessions.lock().await?.remove(&session_id) };
-        match s {
-            Some(session_state) => {
-                session_state.lock().await?.invalidate();
-                Ok(())
-            }
-            None => Err(crate::Error::InvalidState("Session not found!".to_string())),
-        }
+    pub async fn session_ended(
+        &self,
+        session: &Arc<Mutex<SessionAndChannel>>,
+    ) -> crate::Result<()> {
+        let session_id = session.lock().await?.session_id;
+        self.sessions
+            .lock()
+            .await?
+            .remove(&session_id)
+            .ok_or(crate::Error::InvalidState(format!(
+                "Session {session_id} not found!",
+            )))?;
+        Ok(())
     }
 
     /// (Internal)
@@ -94,12 +102,12 @@ impl Transformer {
     ///  Returns the session with the given ID.
     #[maybe_async]
     #[inline]
-    async fn get_session(&self, session_id: u64) -> crate::Result<Arc<Mutex<SessionInfo>>> {
+    async fn get_session(&self, session_id: u64) -> crate::Result<Arc<Mutex<SessionAndChannel>>> {
         self.sessions
             .lock()
             .await?
             .get(&session_id)
-            .cloned()
+            .cloned() // TODO: remove?
             .ok_or(crate::Error::InvalidState(format!(
                 "Session {session_id} not found!",
             )))
@@ -131,10 +139,14 @@ impl Transformer {
             );
 
             let mut signer = {
-                self.get_session(set_session_id)
-                    .await?
-                    .lock()
-                    .await?
+                let session = self.get_session(set_session_id).await?;
+                let session = session.lock().await?;
+                session
+                    .channel
+                    .as_ref()
+                    .ok_or(crate::Error::InvalidState(
+                        "Message is required to be signed, but no channel is set up!".into(),
+                    ))?
                     .signer()?
                     .clone()
             };
@@ -175,7 +187,8 @@ impl Transformer {
         // 3. Encrypt
         if should_encrypt {
             let session = self.get_session(set_session_id).await?;
-            let encryptor = { session.lock().await?.encryptor()?.cloned() };
+            let session_info = &session.lock().await?.session;
+            let encryptor = { session_info.lock().await?.encryptor()?.cloned() };
             if let Some(mut encryptor) = encryptor {
                 debug_assert!(should_encrypt && !should_sign);
 
@@ -209,9 +222,10 @@ impl Transformer {
 
         // 3. Decrpt
         let (message, raw) = if let Response::Encrypted(encrypted_message) = message {
-            let session = self
+            let session_info = self
                 .get_session(encrypted_message.header.session_id)
                 .await?;
+            let session = &session_info.lock().await?.session;
             let decryptor = { session.lock().await?.decryptor()?.cloned() };
             form.encrypted = true;
             match decryptor {
@@ -306,8 +320,23 @@ impl Transformer {
 
         // Verify signature (if required, according to the spec)
         let session_id = message.header.session_id;
-        let session = self.get_session(session_id).await?;
-        let mut verifier = { session.lock().await?.signer()?.clone() };
+        let session_info = self.get_session(session_id).await?;
+        let mut verifier = {
+            session_info
+                .lock()
+                .await?
+                .channel
+                .as_ref()
+                .ok_or(crate::Error::TranformFailed(TransformError {
+                    outgoing: false,
+                    phase: TransformPhase::SignVerify,
+                    session_id: Some(session_id),
+                    why: "Message is required to be signed, but no channel is set up!",
+                    msg_id: Some(message.header.message_id),
+                }))?
+                .signer()?
+                .clone()
+        };
         verifier.verify_signature(&mut message.header, raw)?;
         log::debug!(
             "Message #{} verified (signature={}).",

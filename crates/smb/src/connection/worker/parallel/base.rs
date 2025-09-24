@@ -335,7 +335,6 @@ where
         f.debug_struct("ParallelWorker")
             .field("state", &self.state)
             .field("backend", &self.backend_impl)
-            .field("transformer", &self.transformer)
             .field("sender", &self.sender)
             .field("stopped", &self.stopped)
             .finish()

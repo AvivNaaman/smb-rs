@@ -489,7 +489,7 @@ impl Client {
 
         // Connect IPC and query network interfaces.
         let ipc_share = UncPath::ipc_share(unc.server())?;
-        self.ipc_connect(ipc_share.server(), user_name, password)
+        self.ipc_connect(ipc_share.server(), user_name, password.clone())
             .await?;
         let ipc_tree = self.get_tree(&ipc_share).await?;
         let network_interfaces = ipc_tree
@@ -522,16 +522,14 @@ impl Client {
 
         let session = self.get_session(unc).await?;
 
-        let (_new_connection, new_session) = Connection::build_alternate(
-            &opened_conn_info,
-            &session,
-            interface_to_mc.sockaddr.socket_addr(),
-            TcpTransport::new(self.config.connection.timeout()),
-            // RdmaTransport::new(self.config.connection.timeout()),
-        )
-        .await?;
+        let connect_to = interface_to_mc.sockaddr.socket_addr().to_string();
+        let alt_connection = self.connect(&connect_to).await?;
 
-        let alt_channel_tree = new_session.tree_connect(unc.share().unwrap()).await?;
+        alt_connection
+            .bind_session(&session, user_name, password)
+            .await?;
+
+        let alt_channel_tree = session.tree_connect(unc.share().unwrap()).await?;
 
         dbg!(&alt_channel_tree.is_dfs_root()?);
 

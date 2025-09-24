@@ -17,7 +17,7 @@ use crate::{
     Error,
     msg_handler::{HandlerReference, MessageHandler},
     resource::Resource,
-    session::SessionMessageHandler,
+    session::ChannelMessageHandler,
 };
 mod dfs_tree;
 mod ipc_tree;
@@ -25,7 +25,7 @@ use crate::msg_handler::OutgoingMessage;
 pub use dfs_tree::*;
 pub use ipc_tree::*;
 
-type Upstream = HandlerReference<SessionMessageHandler>;
+type Upstream = HandlerReference<ChannelMessageHandler>;
 
 #[derive(Debug, Clone)]
 pub struct TreeConnectInfo {

@@ -13,25 +13,31 @@ use smb_msg::{Dialect, EncryptionCipher, SessionFlags, SigningAlgorithmId};
 
 use super::{MessageDecryptor, MessageEncryptor, MessageSigner};
 
-/// Holds the algorithms used for the session --
-/// signing, encryption, and decryption algorithms.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct SessionAlgos {
-    signer: MessageSigner,
     encryptor: Option<MessageEncryptor>,
     decryptor: Option<MessageDecryptor>,
 }
 
-impl SessionAlgos {
+#[derive(Clone)]
+struct ChannelAlgos {
+    signer: MessageSigner,
+}
+
+/// A factory for creating session and channel algorithms.
+///
+/// See [`SessionAlgos::new_session`] and [`SessionAlgos::new_channel`].
+struct SessionAlgosFactory;
+impl SessionAlgosFactory {
     const NO_PREAUTH_HASH_DERIVE_SIGN_CTX: &'static [u8] = b"SmbSign\x00";
     const NO_PREAUTH_HASH_DERIVE_ECRNYPT_S2C_CTX: &'static [u8] = b"ServerOut\x00";
     const NO_PREAUTH_HASH_DERIVE_ENCRYPT_C2S_CTX: &'static [u8] = b"ServerIn \x00";
 
-    pub fn build(
+    pub fn new_session(
         session_key: &KeyToDerive,
         preauth_hash: &Option<PreauthHashValue>,
         info: &ConnectionInfo,
-    ) -> crate::Result<Self> {
+    ) -> crate::Result<SessionAlgos> {
         if (info.negotiation.dialect_rev == Dialect::Smb0311) != preauth_hash.is_some() {
             return Err(crate::Error::InvalidMessage(
                 "Preauth hash must be present for SMB3.1.1, and not present for SMB3.0.2 or older revisions."
@@ -48,17 +54,40 @@ impl SessionAlgos {
             );
         }
 
-        let algos = if info.negotiation.dialect_rev.is_smb3() {
-            Self::smb3xx_make_ciphers(session_key, preauth_hash, info)?
+        if info.negotiation.dialect_rev.is_smb3() {
+            Self::smb3xx_make_ciphers(session_key, preauth_hash, info)
         } else {
-            SessionAlgos {
-                signer: Self::smb2_make_signer(session_key, info)?,
+            Ok(SessionAlgos {
                 encryptor: None,
                 decryptor: None,
-            }
+            })
+        }
+    }
+
+    pub fn new_channel(
+        channel_session_key: &KeyToDerive,
+        preauth_hash: &Option<PreauthHashValue>,
+        info: &ConnectionInfo,
+    ) -> crate::Result<ChannelAlgos> {
+        if !info.negotiation.dialect_rev.is_smb3() {
+            return Err(crate::Error::InvalidState(
+                "Channels are only supported in SMB3+ dialects.".to_string(),
+            ));
+        }
+
+        let deriver = KeyDeriver::new(channel_session_key);
+        let signer = if info.negotiation.dialect_rev.is_smb3() {
+            Self::smb3xx_make_signer(
+                &deriver,
+                info.negotiation.signing_algo,
+                &info.dialect,
+                preauth_hash,
+            )?
+        } else {
+            Self::smb2_make_signer(channel_session_key, info)?
         };
 
-        Ok(algos)
+        Ok(ChannelAlgos { signer })
     }
 
     fn smb2_make_signer(
@@ -79,13 +108,6 @@ impl SessionAlgos {
     ) -> crate::Result<SessionAlgos> {
         let deriver = KeyDeriver::new(session_key);
 
-        let signer = Self::smb3xx_make_signer(
-            &deriver,
-            info.negotiation.signing_algo,
-            &info.dialect,
-            preauth_hash,
-        )?;
-
         let (enc, dec) = if let Some((e, d)) =
             Self::smb3xx_make_cipher_pair(&deriver, info, preauth_hash)?
         {
@@ -102,7 +124,6 @@ impl SessionAlgos {
         };
 
         Ok(SessionAlgos {
-            signer,
             encryptor: enc,
             decryptor: dec,
         })
@@ -185,7 +206,7 @@ impl SessionAlgos {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 enum SessionInfoState {
     #[default]
     /// Initial state.
@@ -208,10 +229,46 @@ enum SessionInfoState {
 /// Holds the information of a session, to be used for actions requiring data from session,
 /// without accessing the entire session object.
 /// This struct should be single-per-session, and wrapped in a shared pointer.
-#[derive(Debug, Clone)]
 pub struct SessionInfo {
     session_id: u64,
     state: Option<SessionInfoState>,
+    channels: Vec<ChannelInfo>,
+}
+
+#[derive(Clone)]
+pub struct ChannelInfo {
+    algos: ChannelAlgos,
+    valid: bool,
+    primary: bool,
+}
+
+impl ChannelInfo {
+    pub fn new(
+        channel_session_key: &KeyToDerive,
+        preauth_hash: &Option<PreauthHashValue>,
+        info: &ConnectionInfo,
+        primary: bool,
+    ) -> crate::Result<Self> {
+        let algos = SessionAlgosFactory::new_channel(channel_session_key, preauth_hash, info)?;
+        Ok(Self {
+            algos,
+            valid: true,
+            primary,
+        })
+    }
+
+    pub fn signer(&self) -> crate::Result<&MessageSigner> {
+        if !self.valid {
+            return Err(crate::Error::InvalidState(
+                "Channel is not valid, cannot get signer.".to_string(),
+            ));
+        }
+        Ok(&self.algos.signer)
+    }
+
+    pub fn invalidate(&mut self) {
+        self.valid = false;
+    }
 }
 
 impl SessionInfo {
@@ -220,6 +277,7 @@ impl SessionInfo {
         Self {
             session_id,
             state: Some(SessionInfoState::Initial),
+            channels: vec![],
         }
     }
 
@@ -242,7 +300,7 @@ impl SessionInfo {
             ));
         }
 
-        let algos = SessionAlgos::build(session_key, preauth_hash, info)?;
+        let algos = SessionAlgosFactory::new_session(session_key, preauth_hash, info)?;
         log::trace!("Session algos set up: {algos:?}");
 
         let info_allows_unsigned = info.config.allow_unsigned_guest_access;
@@ -258,42 +316,11 @@ impl SessionInfo {
     /// Turns the session into a ready state.
     ///
     /// Verifies the session flags against the connection config, and sets them in the session info.
-    pub fn ready(
-        &mut self,
-        flags: SessionFlags,
-        conn_info: &ConnectionInfo,
-        bound_to: Option<&SessionInfo>,
-    ) -> crate::Result<()> {
+    pub fn ready(&mut self, flags: SessionFlags, conn_info: &ConnectionInfo) -> crate::Result<()> {
         if !self.is_setting_up() {
             return Err(crate::Error::InvalidState(
                 "Session is not set up, cannot set flags.".to_string(),
             ));
-        }
-
-        // Session keys are global per-session :/
-        if bound_to.is_some() {
-            if !bound_to.unwrap().is_ready() {
-                return Err(crate::Error::InvalidState(
-                    "Session to bind to is not setting up, cannot bind.".to_string(),
-                ));
-            }
-
-            // Use the same encryption key as the bound session.
-            let bind_to_state = bound_to.unwrap().state.as_ref();
-            match self.state.as_mut().unwrap() {
-                SessionInfoState::SettingUp { algos, .. } => {
-                    if let SessionInfoState::Ready {
-                        algos: bound_algos, ..
-                    } = bind_to_state.unwrap()
-                    {
-                        algos.encryptor = bound_algos.encryptor.clone();
-                        algos.decryptor = bound_algos.decryptor.clone();
-                    } else {
-                        unreachable!()
-                    }
-                }
-                _ => unreachable!(),
-            }
         }
 
         // When session flags are finally set, make sure the server accepts encryption,
@@ -410,16 +437,6 @@ impl SessionInfo {
             Some(SessionInfoState::Ready { algos, .. }) => Ok(algos.encryptor.as_ref()),
             _ => Err(crate::Error::InvalidState(
                 "Session is not ready, cannot get encryptor.".to_string(),
-            )),
-        }
-    }
-
-    pub fn signer(&self) -> crate::Result<&MessageSigner> {
-        match &self.state {
-            Some(SessionInfoState::SettingUp { algos, .. }) => Ok(&algos.signer),
-            Some(SessionInfoState::Ready { algos, .. }) => Ok(&algos.signer),
-            _ => Err(crate::Error::InvalidState(
-                "Session is not ready or setting up, cannot get signer.".to_string(),
             )),
         }
     }
