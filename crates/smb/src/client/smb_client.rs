@@ -7,7 +7,8 @@ use smb_msg::{ReferralEntry, ReferralEntryValue, Status};
 use smb_rpc::interface::{ShareInfo1, SrvSvc};
 #[cfg(feature = "rdma")]
 use smb_transport::RdmaTransport;
-use smb_transport::TcpTransport;
+use smb_transport::utils::TransportUtils;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::{collections::HashMap, str::FromStr};
 
@@ -57,7 +58,7 @@ use super::{config::ClientConfig, unc_path::UncPath};
 pub struct Client {
     config: ClientConfig,
     /// Server Name => [`ClientConnectionInfo`]
-    connections: Mutex<HashMap<String, ClientConnectionInfo>>,
+    connections: Mutex<HashMap<IpAddr, ClientConnectionInfo>>,
 }
 
 /// (Internal)
@@ -197,7 +198,8 @@ impl Client {
         self.connect(target.server()).await?;
 
         let mut connections = self.connections.lock().await?;
-        let connection = connections.get_mut(target.server()).ok_or_else(|| {
+        let server_address = TransportUtils::parse_socket_address(target.server())?;
+        let connection = connections.get_mut(&server_address.ip()).ok_or_else(|| {
             Error::NotFound(format!(
                 "No connection found for server: {}",
                 target.server()
@@ -254,7 +256,8 @@ impl Client {
     async fn _get_credentials(&self, target: &UncPath) -> crate::Result<(String, String)> {
         let target: UncPath = target.clone().with_no_path();
         let connections = self.connections.lock().await?;
-        let connection = connections.get(target.server()).ok_or_else(|| {
+        let server_address = TransportUtils::parse_socket_address(target.server())?;
+        let connection = connections.get(&server_address.ip()).ok_or_else(|| {
             Error::NotFound(format!(
                 "No connection found for server: {}",
                 target.server()
@@ -291,17 +294,45 @@ impl Client {
     /// Using this method, for example, will require you to hold a reference to trees, or otherwise
     /// they will disconnect (as opposed to the `share_connect` method, which assures keeping the tree alive!)
     ///
+    /// See [`Client::connect_to_address`] to connect to a server using a specific socket address.
+    ///
     /// ## Arguments
     /// * `server` - The target server to make the connection for.
     ///
     /// ## Returns
     /// The connected connection, if succeeded. Error if failed to make the connection,
-    /// or failed to connect the remote.
     #[maybe_async]
     pub async fn connect(&self, server: &str) -> crate::Result<Arc<Connection>> {
+        let server_address = TransportUtils::parse_socket_address(server)?;
+        self.connect_to_address(server, server_address).await
+    }
+
+    /// Makes a connection to the specified server and address.
+    /// If a matching connection already exists, returns it.
+    ///
+    /// _Note:_ You should usually connect the client through the [`Client::share_connect`] method.
+    /// Using this method, for example, will require you to hold a reference to trees, or otherwise
+    /// they will disconnect (as opposed to the `share_connect` method, which assures keeping the tree alive!)
+    ///
+    /// See [`Client::connect`] to connect to a server using DNS resolution.
+    ///
+    /// ## Arguments
+    /// * `server` - The target server to make the connection for.
+    /// * `server_address` - An optional socket address to connect to.
+    ///     If the port is set to 0, the default port will be used according to the transport that is used.
+    ///
+    /// ## Returns
+    /// The connected connection, if succeeded. Error if failed to make the connection,
+    /// or failed to connect the remote.
+    #[maybe_async]
+    pub async fn connect_to_address(
+        &self,
+        server: &str,
+        server_address: SocketAddr,
+    ) -> crate::Result<Arc<Connection>> {
         let conn = {
             let mut connections = self.connections.lock().await?;
-            if let Some(conn) = connections.get(server) {
+            if let Some(conn) = connections.get(&server_address.ip()) {
                 log::trace!("Re-using existing connection to {server}",);
                 return Ok(conn.connection.clone());
             }
@@ -310,13 +341,14 @@ impl Client {
 
             let conn = Connection::build(
                 server,
+                server_address,
                 self.config.client_guid,
                 self.config.connection.clone(),
             )?;
             let conn = Arc::new(conn);
 
             connections.insert(
-                server.to_owned(),
+                server_address.ip(),
                 ClientConnectionInfo {
                     connection: conn.clone(),
                     share_connects: Default::default(),
@@ -336,7 +368,8 @@ impl Client {
     #[maybe_async]
     pub async fn get_connection(&self, server: &str) -> crate::Result<Arc<Connection>> {
         let connections = self.connections.lock().await?;
-        if let Some(conn) = connections.get(server) {
+        let server_address: SocketAddr = TransportUtils::parse_socket_address(server)?;
+        if let Some(conn) = connections.get(&server_address.ip()) {
             return Ok(conn.connection.clone());
         }
         Err(Error::NotFound(format!(
@@ -348,7 +381,8 @@ impl Client {
     pub async fn get_session(&self, path: &UncPath) -> crate::Result<Arc<Session>> {
         let path = path.clone().with_no_path();
         let connections = self.connections.lock().await?;
-        let connection = connections.get(path.server()).ok_or_else(|| {
+        let server_address = TransportUtils::parse_socket_address(path.server())?;
+        let connection = connections.get(&server_address.ip()).ok_or_else(|| {
             Error::NotFound(format!("No connection found for server: {}", path.server()))
         })?;
         if let Some(share_connect) = connection.share_connects.get(&path) {
@@ -365,7 +399,8 @@ impl Client {
     pub async fn get_tree(&self, path: &UncPath) -> crate::Result<Arc<Tree>> {
         let path = path.clone().with_no_path();
         let connections = self.connections.lock().await?;
-        let connection = connections.get(path.server()).ok_or_else(|| {
+        let server_address = TransportUtils::parse_socket_address(path.server())?;
+        let connection = connections.get(&server_address.ip()).ok_or_else(|| {
             Error::NotFound(format!("No connection found for server: {}", path.server()))
         })?;
         if let Some(share_connect) = connection.share_connects.get(&path) {
@@ -500,12 +535,11 @@ impl Client {
 
         let opened_conn_info = self.get_connection(unc.server()).await?;
 
-        let mut current_conn_address = opened_conn_info.conn_info().unwrap().server_address;
-        current_conn_address.set_port(0);
+        let current_conn_address = opened_conn_info.conn_info().unwrap().server_address;
         // TODO: Improve this algorithm
         let default_ip_iface_index = network_interfaces
             .iter()
-            .find(|iface| iface.sockaddr.socket_addr() == current_conn_address)
+            .find(|iface| iface.sockaddr.socket_addr().ip() == current_conn_address.ip())
             .unwrap()
             .if_index;
 
@@ -522,11 +556,8 @@ impl Client {
 
         let session = self.get_session(unc).await?;
 
-        let connect_to = match interface_to_mc.sockaddr.socket_addr() {
-            std::net::SocketAddr::V4(socket_addr_v4) => socket_addr_v4.ip().to_string(),
-            std::net::SocketAddr::V6(socket_addr_v6) => socket_addr_v6.ip().to_string(),
-        };
-        let alt_connection = self.connect(&connect_to).await?;
+        let connect_to = interface_to_mc.sockaddr.socket_addr();
+        let alt_connection = self.connect_to_address(unc.server(), connect_to).await?;
 
         alt_connection
             .bind_session(&session, user_name, password)

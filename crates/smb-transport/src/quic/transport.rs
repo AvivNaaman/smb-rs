@@ -103,12 +103,14 @@ impl QuicTransport {
         )))
     }
 
-    async fn inner_connect(&mut self, server: &str) -> crate::error::Result<()> {
-        let server_addr = TransportUtils::parse_socket_address(server)?;
-        let server_name = TransportUtils::get_server_name(server)?;
+    async fn inner_connect(
+        &mut self,
+        server_name: &str,
+        server_address: SocketAddr,
+    ) -> crate::error::Result<()> {
         let connection = self
             .endpoint
-            .connect(server_addr, &server_name)
+            .connect(server_address, server_name)
             .map_err(QuicError::from)?
             .await
             .map_err(|e| match e {
@@ -152,11 +154,15 @@ impl QuicTransport {
 }
 
 impl SmbTransport for QuicTransport {
-    fn connect<'a>(&'a mut self, server: &'a str) -> BoxFuture<'a, crate::error::Result<()>> {
+    fn connect<'a>(
+        &'a mut self,
+        server_name: &'a str,
+        server_address: SocketAddr,
+    ) -> BoxFuture<'a, crate::error::Result<()>> {
         let timeout = self.timeout;
         async move {
             select! {
-                res = self.inner_connect(server) => {
+                res = self.inner_connect(server_name, server_address) => {
                     res
                 },
                 _ = tokio::time::sleep(timeout) => {

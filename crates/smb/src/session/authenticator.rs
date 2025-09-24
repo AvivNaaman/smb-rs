@@ -51,7 +51,7 @@ impl Authenticator {
             .execute(&mut negotiate_ssp)?;
 
         Ok(Authenticator {
-            server_hostname: conn_info.server.clone(),
+            server_hostname: conn_info.server_name.clone(),
             ssp: negotiate_ssp,
             cred_handle,
             current_state: None,

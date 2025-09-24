@@ -10,9 +10,13 @@ use crate::{IoVec, SmbTcpMessageHeader, error::Result};
 #[allow(async_fn_in_trait)]
 pub trait SmbTransport: Send + SmbTransportRead + SmbTransportWrite {
     #[cfg(feature = "async")]
-    fn connect<'a>(&'a mut self, endpoint: &'a str) -> BoxFuture<'a, Result<()>>;
+    fn connect<'a>(
+        &'a mut self,
+        server_name: &'a str,
+        address: SocketAddr,
+    ) -> BoxFuture<'a, Result<()>>;
     #[cfg(not(feature = "async"))]
-    fn connect(&mut self, endpoint: &str) -> Result<()>;
+    fn connect(&mut self, server_name: &str, address: SocketAddr) -> Result<()>;
 
     fn default_port(&self) -> u16;
 

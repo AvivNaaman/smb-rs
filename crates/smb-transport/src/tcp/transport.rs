@@ -81,6 +81,7 @@ impl TcpTransport {
             return TcpStream::connect(&endpoint).await.map_err(Into::into);
         }
 
+        log::debug!("Connecting to {endpoint} with timeout {:?}.", self.timeout);
         select! {
             res = TcpStream::connect(&endpoint) => res.map_err(Into::into),
             _ = tokio::time::sleep(self.timeout) => Err(
@@ -159,9 +160,8 @@ impl TcpTransport {
 
     #[maybe_async::maybe_async]
     #[inline]
-    async fn do_connect(&mut self, endpoint: &str) -> Result<()> {
-        let endpoint = TransportUtils::parse_socket_address(endpoint)?;
-        let socket = self.connect_timeout(&endpoint).await?;
+    async fn do_connect(&mut self, _server_name: &str, server_address: SocketAddr) -> Result<()> {
+        let socket = self.connect_timeout(&server_address).await?;
         let (r, w) = Self::split_socket(socket);
         self.reader = Some(r);
         self.writer = Some(w);
@@ -171,12 +171,16 @@ impl TcpTransport {
 
 impl SmbTransport for TcpTransport {
     #[cfg(feature = "async")]
-    fn connect<'a>(&'a mut self, endpoint: &'a str) -> BoxFuture<'a, Result<()>> {
-        self.do_connect(endpoint).boxed()
+    fn connect<'a>(
+        &'a mut self,
+        server_name: &'a str,
+        server_address: SocketAddr,
+    ) -> BoxFuture<'a, Result<()>> {
+        self.do_connect(server_name, server_address).boxed()
     }
     #[cfg(not(feature = "async"))]
-    fn connect(&mut self, endpoint: &str) -> Result<()> {
-        self.do_connect(endpoint)
+    fn connect(&mut self, server_name: &str, server_address: SocketAddr) -> Result<()> {
+        self.do_connect(server_name, server_address)
     }
 
     fn split(self: Box<Self>) -> Result<(Box<dyn SmbTransportRead>, Box<dyn SmbTransportWrite>)> {

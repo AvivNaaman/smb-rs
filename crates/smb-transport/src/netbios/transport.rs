@@ -1,4 +1,4 @@
-use std::{io::Cursor, time::Duration};
+use std::{io::Cursor, net::SocketAddr, time::Duration};
 
 use super::msg::*;
 use crate::{TcpTransport, TransportError, traits::*};
@@ -23,9 +23,9 @@ impl NetBiosTransport {
 
     /// Starts the underlying TCP connection, and sends NetBIOS session request and expects a session response.
     #[maybe_async]
-    async fn do_connect(&mut self, endpoint: &str) -> Result<()> {
+    async fn do_connect(&mut self, server_name: &str, address: SocketAddr) -> Result<()> {
         log::debug!("Connecting to NetBIOS Session services TCP...");
-        self.tcp.connect(endpoint).await?;
+        self.tcp.connect(server_name, address).await?;
 
         log::info!("Performing NetBIOS session setup...");
         self.netbios_session_setup().await?;
@@ -91,14 +91,15 @@ impl SmbTransport for NetBiosTransport {
     #[cfg(feature = "async")]
     fn connect<'a>(
         &'a mut self,
-        endpoint: &'a str,
+        server_name: &'a str,
+        address: SocketAddr,
     ) -> futures_core::future::BoxFuture<'a, Result<()>> {
-        self.do_connect(endpoint).boxed()
+        self.do_connect(server_name, address).boxed()
     }
 
     #[cfg(not(feature = "async"))]
-    fn connect(&mut self, endpoint: &str) -> Result<()> {
-        self.do_connect(endpoint)
+    fn connect(&mut self, server_name: &str, address: SocketAddr) -> Result<()> {
+        self.do_connect(server_name, address)
     }
 
     fn default_port(&self) -> u16 {

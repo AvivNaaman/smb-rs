@@ -37,13 +37,19 @@ pub struct Connection {
     handler: HandlerReference<ConnectionMessageHandler>,
     config: ConnectionConfig,
 
-    server: String,
+    server_name: String,
+    server_address: SocketAddr,
 }
 
 impl Connection {
     /// Creates a new SMB connection, specifying a server configuration, without connecting to a server.
     /// Use the [`connect`](Connection::connect) method to establish a connection.
-    pub fn build(server: &str, client_guid: Guid, config: ConnectionConfig) -> crate::Result<Self> {
+    pub fn build(
+        server_name: &str,
+        server_address: SocketAddr,
+        client_guid: Guid,
+        config: ConnectionConfig,
+    ) -> crate::Result<Self> {
         config.validate()?;
         Ok(Connection {
             handler: HandlerReference::new(ConnectionMessageHandler::new(
@@ -51,7 +57,8 @@ impl Connection {
                 config.credits_backlog,
             )),
             config,
-            server: server.to_string(),
+            server_name: server_name.to_string(),
+            server_address,
         })
     }
 
@@ -84,12 +91,22 @@ impl Connection {
         }
 
         let mut transport = make_transport(&self.config.transport, self.config.timeout())?;
-        let port = self.config.port.unwrap_or_else(|| transport.default_port());
-        let endpoint = format!("{}:{}", self.server, port);
-        log::debug!("Connecting to {}...", &endpoint);
-        transport.connect(endpoint.as_str()).await?;
 
-        log::info!("Connected to {}. Negotiating.", &endpoint);
+        let mut actual_connect_address = self.server_address;
+        if actual_connect_address.port() == 0 {
+            actual_connect_address
+                .set_port(self.config.port.unwrap_or_else(|| transport.default_port()));
+        }
+
+        log::debug!(
+            "Connecting to {} (at {actual_connect_address})...",
+            &self.server_name,
+        );
+        transport
+            .connect(&self.server_name, actual_connect_address)
+            .await?;
+
+        log::info!("Connected to {}. Negotiating.", &self.server_name);
         self._negotiate(transport, self.config.smb2_only_negotiate)
             .await?;
 
@@ -130,7 +147,12 @@ impl Connection {
         client_guid: Guid,
         config: ConnectionConfig,
     ) -> crate::Result<Self> {
-        let conn = Self::build(server, client_guid, config)?;
+        let conn = Self::build(
+            server,
+            transport.remote_address()?.into(),
+            client_guid,
+            config,
+        )?;
         conn._negotiate(transport, conn.config.smb2_only_negotiate)
             .await?;
         Ok(conn)
@@ -308,7 +330,7 @@ impl Connection {
             negotiation,
             dialect: dialect_impl,
             config: self.config.clone(),
-            server: self.server.clone(),
+            server_name: self.server_name.clone(),
             preauth_hash,
             client_guid: self.handler.client_guid,
             server_address,
