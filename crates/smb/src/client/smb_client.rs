@@ -227,7 +227,7 @@ impl Client {
             Arc::new(session)
         };
 
-        let tree = session.tree_connect(&target.to_string()).await?;
+        let tree = session.tree_connect(&target).await?;
 
         let credentials = if tree.is_dfs_root()? {
             Some((user_name.to_string(), password.clone()))
@@ -559,13 +559,13 @@ impl Client {
         let connect_to = interface_to_mc.sockaddr.socket_addr();
         let alt_connection = self.connect_to_address(unc.server(), connect_to).await?;
 
-        alt_connection
+        let channel = alt_connection
             .bind_session(&session, user_name, password)
             .await?;
 
-        let alt_channel_tree = session.tree_connect(unc.share().unwrap()).await?;
+        let alt_channel_tree = channel.tree_connect(unc).await?;
 
-        let file_in_alt = alt_channel_tree
+        let _file_in_alt = alt_channel_tree
             .create_file(
                 unc.path().unwrap_or(""),
                 smb_msg::CreateDisposition::Open,

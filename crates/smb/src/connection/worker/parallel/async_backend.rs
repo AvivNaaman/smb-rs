@@ -19,10 +19,6 @@ pub struct AsyncBackend {
 }
 
 impl AsyncBackend {
-    fn is_cancelled(&self) -> bool {
-        self.token.is_cancelled()
-    }
-
     /// Internal message loop handler.
     async fn loop_receive(
         self: Arc<Self>,

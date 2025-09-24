@@ -1,11 +1,8 @@
 use std::{sync::Arc, time::Duration};
 
 use crate::{
-    Error,
-    connection::connection_info::ConnectionInfo,
-    msg_handler::ReceiveOptions,
-    session::{ChannelInfo, SessionAndChannel},
-    sync_helpers::*,
+    Error, connection::connection_info::ConnectionInfo, msg_handler::ReceiveOptions,
+    session::SessionAndChannel, sync_helpers::*,
 };
 use smb_transport::SmbTransport;
 
@@ -15,7 +12,6 @@ use smb_msg::Status;
 use crate::{
     connection::transformer::Transformer,
     msg_handler::{IncomingMessage, OutgoingMessage, SendMessageResult},
-    session::SessionInfo,
 };
 
 /// SMB2 connection worker.

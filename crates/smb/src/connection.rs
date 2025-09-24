@@ -7,7 +7,7 @@ pub mod worker;
 use crate::Error;
 use crate::connection::preauth_hash::PreauthHashState;
 use crate::dialects::DialectImpl;
-use crate::session::ChannelMessageHandler;
+use crate::session::{Channel, ChannelMessageHandler};
 use crate::{compression, sync_helpers::*};
 use crate::{crypto, msg_handler::*, session::Session};
 use binrw::prelude::*;
@@ -70,8 +70,29 @@ impl Connection {
         primary_session: &Session,
         user_name: &str,
         password: String,
-    ) -> crate::Result<()> {
+    ) -> crate::Result<Channel> {
         log::debug!("Binding alternate session to new connection");
+
+        if self.conn_info().is_none() {
+            return Err(Error::InvalidState(
+                "Connection must be negotiated before binding a session.".to_string(),
+            ));
+        }
+
+        if self
+            .conn_info()
+            .as_ref()
+            .unwrap()
+            .negotiation
+            .caps
+            .multi_channel()
+            == false
+        {
+            return Err(Error::InvalidState(
+                "Server does not support multichannel.".to_string(),
+            ));
+        }
+
         primary_session
             .bind(
                 user_name,
@@ -79,8 +100,7 @@ impl Connection {
                 &self.handler,
                 self.handler.conn_info.get().unwrap(),
             )
-            .await?;
-        Ok(())
+            .await
     }
 
     /// Connects to the specified server, if it is not already connected, and negotiates the connection.
@@ -98,7 +118,7 @@ impl Connection {
                 .set_port(self.config.port.unwrap_or_else(|| transport.default_port()));
         }
 
-        log::debug!(
+        log::info!(
             "Connecting to {} (at {actual_connect_address})...",
             &self.server_name,
         );
@@ -147,12 +167,7 @@ impl Connection {
         client_guid: Guid,
         config: ConnectionConfig,
     ) -> crate::Result<Self> {
-        let conn = Self::build(
-            server,
-            transport.remote_address()?.into(),
-            client_guid,
-            config,
-        )?;
+        let conn = Self::build(server, transport.remote_address()?, client_guid, config)?;
         conn._negotiate(transport, conn.config.smb2_only_negotiate)
             .await?;
         Ok(conn)
@@ -492,14 +507,14 @@ impl Connection {
 
         #[cfg(not(feature = "single_threaded"))]
         if !self.config.disable_notifications && info.negotiation.caps.notifications() {
-            log::info!("Starting Notification job.");
+            log::debug!("Starting Notification job.");
             self.handler.handler.start_notify().await?;
-            log::info!("Notification job started.");
+            log::debug!("Notification job started.");
         }
 
         self.handler.conn_info.set(Arc::new(info)).unwrap();
 
-        log::info!("Negotiation successful");
+        log::debug!("Negotiation successful");
         Ok(())
     }
 

@@ -1,5 +1,4 @@
 use crate::error::*;
-use crate::utils::TransportUtils;
 use crate::{SmbTransport, SmbTransportRead, SmbTransportWrite};
 
 #[cfg(feature = "async")]
