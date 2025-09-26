@@ -1,4 +1,4 @@
-use crate::session::authenticator::{AuthenticationStep, Authenticator};
+use crate::session::authenticator::Authenticator;
 
 use super::*;
 
@@ -10,20 +10,21 @@ where
     last_setup_response: Option<SessionSetupResponse>,
     flags: Option<SessionFlags>,
 
-    handler: Option<HandlerReference<ChannelMessageHandler>>,
+    handler: Option<ChannelMessageHandler>,
 
     /// should always be set; this is Option to allow moving it out during setup,
     /// when it is being updated.
     preauth_hash: Option<PreauthHashState>,
 
-    result: Option<Arc<Mutex<SessionAndChannel>>>,
+    result: Option<Arc<RwLock<SessionAndChannel>>>,
 
     authenticator: Authenticator,
-    upstream: &'a super::Upstream,
+    upstream: &'a ChannelUpstream,
     conn_info: &'a Arc<ConnectionInfo>,
 
     // A place to store the current setup channel, until it is set into the info.
     channel: Option<ChannelInfo>,
+    new_channel_id: u32,
 
     _phantom: std::marker::PhantomData<T>,
 }
@@ -35,9 +36,10 @@ where
 {
     pub async fn new(
         identity: sspi::AuthIdentity,
-        upstream: &'a Upstream,
+        upstream: &'a ChannelUpstream,
         conn_info: &'a Arc<ConnectionInfo>,
-        primary_session: Option<&Arc<Mutex<SessionAndChannel>>>,
+        new_channel_id: u32,
+        primary_session: Option<&Arc<RwLock<SessionAndChannel>>>,
     ) -> crate::Result<Self> {
         let authenticator = Authenticator::build(identity, conn_info)?;
 
@@ -51,15 +53,16 @@ where
             upstream,
             conn_info,
             channel: None,
+            new_channel_id,
             _phantom: std::marker::PhantomData,
         };
 
         if primary_session.is_some() {
-            let primary_session = primary_session.unwrap().lock().await?;
+            let primary_session = primary_session.unwrap().read().await?;
             let session = primary_session.session.clone();
             let channel = primary_session.channel.as_ref().unwrap().clone();
             result.set_session(session).await?;
-            result.result.as_ref().unwrap().lock().await?.channel = Some(channel);
+            result.result.as_ref().unwrap().write().await?.channel = Some(channel);
         }
 
         Ok(result)
@@ -69,7 +72,7 @@ where
     ///
     /// This function sets up a session against a connection, and it is somewhat abstrace.
     /// by calling impl functions, this function's behavior is modified to support both new sessions and binding to existing sessions.
-    pub async fn setup(&mut self) -> crate::Result<Arc<Mutex<SessionAndChannel>>> {
+    pub async fn setup(&mut self) -> crate::Result<Arc<RwLock<SessionAndChannel>>> {
         log::debug!(
             "Setting up session for user {} (@{}).",
             self.authenticator.user_name().account_name(),
@@ -111,52 +114,47 @@ where
             };
             let is_auth_done = self.authenticator.is_authenticated()?;
 
-            self.last_setup_response = match next_buf {
-                AuthenticationStep::NextToken(next_buf) => {
-                    // If keys are exchanged, set them up, to enable validation of next response!
-                    let request = self.send_setup_request(next_buf).await?;
-                    if is_auth_done {
-                        self.preauth_hash = self.preauth_hash.take().unwrap().finish().into();
-                        self.make_channel().await?;
-                    }
+            // If keys are exchanged, set them up, to enable validation of next response!
+            let request = self.send_setup_request(next_buf).await?;
+            if is_auth_done {
+                self.preauth_hash = self.preauth_hash.take().unwrap().finish().into();
+                self.make_channel().await?;
+            }
 
-                    let response = self.receive_setup_response(request.msg_id).await?;
-                    let message_form = response.form;
-                    let session_id = response.message.header.session_id;
-                    let session_setup_response = response.message.content.to_sessionsetup()?;
+            let response = self.receive_setup_response(request.msg_id).await?;
+            let message_form = response.form;
+            let session_id = response.message.header.session_id;
+            let session_setup_response = response.message.content.to_sessionsetup()?;
 
-                    // First iteration: construct a session state object.
-                    // TODO: currently, there's a bug which prevents authentication on first attempt
-                    // to complete successfully: since we need the session ID to construct the session state,
-                    // which is required for channel construction and signature validation,
-                    // the first request must arrive here, and then be validated.
-                    if self.result.is_none() {
-                        log::trace!("Creating session state with id {session_id}.");
-                        self.set_session(T::init_session(self, session_id).await?)
-                            .await?;
-                    }
+            // First iteration: construct a session state object.
+            // TODO: currently, there's a bug which prevents authentication on first attempt
+            // to complete successfully: since we need the session ID to construct the session state,
+            // which is required for channel construction and signature validation,
+            // the first request must arrive here, and then be validated.
+            if self.result.is_none() {
+                log::trace!("Creating session state with id {session_id}.");
+                self.set_session(T::init_session(self, session_id).await?)
+                    .await?;
+            }
 
-                    if is_auth_done {
-                        // Important: If we did NOT make sure the message's signature is valid,
-                        // we should do it now, as long as the session is not anonymous or guest.
-                        if !session_setup_response
-                            .session_flags
-                            .is_guest_or_null_session()
-                            && !message_form.signed_or_encrypted()
-                        {
-                            return Err(Error::InvalidMessage(
-                                "Expected a signed message!".to_string(),
-                            ));
-                        }
-                    } else {
-                        self.next_preauth_hash(&response.raw);
-                    }
-
-                    self.flags = Some(session_setup_response.session_flags);
-                    Some(session_setup_response)
+            if is_auth_done {
+                // Important: If we did NOT make sure the message's signature is valid,
+                // we should do it now, as long as the session is not anonymous or guest.
+                if !session_setup_response
+                    .session_flags
+                    .is_guest_or_null_session()
+                    && !message_form.signed_or_encrypted()
+                {
+                    return Err(Error::InvalidMessage(
+                        "Expected a signed message!".to_string(),
+                    ));
                 }
-                AuthenticationStep::Complete => None, // TODO: ???
-            };
+            } else {
+                self.next_preauth_hash(&response.raw);
+            }
+
+            self.flags = Some(session_setup_response.session_flags);
+            self.last_setup_response = Some(session_setup_response)
         }
 
         self.flags.ok_or(Error::InvalidState(
@@ -169,18 +167,13 @@ where
         Ok(())
     }
 
-    async fn set_session(&mut self, session: Arc<Mutex<SessionInfo>>) -> crate::Result<()> {
-        let session_id = session.lock().await?.id();
+    async fn set_session(&mut self, session: Arc<RwLock<SessionInfo>>) -> crate::Result<()> {
+        let session_id = session.read().await?.id();
         let result = SessionAndChannel::new(session_id, session);
-        let session = Arc::new(Mutex::new(result));
+        let session = Arc::new(RwLock::new(result));
 
-        self.handler = Some(ChannelMessageHandler::new(
-            session_id,
-            u32::MAX,
-            false, // prevent logoff once this ref is dropped.
-            self.upstream,
-            &session,
-        ));
+        let setup_handler = ChannelMessageHandler::make_for_setup(&session, self.upstream).await;
+        self.handler = Some(setup_handler);
 
         self.upstream
             .worker()
@@ -213,7 +206,7 @@ where
                 .result
                 .as_ref()
                 .unwrap()
-                .lock()
+                .read()
                 .await?
                 .channel
                 .is_some();
@@ -260,6 +253,7 @@ where
         log::trace!("Session keys are set.");
 
         let channel_info = ChannelInfo::new(
+            self.new_channel_id,
             &self.session_key()?,
             &self.preauth_hash_value(),
             self.conn_info,
@@ -268,7 +262,7 @@ where
 
         self.channel = Some(channel_info);
 
-        let mut session_lock = self.result.as_ref().unwrap().lock().await?;
+        let mut session_lock = self.result.as_ref().unwrap().write().await?;
         session_lock.set_channel(self.channel.take().unwrap());
 
         log::trace!("Channel for current setup has been initialized");
@@ -292,7 +286,7 @@ where
         self.preauth_hash.as_ref().unwrap()
     }
 
-    pub fn upstream(&self) -> &'a super::Upstream {
+    pub fn upstream(&self) -> &'a ChannelUpstream {
         self.upstream
     }
 
@@ -333,7 +327,7 @@ pub(crate) trait SessionSetupProperties {
     async fn init_session<T>(
         _setup: &'_ SessionSetup<'_, T>,
         _session_id: u64,
-    ) -> crate::Result<Arc<Mutex<SessionInfo>>>
+    ) -> crate::Result<Arc<RwLock<SessionInfo>>>
     where
         T: SessionSetupProperties;
 
@@ -393,7 +387,7 @@ impl SessionSetupProperties for SmbSessionBind {
     async fn init_session<T>(
         _setup: &SessionSetup<'_, T>,
         _session_id: u64,
-    ) -> crate::Result<Arc<Mutex<SessionInfo>>>
+    ) -> crate::Result<Arc<RwLock<SessionInfo>>>
     where
         T: SessionSetupProperties,
     {
@@ -428,8 +422,8 @@ impl SessionSetupProperties for SmbSessionNew {
         log::trace!("Invalidating session before cleanup.");
         let session = setup.result.as_ref().unwrap();
         {
-            let session_lock = session.lock().await?;
-            session_lock.session.lock().await?.invalidate();
+            let session_lock = session.read().await?;
+            session_lock.session.write().await?.invalidate();
         }
 
         setup
@@ -450,10 +444,10 @@ impl SessionSetupProperties for SmbSessionNew {
             .result
             .as_ref()
             .unwrap()
-            .lock()
+            .read()
             .await?
             .session
-            .lock()
+            .write()
             .await?
             .setup(
                 &setup.session_key()?,
@@ -467,8 +461,8 @@ impl SessionSetupProperties for SmbSessionNew {
         T: SessionSetupProperties,
     {
         log::trace!("Session setup successful");
-        let result = setup.result.as_ref().unwrap().lock().await?;
-        let mut session = result.session.lock().await?;
+        let result = setup.result.as_ref().unwrap().read().await?;
+        let mut session = result.session.write().await?;
         session.ready(setup.flags.unwrap(), setup.conn_info)
     }
 
@@ -479,12 +473,12 @@ impl SessionSetupProperties for SmbSessionNew {
     async fn init_session<T>(
         _setup: &SessionSetup<'_, T>,
         session_id: u64,
-    ) -> crate::Result<Arc<Mutex<SessionInfo>>>
+    ) -> crate::Result<Arc<RwLock<SessionInfo>>>
     where
         T: SessionSetupProperties,
     {
         let session_info = SessionInfo::new(session_id);
-        let session_info = Arc::new(Mutex::new(session_info));
+        let session_info = Arc::new(RwLock::new(session_info));
 
         Ok(session_info)
     }

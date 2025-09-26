@@ -23,7 +23,6 @@ use smb_transport::IoVec;
 use std::collections::HashMap;
 use std::ops::Deref;
 use std::sync::atomic::{AtomicBool, AtomicU32};
-type Upstream = HandlerReference<ConnectionMessageHandler>;
 
 mod authenticator;
 mod channel;
@@ -50,13 +49,6 @@ pub struct Session {
     session_handler: HandlerReference<SessionMessageHandler>,
 }
 
-pub struct Channel {
-    channel_id: u32,
-
-    pub(crate) handler: HandlerReference<ChannelMessageHandler>,
-    conn_info: Arc<ConnectionInfo>,
-}
-
 #[maybe_async]
 impl Session {
     /// Sets up a new session on the specified connection.
@@ -65,14 +57,21 @@ impl Session {
     /// [Session::bind] may be used instead, to bind an existing session to a new connection.
     pub(crate) async fn create(
         identity: sspi::AuthIdentity,
-        upstream: &Upstream,
+        upstream: &ChannelUpstream,
         conn_info: &Arc<ConnectionInfo>,
     ) -> crate::Result<Session> {
-        let setup_result =
-            SessionSetup::<SmbSessionNew>::new(identity, upstream, conn_info, None).await?;
-
         const FIRST_CHANNEL_ID: u32 = 0;
-        let primary_channel = Self::_common_setup(setup_result, FIRST_CHANNEL_ID).await?;
+
+        let setup_result = SessionSetup::<SmbSessionNew>::new(
+            identity,
+            upstream,
+            conn_info,
+            FIRST_CHANNEL_ID,
+            None,
+        )
+        .await?;
+
+        let primary_channel = Self::_common_setup(setup_result).await?;
 
         let handler =
             HandlerReference::new(SessionMessageHandler::new(primary_channel.handler.clone()));
@@ -106,8 +105,8 @@ impl Session {
         }
 
         {
-            let primary_session_state = self.handler.session_state().lock().await?;
-            let session = primary_session_state.session.lock().await?;
+            let primary_session_state = self.handler.session_state().read().await?;
+            let session = primary_session_state.session.read().await?;
             if !session.is_ready() {
                 return Err(Error::InvalidState(
                     "Cannot bind session that is not ready.".to_string(),
@@ -120,70 +119,61 @@ impl Session {
             }
         }
 
+        let new_channel_id = self
+            .channel_counter
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
         let setup_result = SessionSetup::<SmbSessionBind>::new(
             identity,
             handler,
             conn_info,
+            new_channel_id,
             Some(self.handler.session_state()),
         )
         .await?;
 
-        let internal_channel_id = self
-            .channel_counter
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-
-        let channel = Self::_common_setup(setup_result, internal_channel_id).await?;
+        let channel = Self::_common_setup(setup_result).await?;
 
         self.alt_channels
             .write()
             .await?
-            .insert(internal_channel_id, channel);
+            .insert(new_channel_id, channel);
 
         self.session_handler.channel_handlers.write().await?.insert(
-            internal_channel_id,
+            new_channel_id,
             self.alt_channels
                 .read()
                 .await?
-                .get(&internal_channel_id)
+                .get(&new_channel_id)
                 .unwrap()
                 .handler
                 .clone(),
         );
 
-        Ok(internal_channel_id)
+        Ok(new_channel_id)
     }
 
-    async fn _common_setup<T>(
-        mut session_setup: SessionSetup<'_, T>,
-        channel_id: u32,
-    ) -> crate::Result<Channel>
+    async fn _common_setup<T>(mut session_setup: SessionSetup<'_, T>) -> crate::Result<Channel>
     where
         T: SessionSetupProperties,
     {
         let setup_result = session_setup.setup().await?;
-        let session_id = {
-            let session = setup_result.lock().await?;
-            let session = session.session.lock().await?;
+
+        {
+            let session = setup_result.read().await?;
+            let session = session.session.read().await?;
             log::debug!("Session setup complete.");
             if session.allow_unsigned()? {
                 log::debug!("Session is guest/anonymous.");
             }
-
-            session.id()
         };
-        let handler = ChannelMessageHandler::new(
-            session_id,
-            channel_id,
-            true,
+
+        let channel = Channel::new(
             session_setup.upstream(),
+            session_setup.conn_info(),
             &setup_result,
-        );
-
-        let channel = Channel {
-            handler,
-            channel_id,
-            conn_info: session_setup.conn_info().clone(),
-        };
+        )
+        .await?;
 
         Ok(channel)
     }
@@ -201,8 +191,8 @@ impl Session {
     ///
     /// Any resources held by the session will be released,
     /// and any [`Tree`] objects and their resources will be unusable.
-    pub async fn close(&self) -> crate::Result<()> {
-        self.handler.logoff().await
+    pub async fn logoff(&self) -> crate::Result<()> {
+        self.session_handler.logoff().await
     }
 }
 
@@ -214,32 +204,16 @@ impl Deref for Session {
     }
 }
 
-impl Channel {
-    /// Returns the Session ID of this session.
-    ///
-    /// This ID is the same as the SMB's session id,
-    /// so it is unique-per-connection, and may be seen on the wire as well.
-    #[inline]
-    pub fn session_id(&self) -> u64 {
-        self.handler.session_id()
-    }
-
-    #[inline]
-    pub fn channel_id(&self) -> u32 {
-        self.channel_id
-    }
-}
-
 #[derive(Clone)]
 pub struct SessionAndChannel {
     pub session_id: u64,
 
-    pub session: Arc<Mutex<SessionInfo>>,
+    pub session: Arc<RwLock<SessionInfo>>,
     pub channel: Option<ChannelInfo>,
 }
 
 impl SessionAndChannel {
-    pub fn new(session_id: u64, session: Arc<Mutex<SessionInfo>>) -> Self {
+    pub fn new(session_id: u64, session: Arc<RwLock<SessionInfo>>) -> Self {
         Self {
             session_id,
             session,
@@ -259,8 +233,11 @@ pub(crate) struct SessionMessageHandler {
     primary_channel: HandlerReference<ChannelMessageHandler>,
 
     channel_handlers: RwLock<HashMap<u32, HandlerReference<ChannelMessageHandler>>>,
+
+    dropping: AtomicBool,
 }
 
+#[maybe_async(AFIT)]
 impl SessionMessageHandler {
     pub fn new(primary_channel: HandlerReference<ChannelMessageHandler>) -> Self {
         let session_id = primary_channel.session_id();
@@ -270,6 +247,74 @@ impl SessionMessageHandler {
             primary_channel_id,
             primary_channel: primary_channel.clone(),
             channel_handlers: RwLock::new(HashMap::from([(primary_channel_id, primary_channel)])),
+            dropping: AtomicBool::new(false),
+        }
+    }
+
+    pub async fn logoff(&self) -> crate::Result<()> {
+        if self
+            .dropping
+            .swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            return Ok(());
+        }
+
+        {
+            let state = self.primary_channel.session_state().read().await?;
+            let state = state.session.read().await?;
+            if !state.is_ready() {
+                log::trace!("Session not ready, or logged-off already, skipping logoff.");
+                return Ok(());
+            }
+        }
+
+        log::debug!("Logging off session.");
+
+        let _response = self.send_recv(LogoffRequest {}.into()).await?;
+
+        // This also invalidates the session object.
+        log::info!("Session logged off.");
+        self.primary_channel
+            .session_state()
+            .read()
+            .await?
+            .session
+            .write()
+            .await?
+            .invalidate();
+
+        Ok(())
+    }
+
+    /// Logs off the session and invalidates it.
+    ///
+    /// # Notes
+    /// This method waits for the logoff response to be received from the server.
+    /// It is used when dropping the session.
+    #[cfg(feature = "async")]
+    async fn logoff_async(&self) {
+        self.logoff().await.unwrap_or_else(|e| {
+            log::error!("Failed to logoff: {e}");
+        });
+    }
+
+    #[inline]
+    async fn _with_channel<T: WithChannel>(
+        &self,
+        channel_id: Option<u32>,
+        t: T,
+    ) -> crate::Result<T::Result> {
+        if channel_id.is_none() || channel_id.unwrap() == self.primary_channel_id {
+            return t.work(&self.primary_channel).await;
+        }
+
+        let channel_id = channel_id.unwrap();
+
+        let handlers = self.channel_handlers.read().await?;
+        if let Some(handler) = handlers.get(&channel_id) {
+            t.work(handler).await
+        } else {
+            Err(Error::ChannelNotFound(self.session_id, channel_id))
         }
     }
 }
@@ -277,36 +322,81 @@ impl SessionMessageHandler {
 #[maybe_async(AFIT)]
 impl MessageHandler for SessionMessageHandler {
     async fn sendo(&self, msg: OutgoingMessage) -> crate::Result<SendMessageResult> {
-        match msg.channel_id {
-            None => self.primary_channel.sendo(msg).await,
-            Some(channel_id) => {
-                if channel_id == self.primary_channel_id {
-                    return self.primary_channel.sendo(msg).await;
-                }
-
-                if let Some(handler) = self.channel_handlers.read().await?.get(&channel_id) {
-                    handler.sendo(msg).await
-                } else {
-                    Err(Error::ChannelNotFound(self.session_id, channel_id))
-                }
-            }
-        }
+        self._with_channel(msg.channel_id, SendoWithChannel(msg))
+            .await
     }
 
     async fn recvo(&self, options: ReceiveOptions<'_>) -> crate::Result<IncomingMessage> {
-        match options.channel_id {
-            None => self.primary_channel.recvo(options).await,
-            Some(channel_id) => {
-                if channel_id == self.primary_channel_id {
-                    return self.primary_channel.recvo(options).await;
-                }
+        self._with_channel(options.channel_id, RecvoWithChannel(options))
+            .await
+    }
+}
 
-                if let Some(handler) = self.channel_handlers.read().await?.get(&channel_id) {
-                    handler.recvo(options).await
-                } else {
-                    Err(Error::ChannelNotFound(self.session_id, channel_id))
-                }
-            }
+#[maybe_async(AFIT)]
+trait WithChannel {
+    type Result;
+    async fn work(
+        self,
+        href: &HandlerReference<ChannelMessageHandler>,
+    ) -> crate::Result<Self::Result>;
+}
+
+struct SendoWithChannel(OutgoingMessage);
+#[maybe_async(AFIT)]
+impl WithChannel for SendoWithChannel {
+    type Result = SendMessageResult;
+    async fn work(
+        self,
+        href: &HandlerReference<ChannelMessageHandler>,
+    ) -> crate::Result<Self::Result> {
+        href.sendo(self.0).await
+    }
+}
+
+struct RecvoWithChannel<'a>(ReceiveOptions<'a>);
+#[maybe_async(AFIT)]
+impl WithChannel for RecvoWithChannel<'_> {
+    type Result = IncomingMessage;
+    async fn work(
+        self,
+        href: &HandlerReference<ChannelMessageHandler>,
+    ) -> crate::Result<Self::Result> {
+        href.recvo(self.0).await
+    }
+}
+
+#[cfg(not(feature = "async"))]
+impl Drop for SessionMessageHandler {
+    fn drop(&mut self) {
+        self.logoff().unwrap_or_else(|e| {
+            log::error!("Failed to logoff: {e}",);
+        });
+    }
+}
+
+#[cfg(feature = "async")]
+impl Drop for SessionMessageHandler {
+    fn drop(&mut self) {
+        if self
+            .dropping
+            .swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            return;
         }
+
+        let session_id = self.session_id;
+        let primary_channel_id = self.primary_channel_id;
+        let primary_channel = self.primary_channel.clone();
+
+        tokio::task::spawn(async move {
+            let temp_handler = SessionMessageHandler {
+                session_id,
+                dropping: AtomicBool::new(false),
+                primary_channel_id,
+                primary_channel,
+                channel_handlers: Default::default(),
+            };
+            temp_handler.logoff_async().await;
+        });
     }
 }

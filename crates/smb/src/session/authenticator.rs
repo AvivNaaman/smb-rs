@@ -21,11 +21,6 @@ pub struct Authenticator {
     current_state: Option<InitializeSecurityContextResult>,
 }
 
-pub enum AuthenticationStep {
-    NextToken(Vec<u8>),
-    Complete,
-}
-
 impl Authenticator {
     pub fn build(
         identity: AuthIdentity,
@@ -92,9 +87,9 @@ impl Authenticator {
     const SSPI_REQ_DATA_REPRESENTATION: DataRepresentation = DataRepresentation::Native;
 
     #[maybe_async]
-    pub async fn next(&mut self, gss_token: &[u8]) -> crate::Result<AuthenticationStep> {
+    pub async fn next(&mut self, gss_token: &[u8]) -> crate::Result<Vec<u8>> {
         if self.is_authenticated()? {
-            return Ok(AuthenticationStep::Complete);
+            return Err(Error::InvalidState("Authentication already done.".into()));
         }
 
         if self.current_state.is_some()
@@ -152,12 +147,12 @@ impl Authenticator {
 
         self.current_state = Some(result);
 
-        Ok(AuthenticationStep::NextToken(
-            output_buffer
-                .pop()
-                .ok_or_else(|| Error::InvalidState("SSPI output buffer is empty.".to_string()))?
-                .buffer,
-        ))
+        let output_buffer = output_buffer
+            .pop()
+            .ok_or_else(|| Error::InvalidState("SSPI output buffer is empty.".to_string()))?
+            .buffer;
+
+        Ok(output_buffer)
     }
 
     fn get_available_ssp_pkgs(config: &AuthMethodsConfig) -> String {

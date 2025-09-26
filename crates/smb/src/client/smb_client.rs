@@ -120,15 +120,30 @@ impl Client {
     /// See [Drop behavior][Client#drop-behavior] for more information.
     #[maybe_async]
     pub async fn close(&self) -> crate::Result<()> {
-        let mut sessions = self.share_connects.lock().await?;
-        for (_unc, tree) in sessions.iter() {
-            // TODO
+        // Close all opened shares
+        let mut trees = self.share_connects.lock().await?;
+        for (_unc, connected_tree) in trees.iter() {
+            connected_tree.tree.disconnect().await?;
         }
-        sessions.clear();
+        trees.clear();
 
         let mut connections = self.connections.write().await?;
+        // Close sessions
         for (_unc, conn) in connections.iter() {
-            conn.connection.close().await?;
+            for (_session_id, session) in conn.sessions.iter() {
+                // First close alternate channels
+                if let Some(alt_channels) = &session.session_alt_channels {
+                    for (_channel_id, alt_conn) in alt_channels.iter() {
+                        alt_conn.close().await.ok();
+                    }
+                }
+                // Close primary session
+                session.session.logoff().await.ok();
+            }
+        }
+        // Close connections
+        for (_ip, conn) in connections.iter() {
+            conn.connection.close().await.ok();
         }
         connections.clear();
 
@@ -625,19 +640,26 @@ impl Client {
             .query_network_interfaces()
             .await?;
 
-        let current_primary_interface = network_interfaces
-            .iter()
-            .find(|iface| {
-                iface.sockaddr.socket_addr().ip() == primary_conn_info.server_address.ip()
-            })
-            .unwrap()
-            .if_index;
+        let current_primary_interface = network_interfaces.iter().find(|iface| {
+            iface.sockaddr.socket_addr().ip() == primary_conn_info.server_address.ip()
+        });
+
+        if current_primary_interface.is_none() {
+            log::warn!(
+                "Multi-channel setup failed: unable to determine the current primary network interface. 
+                This usually means the SMB server is not on the same local network as the client, and multi-channel cannot be used.
+                Available interfaces: {network_interfaces:?}",
+            );
+            return Ok(None);
+        }
+
+        let current_primary_interface = current_primary_interface.unwrap();
 
         let interfaces_to_ip_addresses: HashMap<u32, SocketAddr> = network_interfaces
             .iter()
             .filter(|iface| {
                 iface.sockaddr.socket_addr().is_ipv4()
-                    && iface.if_index != current_primary_interface
+                    && iface.if_index != current_primary_interface.if_index
                     && !iface.capability.rdma()
             }) // TODO: IPv6; RDMA
             .map(|iface| (iface.if_index, iface.sockaddr.socket_addr()))

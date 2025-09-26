@@ -231,6 +231,7 @@ pub struct SessionInfo {
 
 #[derive(Clone)]
 pub struct ChannelInfo {
+    id: u32,
     algos: ChannelAlgos,
     valid: bool,
     primary: bool,
@@ -238,6 +239,7 @@ pub struct ChannelInfo {
 
 impl ChannelInfo {
     pub fn new(
+        internal_id: u32,
         channel_session_key: &KeyToDerive,
         preauth_hash: &Option<PreauthHashValue>,
         info: &ConnectionInfo,
@@ -245,6 +247,7 @@ impl ChannelInfo {
     ) -> crate::Result<Self> {
         let algos = SessionAlgosFactory::new_channel(channel_session_key, preauth_hash, info)?;
         Ok(Self {
+            id: internal_id,
             algos,
             valid: true,
             primary,
@@ -262,6 +265,10 @@ impl ChannelInfo {
 
     pub fn invalidate(&mut self) {
         self.valid = false;
+    }
+
+    pub fn id(&self) -> u32 {
+        self.id
     }
 }
 

@@ -40,7 +40,7 @@ pub const SIGNING_ALGOS: &[SigningAlgorithmId] = &[
 ];
 
 /// A trait for SMB signing algorithms.
-pub trait SigningAlgo: std::fmt::Debug + Send {
+pub trait SigningAlgo: std::fmt::Debug + Send + Sync {
     /// Start a new signing session. This is called before any data is passed to the signer,
     /// and [SigningAlgo::update] must feed the header data to the signer, in addition to this call.
     ///
@@ -139,7 +139,7 @@ mod cmac_signer {
 
 #[cfg(feature = "sign_gmac")]
 mod gmac_signer {
-    use std::cell::OnceCell;
+    use crate::sync_helpers::OnceCell;
 
     use aes::Aes128;
     use aes_gcm::{

@@ -1,5 +1,53 @@
 use super::*;
 
+pub(crate) type ChannelUpstream = HandlerReference<ConnectionMessageHandler>;
+
+pub struct Channel {
+    channel_id: u32,
+
+    pub(crate) handler: HandlerReference<ChannelMessageHandler>,
+    pub(crate) conn_info: Arc<ConnectionInfo>,
+}
+
+impl Channel {
+    #[maybe_async]
+    pub(crate) async fn new(
+        upstream: &ChannelUpstream,
+        conn_info: &Arc<ConnectionInfo>,
+        setup_result: &Arc<RwLock<SessionAndChannel>>,
+    ) -> crate::Result<Self> {
+        let (session_id, channel_id) = {
+            let setup_result = setup_result.read().await?;
+            let session = setup_result.session.read().await?;
+            let channel = setup_result
+                .channel
+                .as_ref()
+                .expect("Channel not set in setup result");
+            (session.id(), channel.id())
+        };
+        let handler = ChannelMessageHandler::new(session_id, channel_id, upstream, setup_result);
+        Ok(Self {
+            channel_id,
+            handler,
+            conn_info: conn_info.clone(),
+        })
+    }
+
+    /// Returns the Session ID of this session.
+    ///
+    /// This ID is the same as the SMB's session id,
+    /// so it is unique-per-connection, and may be seen on the wire as well.
+    #[inline]
+    pub fn session_id(&self) -> u64 {
+        self.handler.session_id()
+    }
+
+    #[inline]
+    pub fn channel_id(&self) -> u32 {
+        self.channel_id
+    }
+}
+
 /// Message handler a specific chanel.
 ///
 /// This only makes sense, since session are not actuall able to send data
@@ -7,85 +55,46 @@ use super::*;
 pub struct ChannelMessageHandler {
     session_id: u64,
     channel_id: u32,
-    upstream: Upstream,
-    /// indicates whether dropping this handler should logoff the session.
-    owns: bool,
+    upstream: ChannelUpstream,
 
-    session_state: Arc<Mutex<SessionAndChannel>>,
-    // channel_info: Arc<ChannelInfo>,
-    dropping: AtomicBool,
+    session_state: Arc<RwLock<SessionAndChannel>>,
 }
 
+#[maybe_async(AFIT)]
 impl ChannelMessageHandler {
-    pub(crate) fn new(
+    fn new(
         session_id: u64,
         channel_id: u32,
-        is_primary: bool,
-        upstream: &Upstream,
-        setup_result: &Arc<Mutex<SessionAndChannel>>,
+        upstream: &ChannelUpstream,
+        setup_result: &Arc<RwLock<SessionAndChannel>>,
     ) -> HandlerReference<ChannelMessageHandler> {
         HandlerReference::new(ChannelMessageHandler {
             session_id,
             channel_id,
-            owns: is_primary,
             upstream: upstream.clone(),
             session_state: setup_result.clone(),
-            dropping: AtomicBool::new(false),
         })
     }
 
-    #[maybe_async]
-    pub async fn logoff(&self) -> crate::Result<()> {
-        if self
-            .dropping
-            .swap(true, std::sync::atomic::Ordering::SeqCst)
-        {
-            return Ok(());
-        }
-
-        {
-            let state = self.session_state.lock().await?;
-            let state = state.session.lock().await?;
-            if !state.is_ready() {
-                log::trace!("Session not ready, or logged-off already, skipping logoff.");
-                return Ok(());
-            }
-        }
-
-        log::debug!("Logging off session.");
-
-        let _response = self.send_recv(LogoffRequest {}.into()).await?;
-
-        // This also invalidates the session object.
-        log::info!("Session logged off.");
-
-        Ok(())
-    }
-
-    /// (Internal)
-    ///
-    /// Assures the sessions may not be used anymore.
-    #[maybe_async]
-    async fn _invalidate(&self) -> crate::Result<()> {
-        self.upstream
-            .handler
-            .worker()
-            .ok_or_else(|| Error::InvalidState("Worker not available!".to_string()))?
-            .session_ended(&self.session_state)
+    pub(crate) async fn make_for_setup(
+        setup_result: &Arc<RwLock<SessionAndChannel>>,
+        upstream: &ChannelUpstream,
+    ) -> Self {
+        let session_id = setup_result
+            .read()
             .await
-    }
-
-    /// Logs off the session and invalidates it.
-    ///
-    /// # Notes
-    /// This method waits for the logoff response to be received from the server.
-    /// It is used when dropping the session.
-    #[cfg(feature = "async")]
-    #[maybe_async]
-    async fn logoff_async(&self) {
-        self.logoff().await.unwrap_or_else(|e| {
-            log::error!("Failed to logoff: {e}");
-        });
+            .unwrap()
+            .session
+            .read()
+            .await
+            .unwrap()
+            .id();
+        Self {
+            session_id,
+            channel_id: u32::MAX,
+            upstream: upstream.clone(),
+            session_state: setup_result.clone(),
+        }
     }
 
     /// (Internal)
@@ -100,8 +109,8 @@ impl ChannelMessageHandler {
     /// An empty [`crate::Result`] if the message is valid, or an error if the message is invalid.
     #[maybe_async]
     async fn _verify_incoming(&self, incoming: &IncomingMessage) -> crate::Result<()> {
-        let session = self.session_state.lock().await?;
-        let session = session.session.lock().await?;
+        let session = self.session_state.read().await?;
+        let session = session.session.read().await?;
         // allow unsigned messages only if the session is anonymous or guest.
         // this is enforced against configuration when setting up the session.
         let unsigned_allowed = session.allow_unsigned()?;
@@ -158,12 +167,24 @@ impl ChannelMessageHandler {
             // Note: this is performed here for extra security,
             // while we could have just checked the session state, let's require
             // the caller to explicitly state that it is okay to skip security validation.
-            let session = self.session_state.lock().await?;
-            let session = session.session.lock().await?;
+            let session = self.session_state.read().await?;
+            let session = session.session.read().await?;
             assert!(session.is_initial());
         }
 
         Ok(incoming)
+    }
+
+    /// (Internal)
+    ///
+    /// Assures the sessions may not be used anymore.
+    async fn _invalidate(&self) -> crate::Result<()> {
+        self.upstream
+            .handler
+            .worker()
+            .ok_or_else(|| Error::InvalidState("Worker not available!".to_string()))?
+            .session_ended(&self.session_state)
+            .await
     }
 
     pub fn session_id(&self) -> u64 {
@@ -174,17 +195,17 @@ impl ChannelMessageHandler {
         self.channel_id
     }
 
-    pub fn session_state(&self) -> &Arc<Mutex<SessionAndChannel>> {
+    pub fn session_state(&self) -> &Arc<RwLock<SessionAndChannel>> {
         &self.session_state
     }
 }
 
+#[maybe_async(AFIT)]
 impl MessageHandler for ChannelMessageHandler {
-    #[maybe_async]
     async fn sendo(&self, mut msg: OutgoingMessage) -> crate::Result<SendMessageResult> {
         {
-            let session = self.session_state.lock().await?;
-            let session = session.session.lock().await?;
+            let session = self.session_state.read().await?;
+            let session = session.session.read().await?;
             if session.is_invalid() {
                 return Err(Error::InvalidState("Session is invalid".to_string()));
             }
@@ -208,14 +229,12 @@ impl MessageHandler for ChannelMessageHandler {
                 else if !session.allow_unsigned()? {
                     msg.message.header.flags.set_signed(true);
                 }
-                // TODO: Re-check against config whether it's allowed to send/receive unsigned messages?
             }
         }
         msg.message.header.session_id = self.session_id;
         self.upstream.sendo(msg).await
     }
 
-    #[maybe_async]
     async fn recvo(&self, options: ReceiveOptions<'_>) -> crate::Result<IncomingMessage> {
         let incoming = self.upstream.recvo(options).await?;
 
@@ -224,7 +243,6 @@ impl MessageHandler for ChannelMessageHandler {
         Ok(incoming)
     }
 
-    #[maybe_async]
     async fn notify(&self, msg: IncomingMessage) -> crate::Result<()> {
         self._verify_incoming(&msg).await?;
 
@@ -242,51 +260,5 @@ impl MessageHandler for ChannelMessageHandler {
                 Ok(())
             }
         }
-    }
-}
-
-#[cfg(not(feature = "async"))]
-impl Drop for ChannelMessageHandler {
-    fn drop(&mut self) {
-        if !self.owns {
-            return;
-        }
-        self.logoff().unwrap_or_else(|e| {
-            log::error!("Failed to logoff: {e}",);
-        });
-    }
-}
-
-#[cfg(feature = "async")]
-impl Drop for ChannelMessageHandler {
-    fn drop(&mut self) {
-        if !self.owns {
-            return;
-        }
-
-        if self
-            .dropping
-            .swap(true, std::sync::atomic::Ordering::SeqCst)
-        {
-            return;
-        }
-
-        let session_id = self.session_id;
-        let is_primary = self.owns;
-        let upstream = self.upstream.clone();
-        let session_state = self.session_state.clone();
-
-        // TODO: This should be put back in Session....
-        tokio::task::spawn(async move {
-            let temp_handler = ChannelMessageHandler {
-                session_id,
-                channel_id: 0, // not used
-                owns: is_primary,
-                upstream,
-                session_state,
-                dropping: AtomicBool::new(false),
-            };
-            temp_handler.logoff_async().await;
-        });
     }
 }

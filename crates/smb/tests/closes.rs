@@ -69,7 +69,7 @@ async fn test_conn_close() -> smb::Result<()> {
 #[serial]
 async fn test_session_close() -> smb::Result<()> {
     let (_client, _connection, session, _tree, file) = _close_tests_helper().await?;
-    session.close().await?;
+    session.logoff().await?;
 
     file.query_info::<FileBasicInformation>()
         .await

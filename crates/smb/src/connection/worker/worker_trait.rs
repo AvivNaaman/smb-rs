@@ -125,12 +125,12 @@ pub trait Worker: Sized + std::fmt::Debug {
     }
 
     #[maybe_async]
-    async fn session_started(&self, info: &Arc<Mutex<SessionAndChannel>>) -> crate::Result<()> {
+    async fn session_started(&self, info: &Arc<RwLock<SessionAndChannel>>) -> crate::Result<()> {
         self.transformer().session_started(info).await
     }
 
     #[maybe_async]
-    async fn session_ended(&self, info: &Arc<Mutex<SessionAndChannel>>) -> crate::Result<()> {
+    async fn session_ended(&self, info: &Arc<RwLock<SessionAndChannel>>) -> crate::Result<()> {
         self.transformer().session_ended(info).await
     }
 }

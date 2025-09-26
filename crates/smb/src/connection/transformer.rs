@@ -1,4 +1,4 @@
-use crate::session::SessionAndChannel;
+use crate::session::{SessionAndChannel, SessionInfo};
 use crate::sync_helpers::*;
 use crate::{compression::*, msg_handler::*};
 use binrw::prelude::*;
@@ -16,7 +16,9 @@ use super::connection_info::ConnectionInfo;
 #[derive(Default)]
 pub struct Transformer {
     /// Sessions opened from this connection.
-    sessions: Mutex<HashMap<u64, Arc<Mutex<SessionAndChannel>>>>,
+    // This structure is performance-critical, so it uses RwLock to allow concurrent reads.
+    // Writes are only done when a session is started or ended - which is *very* rare in high-performance scenarios.
+    sessions: RwLock<HashMap<u64, Arc<RwLock<SessionAndChannel>>>>,
 
     config: RwLock<TransformerConfig>,
 }
@@ -62,7 +64,7 @@ impl Transformer {
     #[maybe_async]
     pub async fn session_started(
         &self,
-        session: &Arc<Mutex<SessionAndChannel>>,
+        session: &Arc<RwLock<SessionAndChannel>>,
     ) -> crate::Result<()> {
         let rconfig = self.config.read().await?;
         if !rconfig.negotiated {
@@ -71,9 +73,9 @@ impl Transformer {
             ));
         }
 
-        let session_id = session.lock().await?.session_id;
+        let session_id = { session.read().await?.session_id };
         self.sessions
-            .lock()
+            .write()
             .await?
             .insert(session_id, session.clone());
 
@@ -90,11 +92,11 @@ impl Transformer {
     #[maybe_async]
     pub async fn session_ended(
         &self,
-        session: &Arc<Mutex<SessionAndChannel>>,
+        session: &Arc<RwLock<SessionAndChannel>>,
     ) -> crate::Result<()> {
-        let session_id = session.lock().await?.session_id;
+        let session_id = { session.read().await?.session_id };
         self.sessions
-            .lock()
+            .write()
             .await?
             .remove(&session_id)
             .ok_or(crate::Error::InvalidState(format!(
@@ -110,20 +112,37 @@ impl Transformer {
         Ok(())
     }
 
-    /// (Internal)
-    ///
-    ///  Returns the session with the given ID.
     #[maybe_async]
     #[inline]
-    async fn get_session(&self, session_id: u64) -> crate::Result<Arc<Mutex<SessionAndChannel>>> {
-        self.sessions
-            .lock()
-            .await?
+    async fn _with_channel<F, R>(&self, session_id: u64, f: F) -> crate::Result<R>
+    where
+        F: FnOnce(&SessionAndChannel) -> crate::Result<R>,
+    {
+        let sessions = self.sessions.read().await?;
+        let session = sessions
             .get(&session_id)
-            .cloned() // TODO: remove?
             .ok_or(crate::Error::InvalidState(format!(
                 "Session {session_id} not found!",
-            )))
+            )))?;
+        let session = session.read().await?;
+        f(&session)
+    }
+
+    #[maybe_async]
+    #[inline]
+    async fn _with_session<F, R>(&self, session_id: u64, f: F) -> crate::Result<R>
+    where
+        F: FnOnce(&SessionInfo) -> crate::Result<R>,
+    {
+        let sessions = self.sessions.read().await?;
+        let session = sessions
+            .get(&session_id)
+            .ok_or(crate::Error::InvalidState(format!(
+                "Session {session_id} not found!",
+            )))?;
+        let session = session.read().await?;
+        let session_info = session.session.read().await?;
+        f(&session_info)
     }
 
     /// Transforms an outgoing message to a raw SMB message.
@@ -131,7 +150,7 @@ impl Transformer {
     pub async fn transform_outgoing(&self, mut msg: OutgoingMessage) -> crate::Result<IoVec> {
         let should_encrypt = msg.encrypt;
         let should_sign = msg.message.header.flags.signed();
-        let set_session_id = msg.message.header.session_id;
+        let session_id = msg.message.header.session_id;
 
         let mut outgoing_data = IoVec::default();
         // Plain header + content
@@ -151,18 +170,23 @@ impl Transformer {
                 "Should not sign and encrypt at the same time!"
             );
 
-            let mut signer = {
-                let session = self.get_session(set_session_id).await?;
-                let session = session.lock().await?;
-                session
-                    .channel
-                    .as_ref()
-                    .ok_or(crate::Error::InvalidState(
-                        "Message is required to be signed, but no channel is set up!".into(),
-                    ))?
-                    .signer()?
-                    .clone()
-            };
+            let mut signer = self
+                ._with_channel(session_id, |session| {
+                    let channel_info =
+                        session
+                            .channel
+                            .as_ref()
+                            .ok_or(crate::Error::TranformFailed(TransformError {
+                                outgoing: true,
+                                phase: TransformPhase::SignVerify,
+                                session_id: Some(session_id),
+                                why: "Message is required to be signed, but no channel is set up!",
+                                msg_id: Some(msg.message.header.message_id),
+                            }))?;
+
+                    Ok(channel_info.signer()?.clone())
+                })
+                .await?;
 
             signer.sign_message(&mut msg.message.header, &mut outgoing_data)?;
 
@@ -199,28 +223,29 @@ impl Transformer {
 
         // 3. Encrypt
         if should_encrypt {
-            let session = self.get_session(set_session_id).await?;
-            let session_info = &session.lock().await?.session;
-            let encryptor = { session_info.lock().await?.encryptor()?.cloned() };
-            if let Some(mut encryptor) = encryptor {
-                debug_assert!(should_encrypt && !should_sign);
+            let mut encryptor = self
+                ._with_session(session_id, |session| {
+                    let encryptor = session.encryptor()?.ok_or(crate::Error::TranformFailed(
+                        TransformError {
+                            outgoing: true,
+                            phase: TransformPhase::EncryptDecrypt,
+                            session_id: Some(session_id),
+                            why: "Message is required to be encrypted, but no encryptor is set up!",
+                            msg_id: Some(msg.message.header.message_id),
+                        },
+                    ))?;
+                    Ok(encryptor.clone())
+                })
+                .await?;
 
-                let encrypted_header =
-                    encryptor.encrypt_message(&mut outgoing_data, set_session_id)?;
+            debug_assert!(should_encrypt && !should_sign);
 
-                let write_encryption_header = outgoing_data
-                    .insert_owned(0, Vec::with_capacity(EncryptedHeader::STRUCTURE_SIZE));
+            let encrypted_header = encryptor.encrypt_message(&mut outgoing_data, session_id)?;
 
-                encrypted_header.write(&mut Cursor::new(write_encryption_header))?;
-            } else {
-                return Err(crate::Error::TranformFailed(TransformError {
-                    outgoing: true,
-                    phase: TransformPhase::EncryptDecrypt,
-                    session_id: Some(set_session_id),
-                    why: "Message is required to be encrypted, but no encryptor is set up!",
-                    msg_id: Some(msg.message.header.message_id),
-                }));
-            }
+            let write_encryption_header =
+                outgoing_data.insert_owned(0, Vec::with_capacity(EncryptedHeader::STRUCTURE_SIZE));
+
+            encrypted_header.write(&mut Cursor::new(write_encryption_header))?;
         }
 
         Ok(outgoing_data)
@@ -235,26 +260,25 @@ impl Transformer {
 
         // 3. Decrpt
         let (message, raw) = if let Response::Encrypted(encrypted_message) = message {
-            let session_info = self
-                .get_session(encrypted_message.header.session_id)
+            let session_id = encrypted_message.header.session_id;
+
+            let mut decryptor = self
+                ._with_session(session_id, |session| {
+                    let decryptor = session.decryptor()?.ok_or(crate::Error::TranformFailed(
+                        TransformError {
+                            outgoing: false,
+                            phase: TransformPhase::EncryptDecrypt,
+                            session_id: Some(session_id),
+                            why: "Message is required to be encrypted, but no decryptor is set up!",
+                            msg_id: None,
+                        },
+                    ))?;
+                    Ok(decryptor.clone())
+                })
                 .await?;
-            let session = &session_info.lock().await?.session;
-            let decryptor = { session.lock().await?.decryptor()?.cloned() };
-            form.encrypted = true;
-            match decryptor {
-                Some(mut decryptor) => decryptor.decrypt_message(encrypted_message)?,
-                None => {
-                    return Err(crate::Error::TranformFailed(TransformError {
-                        outgoing: false,
-                        phase: TransformPhase::EncryptDecrypt,
-                        session_id: Some(encrypted_message.header.session_id),
-                        why: "Message is encrypted, but no decryptor is set up!",
-                        msg_id: None,
-                    }));
-                }
-            }
+            decryptor.decrypt_message(encrypted_message)?
         } else {
-            (message, data.to_vec())
+            (message, data)
         };
 
         // 2. Decompress
@@ -334,25 +358,24 @@ impl Transformer {
 
         // Verify signature (if required, according to the spec)
         let session_id = message.header.session_id;
-        let session_info = self.get_session(session_id).await?;
-        let mut verifier = {
-            session_info
-                .lock()
-                .await?
-                .channel
-                .as_ref()
-                .ok_or(crate::Error::TranformFailed(TransformError {
-                    outgoing: false,
-                    phase: TransformPhase::SignVerify,
-                    session_id: Some(session_id),
-                    why: "Message is required to be signed, but no channel is set up!",
-                    msg_id: Some(message.header.message_id),
-                }))?
-                .signer()?
-                .clone()
-        };
+        let mut signer = self
+            ._with_channel(session_id, |session| {
+                let channel_info = session
+                    .channel
+                    .as_ref()
+                    .ok_or(crate::Error::TranformFailed(TransformError {
+                        outgoing: false,
+                        phase: TransformPhase::SignVerify,
+                        session_id: Some(session_id),
+                        why: "Message is required to be signed, but no channel is set up!",
+                        msg_id: Some(message.header.message_id),
+                    }))?;
 
-        verifier.verify_signature(&mut message.header, raw)?;
+                Ok(channel_info.signer()?.clone())
+            })
+            .await?;
+
+        signer.verify_signature(&mut message.header, raw)?;
         log::debug!(
             "Message #{} verified (signature={}).",
             message.header.message_id,
