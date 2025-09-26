@@ -54,7 +54,11 @@ where
         };
 
         if primary_session.is_some() {
-            result.set_session(primary_session.unwrap().clone()).await?;
+            let primary_session = primary_session.unwrap().lock().await?;
+            let session = primary_session.session.clone();
+            let channel = primary_session.channel.as_ref().unwrap().clone();
+            result.set_session(session).await?;
+            result.result.as_ref().unwrap().lock().await?.channel = Some(channel);
         }
 
         Ok(result)
@@ -164,8 +168,11 @@ where
         Ok(())
     }
 
-    async fn set_session(&mut self, session: Arc<Mutex<SessionAndChannel>>) -> crate::Result<()> {
-        let session_id = session.lock().await?.session_id;
+    async fn set_session(&mut self, session: Arc<Mutex<SessionInfo>>) -> crate::Result<()> {
+        let session_id = session.lock().await?.id();
+        let result = SessionAndChannel::new(session_id, session);
+        let session = Arc::new(Mutex::new(result));
+
         self.handler = Some(ChannelMessageHandler::new(
             session_id,
             false, // prevent logoff once this ref is dropped.
@@ -324,7 +331,7 @@ pub(crate) trait SessionSetupProperties {
     async fn init_session<T>(
         _setup: &'_ SessionSetup<'_, T>,
         _session_id: u64,
-    ) -> crate::Result<Arc<Mutex<SessionAndChannel>>>
+    ) -> crate::Result<Arc<Mutex<SessionInfo>>>
     where
         T: SessionSetupProperties;
 
@@ -382,7 +389,7 @@ impl SessionSetupProperties for SmbSessionBind {
     async fn init_session<T>(
         _setup: &SessionSetup<'_, T>,
         _session_id: u64,
-    ) -> crate::Result<Arc<Mutex<SessionAndChannel>>>
+    ) -> crate::Result<Arc<Mutex<SessionInfo>>>
     where
         T: SessionSetupProperties,
     {
@@ -466,15 +473,12 @@ impl SessionSetupProperties for SmbSessionNew {
     async fn init_session<T>(
         _setup: &SessionSetup<'_, T>,
         session_id: u64,
-    ) -> crate::Result<Arc<Mutex<SessionAndChannel>>>
+    ) -> crate::Result<Arc<Mutex<SessionInfo>>>
     where
         T: SessionSetupProperties,
     {
         let session_info = SessionInfo::new(session_id);
         let session_info = Arc::new(Mutex::new(session_info));
-
-        let result = SessionAndChannel::new(session_id, session_info.clone());
-        let session_info = Arc::new(Mutex::new(result));
 
         Ok(session_info)
     }

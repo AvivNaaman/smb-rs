@@ -77,6 +77,12 @@ impl Transformer {
             .await?
             .insert(session_id, session.clone());
 
+        log::trace!(
+            "Session {} started and inserted to worker {:p}.",
+            session_id,
+            self
+        );
+
         Ok(())
     }
 
@@ -94,6 +100,13 @@ impl Transformer {
             .ok_or(crate::Error::InvalidState(format!(
                 "Session {session_id} not found!",
             )))?;
+
+        log::trace!(
+            "Session {} ended and removed from worker {:p}.",
+            session_id,
+            self
+        );
+
         Ok(())
     }
 
@@ -338,6 +351,7 @@ impl Transformer {
                 .signer()?
                 .clone()
         };
+
         verifier.verify_signature(&mut message.header, raw)?;
         log::debug!(
             "Message #{} verified (signature={}).",

@@ -71,13 +71,6 @@ pub struct Client {
     share_connects: Mutex<HashMap<UncPath, ClientConectedTree>>,
 }
 
-#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
-enum ChannelType {
-    None,
-    #[cfg(feature = "rdma")]
-    Rdma,
-}
-
 /// (Internal)
 ///
 /// Holds information for a connection, held by the client.
@@ -87,7 +80,7 @@ struct ClientConnectionInfo {
     connection: Arc<Connection>,
     #[cfg(feature = "rdma")]
     /// Connections in other channels (i.e. RDMA)
-    alt_connections: Option<HashMap<ChannelType, Arc<Connection>>>,
+    alt_connections: Option<HashMap<u32, Arc<Connection>>>,
     /// Sessions owned by the connection
     sessions: HashMap<u64, ClientSessionInfo>,
 }
