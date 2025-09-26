@@ -16,7 +16,7 @@ use crate::Error;
 /// assert_eq!(unc.share(), Some("share"));
 /// assert_eq!(unc.path(), Some("path"));
 /// ```
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone)]
 pub struct UncPath {
     server: String,
     share: Option<String>,
@@ -123,7 +123,55 @@ impl UncPath {
     pub fn path(&self) -> Option<&str> {
         self.path.as_deref()
     }
+
+    /// Returns a normalized version of the UNC path
+    ///
+    /// This is useful since UNC paths are case-insensitive.
+    pub fn normalized(&self) -> Self {
+        UncPath {
+            server: self.server.to_lowercase(),
+            share: self.share.clone().map(|x| x.to_lowercase()),
+            path: self.path.clone().map(|x| x.to_lowercase()),
+        }
+    }
 }
+
+impl std::hash::Hash for UncPath {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let normalized = self.normalized();
+        normalized.server.hash(state);
+        normalized.share.hash(state);
+        normalized.path.hash(state);
+    }
+}
+
+fn compare_option_case_insensitive(a: &Option<String>, b: &Option<String>) -> bool {
+    match (a, b) {
+        (Some(s1), Some(s2)) => s1.eq_ignore_ascii_case(s2),
+        (None, None) => true,
+        _ => false,
+    }
+}
+
+impl PartialEq for UncPath {
+    fn eq(&self, other: &Self) -> bool {
+        if !self.server.eq_ignore_ascii_case(&other.server) {
+            return false;
+        }
+
+        if !compare_option_case_insensitive(&self.share, &other.share) {
+            return false;
+        }
+
+        if !compare_option_case_insensitive(&self.path, &other.path) {
+            return false;
+        }
+
+        true
+    }
+}
+
+impl Eq for UncPath {}
 
 impl FromStr for UncPath {
     type Err = crate::Error;
@@ -276,6 +324,77 @@ pub mod tests {
             assert_eq!(
                 empty_path.with_add_path("test").path,
                 Some("test".to_string())
+            );
+        }
+    }
+
+    fn _do_hash<T: std::hash::Hash>(t: &T) -> u64 {
+        use std::hash::*;
+        let mut s = DefaultHasher::new();
+        t.hash(&mut s);
+        s.finish()
+    }
+
+    #[test]
+    fn test_eq_hash() {
+        let eq_paths = vec![
+            (r"\\server\share\path", r"\\SERVER\SHARE\PATH"),
+            (r"\\server\share", r"\\SERVER\SHARE"),
+            (r"\\server", r"\\SERVER"),
+        ];
+        for (p1, p2) in eq_paths {
+            let up1 = UncPath::from_str(p1).unwrap();
+            let up2 = UncPath::from_str(p2).unwrap();
+            assert_eq!(up1, up2, "paths differ for {p1} and {p2}");
+            assert_eq!(
+                _do_hash(&up1),
+                _do_hash(&up2),
+                "hashes differ for {p1} and {p2}"
+            );
+        }
+        let ne_paths = vec![
+            /* 1 components different */
+            (r"\\server1\share\path", r"\\SERVER2\SHARE\PATH"),
+            (r"\\server\share1\path", r"\\SERVER\SHARE2\PATH"),
+            (r"\\server\share\path1", r"\\SERVER\SHARE\PATH2"),
+            /* missing component(s) + edge cases*/
+            (r"\\server\share\path", r"\\SERVER\SHARE"),
+            (r"\\server\share\path", r"\\SERVER\SHARE\"),
+            (r"\\server\share\path", r"\\SERVER\"),
+            (r"\\server\share\path", r"\\SERVER"),
+            (r"\\server\share", r"\\SERVER"),
+            (r"\\server\share", r"\\SERVER\"),
+        ];
+        for (p1, p2) in ne_paths {
+            let up1 = UncPath::from_str(p1).unwrap();
+            let up2 = UncPath::from_str(p2).unwrap();
+            assert_ne!(up1, up2, "paths eq for {p1} and {p2}");
+            assert_ne!(
+                _do_hash(&up1),
+                _do_hash(&up2),
+                "hashes eq for {p1} and {p2}"
+            );
+        }
+        let ne_paths2 = vec![
+            (
+                UncPath::new("server").unwrap(),
+                UncPath::new("server").unwrap().with_path(""),
+            ),
+            (
+                UncPath::new("server").unwrap(),
+                UncPath::new("server").unwrap().with_path("a"),
+            ),
+            (
+                UncPath::new("server").unwrap().with_share("a").unwrap(),
+                UncPath::new("server").unwrap().with_path("a"),
+            ),
+        ];
+        for (up1, up2) in ne_paths2 {
+            assert_ne!(up1, up2, "paths eq for {up1} and {up2}");
+            assert_ne!(
+                _do_hash(&up1),
+                _do_hash(&up2),
+                "hashes eq for {up1} and {up2}",
             );
         }
     }

@@ -1,3 +1,5 @@
+use crate::session::authenticator::{AuthenticationStep, Authenticator};
+
 use super::*;
 
 /// Session setup processor
@@ -31,17 +33,11 @@ where
     T: SessionSetupProperties,
 {
     pub async fn new(
-        user_name: &str,
-        password: String,
+        identity: sspi::AuthIdentity,
         upstream: &'a Upstream,
         conn_info: &'a Arc<ConnectionInfo>,
         primary_session: Option<&Arc<Mutex<SessionAndChannel>>>,
     ) -> crate::Result<Self> {
-        let username = Username::parse(user_name).map_err(|e| Error::SspiError(e.into()))?;
-        let identity = AuthIdentity {
-            username,
-            password: Secret::new(password),
-        };
         let authenticator = Authenticator::build(identity, conn_info)?;
 
         let mut result = Self {
@@ -154,7 +150,7 @@ where
                     self.flags = Some(session_setup_response.session_flags);
                     Some(session_setup_response)
                 }
-                AuthenticationStep::Complete => None,
+                AuthenticationStep::Complete => None, // TODO: ???
             };
         }
 

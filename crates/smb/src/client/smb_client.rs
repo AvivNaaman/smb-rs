@@ -2,17 +2,24 @@ use crate::{
     Connection, Error, FileCreateArgs, Resource, Session, Tree, resource::Pipe, sync_helpers::*,
 };
 use maybe_async::maybe_async;
-use smb_fscc::FileAccessMask;
 use smb_msg::{ReferralEntry, ReferralEntryValue, Status};
 use smb_rpc::interface::{ShareInfo1, SrvSvc};
 #[cfg(feature = "rdma")]
 use smb_transport::RdmaTransport;
 use smb_transport::utils::TransportUtils;
+use sspi::{AuthIdentity, Secret};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::{collections::HashMap, str::FromStr};
 
 use super::{config::ClientConfig, unc_path::UncPath};
+
+/*
+    Note:
+    - Most of the operations here are not especially high-performance critical,
+        especially the ones tied to creating connection/sessions/trees - those are limited and slow anyway.
+        Therefore, the wide use of Mutex/RwLock is acceptable here, for code simplicity.
+*/
 
 /// This struct represents a high-level SMB client, and it is highly encouraged to use it
 /// for interacting with SMB servers, instead of manually creating connections.
@@ -57,8 +64,18 @@ use super::{config::ClientConfig, unc_path::UncPath};
 /// ```
 pub struct Client {
     config: ClientConfig,
-    /// Server Name => [`ClientConnectionInfo`]
-    connections: Mutex<HashMap<IpAddr, ClientConnectionInfo>>,
+    /// Server Name + [RDMA|NONE] => [`ClientConnectionInfo`]
+    // It's quite common to have one connection for RDMA, and one for TCP,
+    connections: RwLock<HashMap<IpAddr, ClientConnectionInfo>>,
+    /// shares (trees) that are currently connected.
+    share_connects: Mutex<HashMap<UncPath, ClientConectedTree>>,
+}
+
+#[derive(PartialEq, Eq, Hash, Clone, Copy, Debug)]
+enum ChannelType {
+    None,
+    #[cfg(feature = "rdma")]
+    Rdma,
 }
 
 /// (Internal)
@@ -66,14 +83,25 @@ pub struct Client {
 /// Holds information for a connection, held by the client.
 /// This is most useful to avoid creating multiple connections to the same server,
 struct ClientConnectionInfo {
+    address: SocketAddr,
     connection: Arc<Connection>,
-    share_connects: HashMap<UncPath, ClientConectedTree>,
+    #[cfg(feature = "rdma")]
+    /// Connections in other channels (i.e. RDMA)
+    alt_connections: Option<HashMap<ChannelType, Arc<Connection>>>,
+    /// Sessions owned by the connection
+    sessions: HashMap<u64, ClientSessionInfo>,
+}
+
+struct ClientSessionInfo {
+    session: Arc<Session>,
+    /// alternate channels established for this session
+    session_channels: Option<HashMap<u32, Arc<Connection>>>,
 }
 
 struct ClientConectedTree {
     session: Arc<Session>,
     tree: Arc<Tree>,
-    credentials: Option<(String, String)>,
+    credentials: Option<AuthIdentity>,
 }
 
 impl Client {
@@ -81,7 +109,8 @@ impl Client {
     pub fn new(config: ClientConfig) -> Self {
         Client {
             config,
-            connections: Mutex::new(HashMap::new()),
+            connections: Default::default(),
+            share_connects: Default::default(),
         }
     }
 
@@ -93,7 +122,7 @@ impl Client {
     /// See [Drop behavior][Client#drop-behavior] for more information.
     #[maybe_async]
     pub async fn close(&self) -> crate::Result<()> {
-        let mut connections = self.connections.lock().await?;
+        let mut connections = self.connections.write().await?;
         for (_unc, conn) in connections.iter() {
             conn.connection.close().await?;
         }
@@ -155,13 +184,32 @@ impl Client {
         user_name: &str,
         password: String,
     ) -> crate::Result<()> {
-        self._share_connect(target, user_name, password.clone())
-            .await?;
+        let identity = AuthIdentity {
+            username: sspi::Username::parse(user_name).map_err(|e| Error::SspiError(e.into()))?,
+            password: Secret::from(password),
+        };
+
+        self._share_connect(target, &identity).await?;
 
         // Establish an additional channel if multi-channel is enabled.
-        // #[cfg(feature = "rdma")]
-        self._setup_multi_channel(target, user_name, password)
-            .await?;
+        let mchannel_map = self._setup_multi_channel(target, &identity).await?;
+
+        let session = self.get_session(target).await?;
+
+        self._with_connection(target.server(), |f| {
+            let session_info = f
+                .sessions
+                .get(&session.session_id())
+                .expect("session info not found, but tree has just been created");
+            if session_info.session_channels.is_none() {
+                f.sessions
+                    .get_mut(&session.session_id())
+                    .unwrap()
+                    .session_channels = mchannel_map;
+            }
+            Ok(())
+        })
+        .await?;
 
         Ok(())
     }
@@ -171,12 +219,7 @@ impl Client {
     /// Performs the actual share connection logic,
     /// without setting up multi-channel.
     #[maybe_async]
-    async fn _share_connect(
-        &self,
-        target: &UncPath,
-        user_name: &str,
-        password: String,
-    ) -> crate::Result<()> {
+    async fn _share_connect(&self, target: &UncPath, identity: &AuthIdentity) -> crate::Result<()> {
         if target.share().is_none() {
             return Err(crate::Error::InvalidArgument(
                 "UNC path does not contain a share name.".to_string(),
@@ -184,53 +227,46 @@ impl Client {
         }
 
         let target = target.clone().with_no_path();
-        {
-            let existing_tree = self.get_tree(&target).await;
-            if existing_tree.is_ok() {
-                log::warn!(
-                    "Share {} is already connected, ignoring duplicate connection attempt.",
-                    target
-                );
-                return Ok(());
-            }
-        }
 
-        self.connect(target.server()).await?;
-
-        let mut connections = self.connections.lock().await?;
-        let server_address = TransportUtils::parse_socket_address(target.server())?;
-        let connection = connections.get_mut(&server_address.ip()).ok_or_else(|| {
-            Error::NotFound(format!(
-                "No connection found for server: {}",
-                target.server()
-            ))
-        })?;
-
-        if connection.share_connects.contains_key(&target) {
-            log::warn!(
-                "Share {} is already connected, ignoring duplicate connection attempt.",
+        let already_connected = self._with_tree(&target, |tree| Ok(())).await;
+        if already_connected.is_ok() {
+            log::debug!(
+                "Share {} is already connected. Ignoring duplicate connection attempt.",
                 target
             );
             return Ok(());
         }
 
+        let connection = self.connect(target.server()).await?;
+
         let session = {
-            let session = connection
-                .connection
-                .authenticate(user_name, password.clone())
-                .await?;
+            let session = connection.authenticate(identity.clone()).await?;
             log::debug!(
                 "Successfully authenticated to {} as {}",
                 target.server(),
-                user_name
+                identity.username.account_name()
             );
-            Arc::new(session)
+            let session = Arc::new(session);
+
+            self._with_connection(target.server(), |f| {
+                f.sessions.insert(
+                    session.session_id(),
+                    ClientSessionInfo {
+                        session: session.clone(),
+                        session_channels: None,
+                    },
+                );
+                Ok(())
+            })
+            .await?;
+
+            session
         };
 
         let tree = session.tree_connect(&target).await?;
 
         let credentials = if tree.is_dfs_root()? {
-            Some((user_name.to_string(), password.clone()))
+            Some(identity.to_owned())
         } else {
             None
         };
@@ -240,8 +276,10 @@ impl Client {
             tree: Arc::new(tree),
             credentials,
         };
-        connection
-            .share_connects
+
+        self.share_connects
+            .lock()
+            .await?
             .insert(target.clone(), connect_share_info);
 
         log::debug!(
@@ -253,31 +291,15 @@ impl Client {
     }
 
     #[maybe_async]
-    async fn _get_credentials(&self, target: &UncPath) -> crate::Result<(String, String)> {
-        let target: UncPath = target.clone().with_no_path();
-        let connections = self.connections.lock().await?;
-        let server_address = TransportUtils::parse_socket_address(target.server())?;
-        let connection = connections.get(&server_address.ip()).ok_or_else(|| {
-            Error::NotFound(format!(
-                "No connection found for server: {}",
-                target.server()
-            ))
-        })?;
-        if !connection.share_connects.contains_key(&target) {
-            return Err(Error::NotFound(format!(
-                "No share connection found for path: {target}",
-            )));
-        }
-        return Ok(connection
-            .share_connects
-            .get(&target)
-            .ok_or_else(|| {
-                Error::NotFound(format!("No connected share found for path: {target}",))
-            })?
-            .credentials
-            .as_ref()
-            .ok_or_else(|| Error::NotFound(format!("No credentials found for path: {target}",)))?
-            .clone());
+    async fn _get_credentials(&self, target: &UncPath) -> crate::Result<AuthIdentity> {
+        self._with_tree(target, |tree| {
+            tree.credentials.as_ref().cloned().ok_or_else(|| {
+                Error::InvalidArgument(format!(
+                    "No credentials found for DFS root share: {target}. Cannot resolve DFS path."
+                ))
+            })
+        })
+        .await
     }
 
     #[maybe_async]
@@ -331,7 +353,7 @@ impl Client {
         server_address: SocketAddr,
     ) -> crate::Result<Arc<Connection>> {
         let conn = {
-            let mut connections = self.connections.lock().await?;
+            let mut connections = self.connections.write().await?;
             if let Some(conn) = connections.get(&server_address.ip()) {
                 log::trace!("Re-using existing connection to {server}",);
                 return Ok(conn.connection.clone());
@@ -351,13 +373,22 @@ impl Client {
                 server_address.ip(),
                 ClientConnectionInfo {
                     connection: conn.clone(),
-                    share_connects: Default::default(),
+                    sessions: Default::default(),
+                    address: server_address,
+                    #[cfg(feature = "rdma")]
+                    alt_connections: None,
                 },
             );
             conn
         };
 
-        conn.connect().await?;
+        let connect_ok = conn.connect().await;
+
+        if connect_ok.is_err() {
+            let mut connections = self.connections.write().await?;
+            connections.remove(&server_address.ip());
+        }
+
         log::debug!("Successfully connected to {server}",);
 
         Ok(conn)
@@ -367,7 +398,7 @@ impl Client {
     /// after a successful call to [`Client::connect`] or [`Client::share_connect`].
     #[maybe_async]
     pub async fn get_connection(&self, server: &str) -> crate::Result<Arc<Connection>> {
-        let connections = self.connections.lock().await?;
+        let connections = self.connections.read().await?;
         let server_address: SocketAddr = TransportUtils::parse_socket_address(server)?;
         if let Some(conn) = connections.get(&server_address.ip()) {
             return Ok(conn.connection.clone());
@@ -379,34 +410,42 @@ impl Client {
 
     #[maybe_async]
     pub async fn get_session(&self, path: &UncPath) -> crate::Result<Arc<Session>> {
-        let path = path.clone().with_no_path();
-        let connections = self.connections.lock().await?;
-        let server_address = TransportUtils::parse_socket_address(path.server())?;
-        let connection = connections.get(&server_address.ip()).ok_or_else(|| {
-            Error::NotFound(format!("No connection found for server: {}", path.server()))
-        })?;
-        if let Some(share_connect) = connection.share_connects.get(&path) {
-            return Ok(share_connect.session.clone());
-        }
-        Err(Error::NotFound(format!(
-            "No session found for path: {path}",
-        )))
+        self._with_tree(path, |tree| Ok(tree.session.clone())).await
     }
 
     /// Returns the underlying [`Tree`] for the specified UNC path,
     /// after a successful call to [`Client::share_connect`].
     #[maybe_async]
     pub async fn get_tree(&self, path: &UncPath) -> crate::Result<Arc<Tree>> {
-        let path = path.clone().with_no_path();
-        let connections = self.connections.lock().await?;
-        let server_address = TransportUtils::parse_socket_address(path.server())?;
-        let connection = connections.get(&server_address.ip()).ok_or_else(|| {
-            Error::NotFound(format!("No connection found for server: {}", path.server()))
+        self._with_tree(path, |tree| Ok(tree.tree.clone())).await
+    }
+
+    #[maybe_async]
+    async fn _with_connection<F, R>(&self, server: &str, f: F) -> crate::Result<R>
+    where
+        F: FnOnce(&mut ClientConnectionInfo) -> crate::Result<R>,
+    {
+        let server_address = TransportUtils::parse_socket_address(server)?;
+        let mut connections = self.connections.write().await?;
+        let conn = connections.get_mut(&server_address.ip()).ok_or_else(|| {
+            Error::NotFound(format!("No connection found for server: {}", server))
         })?;
-        if let Some(share_connect) = connection.share_connects.get(&path) {
-            return Ok(share_connect.tree.clone());
-        }
-        Err(Error::NotFound(format!("No tree found for path: {path}",)))
+        f(conn)
+    }
+
+    /// Locks `share_connects`, locates the tree for the specified path,
+    /// and calls the specified closure with the tree.
+    #[maybe_async]
+    async fn _with_tree<F, R>(&self, path: &UncPath, f: F) -> crate::Result<R>
+    where
+        F: FnOnce(&mut ClientConectedTree) -> crate::Result<R>,
+    {
+        let tree_path = path.clone().with_no_path();
+        let mut sc = self.share_connects.lock().await?;
+        let sc = sc.get_mut(&tree_path).ok_or_else(|| {
+            Error::NotFound(format!("No connected share found for path: {path}",))
+        })?;
+        f(sc)
     }
 
     /// Creates (or opens) a file on the specified path, using the specified args.
@@ -453,11 +492,21 @@ impl Client {
     pub async fn ipc_connect(
         &self,
         server: &str,
-        user_name: &str,
+        username: &str,
         password: String,
     ) -> crate::Result<()> {
         let ipc_share = UncPath::ipc_share(server)?;
-        self._share_connect(&ipc_share, user_name, password).await
+        let identity = AuthIdentity {
+            username: sspi::Username::parse(username).map_err(|e| Error::SspiError(e.into()))?,
+            password: Secret::from(password),
+        };
+        self._share_connect(&ipc_share, &identity).await
+    }
+
+    #[maybe_async]
+    pub async fn _ipc_connect(&self, server: &str, identity: &AuthIdentity) -> crate::Result<()> {
+        let ipc_share = UncPath::ipc_share(server)?;
+        self._share_connect(&ipc_share, identity).await
     }
 
     /// Opens a named pipe on the specified server.
@@ -490,32 +539,39 @@ impl Client {
         }
     }
 
-    // #[cfg(feature = "rdma")]
+    /// If multi-channel is enabled in the client configuration, and the server supports it,
+    /// this method will attempt to establish an additional channel to the server,
+    /// using a different network interface, if available.
+    ///
+    /// This method returns a map of channel IDs to their corresponding connections.
     #[maybe_async]
     async fn _setup_multi_channel(
         &self,
         unc: &UncPath,
-        user_name: &str,
-        password: String,
-    ) -> crate::Result<()> {
+        identity: &AuthIdentity,
+    ) -> crate::Result<Option<HashMap<u32, Arc<Connection>>>> {
         if unc.is_ipc_share() {
-            log::debug!("Not checking multi-channel for IPC$ share.");
+            return Err(Error::InvalidArgument(
+                "Cannot setup multi-channel for IPC$ share.".to_string(),
+            ));
         }
 
-        {
+        if !self.config.connection.multichannel.enabled {
+            log::debug!("Multi-channel is not enabled in client configuration. Skipping setup.");
+            return Ok(None);
+        }
+
+        let primary_conn_info = {
             let opened_conn_info = self.get_connection(unc.server()).await?;
-            if !opened_conn_info
+            opened_conn_info
                 .conn_info()
-                .unwrap()
-                .negotiation
-                .caps
-                .multi_channel()
-            {
-                log::debug!(
-                    "Multi-channel is not enabled for connection to {unc}. Skipping setup."
-                );
-                return Ok(());
-            }
+                .expect("Primary connection must be negotiated.")
+                .clone()
+        };
+
+        if !primary_conn_info.negotiation.caps.multi_channel() {
+            log::debug!("Multi-channel is not enabled for connection to {unc}. Skipping setup.");
+            return Ok(None);
         }
 
         log::debug!(
@@ -524,8 +580,7 @@ impl Client {
 
         // Connect IPC and query network interfaces.
         let ipc_share = UncPath::ipc_share(unc.server())?;
-        self.ipc_connect(ipc_share.server(), user_name, password.clone())
-            .await?;
+        self._ipc_connect(ipc_share.server(), identity).await?;
         let ipc_tree = self.get_tree(&ipc_share).await?;
         let network_interfaces = ipc_tree
             .as_ipc_tree()
@@ -533,49 +588,48 @@ impl Client {
             .query_network_interfaces()
             .await?;
 
-        let opened_conn_info = self.get_connection(unc.server()).await?;
-
-        let current_conn_address = opened_conn_info.conn_info().unwrap().server_address;
-        // TODO: Improve this algorithm
-        let default_ip_iface_index = network_interfaces
+        let current_primary_interface = network_interfaces
             .iter()
-            .find(|iface| iface.sockaddr.socket_addr().ip() == current_conn_address.ip())
+            .find(|iface| {
+                iface.sockaddr.socket_addr().ip() == primary_conn_info.server_address.ip()
+            })
             .unwrap()
             .if_index;
 
-        let first_rdma_interface = network_interfaces.iter().find(|iface| {
-            (iface.capability.rdma() || iface.if_index != default_ip_iface_index)
-                && iface.sockaddr.socket_addr().is_ipv4()
-        });
-        if first_rdma_interface.is_none() {
-            log::debug!("No RDMA-capable interface found for multi-channel.");
-            return Ok(());
+        let interfaces_to_ip_addresses: HashMap<u32, SocketAddr> = network_interfaces
+            .iter()
+            .filter(|iface| {
+                iface.sockaddr.socket_addr().is_ipv4()
+                    && iface.if_index != current_primary_interface
+                    && !iface.capability.rdma()
+            }) // TODO: IPv6; RDMA
+            .map(|iface| (iface.if_index, iface.sockaddr.socket_addr()))
+            .collect();
+
+        if interfaces_to_ip_addresses.is_empty() {
+            log::debug!(
+                "No alternate interfaces found for multi-channel. Continuing with single channel."
+            );
+            return Ok(None);
         }
-        let interface_to_mc = first_rdma_interface.unwrap();
-        log::debug!("Found interface for multi-channel: {:?}", interface_to_mc);
+
+        let mut result = HashMap::new();
 
         let session = self.get_session(unc).await?;
+        for (if_index, ip_address) in interfaces_to_ip_addresses.iter() {
+            log::debug!("Found alternate interface for multi-channel: {if_index} => {ip_address}");
 
-        let connect_to = interface_to_mc.sockaddr.socket_addr();
-        let alt_connection = self.connect_to_address(unc.server(), connect_to).await?;
+            let (connection, channel) = {
+                let connection = self.connect_to_address(unc.server(), *ip_address).await?;
 
-        let channel = alt_connection
-            .bind_session(&session, user_name, password)
-            .await?;
+                let channel = connection.bind_session(&session, identity.clone()).await?;
 
-        let alt_channel_tree = channel.tree_connect(unc).await?;
+                (connection, channel)
+            };
+            result.insert(channel, connection);
+        }
 
-        let _file_in_alt = alt_channel_tree
-            .create_file(
-                unc.path().unwrap_or(""),
-                smb_msg::CreateDisposition::Open,
-                FileAccessMask::new().with_generic_read(true),
-            )
-            .await?;
-
-        alt_channel_tree.disconnect().await?;
-
-        Ok(())
+        Ok(Some(result))
     }
 }
 
@@ -611,11 +665,7 @@ impl<'a> DfsResolver<'a> {
         // Open the next DFS referral. Try each referral path, since some may be down.
         for ref_unc_path in dfs_ref_paths.iter() {
             // Try opening the share. Log failure, and try next ref.
-            if let Err(e) = self
-                .client
-                .share_connect(ref_unc_path, dfs_creds.0.as_str(), dfs_creds.1.clone())
-                .await
-            {
+            if let Err(e) = self.client._share_connect(ref_unc_path, &dfs_creds).await {
                 log::error!("Failed to open DFS referral: {e}",);
                 continue;
             };

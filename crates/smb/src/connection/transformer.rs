@@ -294,6 +294,7 @@ impl Transformer {
             message,
             raw: iovec,
             form,
+            source_channel_id: None,
         })
     }
 

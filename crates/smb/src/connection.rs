@@ -4,11 +4,12 @@ pub mod preauth_hash;
 pub mod transformer;
 pub mod worker;
 
-use crate::Error;
+use crate::smb_common_imports;
+smb_common_imports!();
+use crate::compression;
 use crate::connection::preauth_hash::PreauthHashState;
 use crate::dialects::DialectImpl;
-use crate::session::{Channel, ChannelMessageHandler};
-use crate::{compression, sync_helpers::*};
+use crate::session::ChannelMessageHandler;
 use crate::{crypto, msg_handler::*, session::Session};
 use binrw::prelude::*;
 pub use config::*;
@@ -25,7 +26,6 @@ use std::net::SocketAddr;
 #[cfg(feature = "multi_threaded")]
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
-use std::sync::{Arc, Weak};
 pub use transformer::TransformError;
 use worker::{Worker, WorkerImpl};
 
@@ -64,13 +64,14 @@ impl Connection {
 
     /// Creates a SMB connection for an alternate channel,
     /// for the specified existing, primary connection.
+    ///
+    /// Returns the ID of the channel in the existing session.
     #[maybe_async]
     pub async fn bind_session(
         &self,
         primary_session: &Session,
-        user_name: &str,
-        password: String,
-    ) -> crate::Result<Channel> {
+        identity: sspi::AuthIdentity,
+    ) -> crate::Result<u32> {
         log::debug!("Binding alternate session to new connection");
 
         if self.conn_info().is_none() {
@@ -79,14 +80,13 @@ impl Connection {
             ));
         }
 
-        if self
+        if !self
             .conn_info()
             .as_ref()
             .unwrap()
             .negotiation
             .caps
             .multi_channel()
-            == false
         {
             return Err(Error::InvalidState(
                 "Server does not support multichannel.".to_string(),
@@ -95,8 +95,7 @@ impl Connection {
 
         primary_session
             .bind(
-                user_name,
-                password,
+                identity,
                 &self.handler,
                 self.handler.conn_info.get().unwrap(),
             )
@@ -531,10 +530,9 @@ impl Connection {
     /// ## Notes:
     /// * Use the [`ConnectionConfig`] to configure authentication options.
     #[maybe_async]
-    pub async fn authenticate(&self, user_name: &str, password: String) -> crate::Result<Session> {
+    pub async fn authenticate(&self, identity: sspi::AuthIdentity) -> crate::Result<Session> {
         let session = Session::create(
-            user_name,
-            password,
+            identity,
             &self.handler,
             self.handler.conn_info.get().unwrap(),
         )
@@ -548,8 +546,10 @@ impl Connection {
         Ok(session)
     }
 
-    pub fn conn_info(&self) -> Option<&ConnectionInfo> {
-        self.handler.conn_info.get().map(|info| info.as_ref())
+    /// Returns the connection information, if the connection has been negotiated.
+    /// Otherwise, returns `None`.
+    pub fn conn_info(&self) -> Option<&Arc<ConnectionInfo>> {
+        self.handler.conn_info.get()
     }
 }
 

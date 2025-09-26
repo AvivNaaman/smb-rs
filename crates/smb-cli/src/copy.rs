@@ -120,8 +120,8 @@ impl CopyFile {
     #[maybe_async]
     #[cfg(not(feature = "single_threaded"))]
     pub async fn do_copy<
-        F: ReadAt + GetLen + Send + Sync + 'static,
-        T: WriteAt + SetLen + Send + Sync + 'static,
+        F: ReadAtChannel + GetLen + Send + Sync + 'static,
+        T: WriteAtChannel + SetLen + Send + Sync + 'static,
     >(
         from: F,
         to: T,
@@ -141,7 +141,7 @@ impl CopyFile {
 
     /// Single-threaded copy implementation.
     #[cfg(feature = "single_threaded")]
-    pub fn do_copy<F: ReadAt + GetLen, T: WriteAt + SetLen>(
+    pub fn do_copy<F: ReadAtChannel + GetLen, T: WriteAtChannel + SetLen>(
         from: F,
         to: T,
         _jobs: usize,

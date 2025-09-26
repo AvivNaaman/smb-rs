@@ -6,8 +6,8 @@
 use crate::connection::connection_info::ConnectionInfo;
 use crate::connection::preauth_hash::{PreauthHashState, PreauthHashValue};
 use crate::connection::worker::Worker;
+use crate::{UncPath, smb_common_imports};
 use crate::{
-    Error,
     connection::ConnectionMessageHandler,
     crypto::KeyToDerive,
     msg_handler::{
@@ -16,15 +16,12 @@ use crate::{
     },
     tree::Tree,
 };
-use crate::{UncPath, sync_helpers::*};
-use binrw::prelude::*;
-use maybe_async::*;
+smb_common_imports!();
 use smb_msg::{Notification, ResponseContent, Status, session_setup::*};
 use smb_transport::IoVec;
-use sspi::{AuthIdentity, Secret, Username};
+use std::collections::HashMap;
 use std::ops::Deref;
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU32};
 type Upstream = HandlerReference<ConnectionMessageHandler>;
 
 mod authenticator;
@@ -35,7 +32,6 @@ mod signer;
 mod sspi_network_client;
 mod state;
 
-use authenticator::{AuthenticationStep, Authenticator};
 pub use channel::*;
 pub use encryptor_decryptor::{MessageDecryptor, MessageEncryptor};
 pub use signer::MessageSigner;
@@ -44,7 +40,12 @@ pub use state::{ChannelInfo, SessionInfo};
 use setup::*;
 
 pub struct Session {
-    channel: Channel,
+    primary_channel: Channel,
+    alt_channels: RwLock<HashMap<u32, Channel>>,
+    channel_counter: AtomicU32,
+
+    // Message handler for this session.
+    session_handler: HandlerReference<SessionMessageHandler>,
 }
 
 pub struct Channel {
@@ -59,31 +60,38 @@ impl Session {
     /// [Session::bind] may be used instead, to bind an existing session to a new connection.
     #[maybe_async]
     pub(crate) async fn create(
-        user_name: &str,
-        password: String,
+        identity: sspi::AuthIdentity,
         upstream: &Upstream,
         conn_info: &Arc<ConnectionInfo>,
     ) -> crate::Result<Session> {
         let setup_result =
-            SessionSetup::<SmbSessionNew>::new(user_name, password, upstream, conn_info, None)
-                .await?;
+            SessionSetup::<SmbSessionNew>::new(identity, upstream, conn_info, None).await?;
 
-        let channel = Self::_common_setup(setup_result).await?;
+        let primary_channel = Self::_common_setup(setup_result).await?;
 
-        Ok(Session { channel })
+        let handler = HandlerReference::new(SessionMessageHandler::new(
+            primary_channel.session_id(),
+            primary_channel.handler.clone(),
+        ));
+
+        Ok(Session {
+            session_handler: handler,
+            primary_channel,
+            alt_channels: Default::default(),
+            channel_counter: AtomicU32::new(0),
+        })
     }
 
     /// Binds an existing session to a new connection.
     ///
-    /// Returns the new channel created on the new connection.
+    /// Returns the channel ID (in the scope of the current session) of the newly created channel.
     #[maybe_async]
     pub(crate) async fn bind(
         &self,
-        user_name: &str,
-        password: String,
+        identity: sspi::AuthIdentity,
         handler: &HandlerReference<ConnectionMessageHandler>,
         conn_info: &Arc<ConnectionInfo>,
-    ) -> crate::Result<Channel> {
+    ) -> crate::Result<u32> {
         if self.conn_info.negotiation.dialect_rev != conn_info.negotiation.dialect_rev {
             return Err(Error::InvalidState(
                 "Cannot bind session to connection with different dialect.".to_string(),
@@ -111,17 +119,35 @@ impl Session {
         }
 
         let setup_result = SessionSetup::<SmbSessionBind>::new(
-            user_name,
-            password,
+            identity,
             handler,
             conn_info,
-            Some(&self.handler.session_state()),
+            Some(self.handler.session_state()),
         )
         .await?;
 
         let channel = Self::_common_setup(setup_result).await?;
 
-        Ok(channel)
+        let internal_channel_id = self
+            .channel_counter
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.alt_channels
+            .write()
+            .await?
+            .insert(internal_channel_id, channel);
+
+        self.session_handler.channel_handlers.write().await?.insert(
+            internal_channel_id,
+            self.alt_channels
+                .read()
+                .await?
+                .get(&internal_channel_id)
+                .unwrap()
+                .handler
+                .clone(),
+        );
+
+        Ok(internal_channel_id)
     }
 
     async fn _common_setup<T>(mut session_setup: SessionSetup<'_, T>) -> crate::Result<Channel>
@@ -132,9 +158,9 @@ impl Session {
         let session_id = {
             let session = setup_result.lock().await?;
             let session = session.session.lock().await?;
-            log::info!("Session setup complete.");
+            log::debug!("Session setup complete.");
             if session.allow_unsigned()? {
-                log::info!("Session is guest/anonymous.");
+                log::debug!("Session is guest/anonymous.");
             }
 
             session.id()
@@ -148,6 +174,16 @@ impl Session {
         };
 
         Ok(channel)
+    }
+
+    /// Connects to the specified tree on the current session.
+    /// ## Arguments
+    /// * `name` - The name of the tree to connect to.
+    #[maybe_async]
+    pub async fn tree_connect(&self, name: &UncPath) -> crate::Result<Tree> {
+        let name = name.clone().with_no_path().to_string();
+        let tree = Tree::connect(&name, &self.session_handler, &self.conn_info).await?;
+        Ok(tree)
     }
 
     /// Logs off the session.
@@ -164,21 +200,11 @@ impl Deref for Session {
     type Target = Channel;
 
     fn deref(&self) -> &Self::Target {
-        &self.channel
+        &self.primary_channel
     }
 }
 
 impl Channel {
-    /// Connects to the specified tree on the current session.
-    /// ## Arguments
-    /// * `name` - The name of the tree to connect to.
-    #[maybe_async]
-    pub async fn tree_connect(&self, name: &UncPath) -> crate::Result<Tree> {
-        let name = name.clone().with_no_path().to_string();
-        let tree = Tree::connect(&name, &self.handler, &self.conn_info).await?;
-        Ok(tree)
-    }
-
     /// Returns the Session ID of this session.
     ///
     /// This ID is the same as the SMB's session id,
@@ -208,5 +234,50 @@ impl SessionAndChannel {
 
     pub fn set_channel(&mut self, channel: ChannelInfo) {
         self.channel = Some(channel);
+    }
+}
+
+pub(crate) struct SessionMessageHandler {
+    session_id: u64,
+    // this is used to speed up access to the primary channel handler.
+    primary_channel: HandlerReference<ChannelMessageHandler>,
+    channel_handlers: RwLock<HashMap<u32, HandlerReference<ChannelMessageHandler>>>,
+}
+
+impl SessionMessageHandler {
+    pub fn new(session_id: u64, primary_channel: HandlerReference<ChannelMessageHandler>) -> Self {
+        Self {
+            session_id,
+            primary_channel,
+            channel_handlers: RwLock::new(HashMap::new()),
+        }
+    }
+}
+
+impl MessageHandler for SessionMessageHandler {
+    async fn sendo(&self, msg: OutgoingMessage) -> crate::Result<SendMessageResult> {
+        match msg.channel_id {
+            Some(channel_id) => {
+                if let Some(handler) = self.channel_handlers.read().await?.get(&channel_id) {
+                    handler.sendo(msg).await
+                } else {
+                    Err(Error::ChannelNotFound(self.session_id, channel_id))
+                }
+            }
+            None => self.primary_channel.sendo(msg).await,
+        }
+    }
+
+    async fn recvo(&self, options: ReceiveOptions<'_>) -> crate::Result<IncomingMessage> {
+        match options.channel_id {
+            Some(channel_id) => {
+                if let Some(handler) = self.channel_handlers.read().await?.get(&channel_id) {
+                    handler.recvo(options).await
+                } else {
+                    Err(Error::ChannelNotFound(self.session_id, channel_id))
+                }
+            }
+            None => self.primary_channel.recvo(options).await,
+        }
     }
 }

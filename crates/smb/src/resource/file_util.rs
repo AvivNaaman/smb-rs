@@ -1,6 +1,36 @@
 use crate::sync_helpers::*;
 use maybe_async::*;
 
+/// This trait describes an object that can perform read operations at a specific offset,
+/// optionally using a specific channel ID.
+///
+/// It has a single method, [`ReadAtChannel::read_at_channel`], which takes a mutable buffer,
+/// an offset, and an optional channel ID, and returns the number of bytes read.
+///
+/// Every structure that implements this trait, also implements the [`ReadAt`] trait, being
+/// a subset of it. The [`ReadAt::read_at`] method is equivalent to calling
+/// [`ReadAtChannel::read_at_channel`] with `channel` set to `None`.
+pub trait ReadAtChannel {
+    #[cfg(feature = "async")]
+    fn read_at_channel(
+        &self,
+        buf: &mut [u8],
+        offset: u64,
+        channel: Option<u32>,
+    ) -> impl std::future::Future<Output = crate::Result<usize>> + std::marker::Send;
+    #[cfg(not(feature = "async"))]
+    fn read_at_channel(
+        &self,
+        buf: &mut [u8],
+        offset: u64,
+        channel: Option<u32>,
+    ) -> crate::Result<usize>;
+}
+
+/// This trait describes an object that can perform read operations at a specific offset.
+///
+/// See [`ReadAtChannel`] for an extended version of this trait, that supports
+/// specifying a channel ID for the read operation.
 pub trait ReadAt {
     #[cfg(feature = "async")]
     fn read_at(
@@ -12,17 +42,78 @@ pub trait ReadAt {
     fn read_at(&self, buf: &mut [u8], offset: u64) -> crate::Result<usize>;
 }
 
-#[maybe_async(AFIT)]
-#[allow(async_fn_in_trait)]
-pub trait WriteAt {
+impl<T: ReadAtChannel + ?Sized> ReadAt for T {
+    #[cfg(feature = "async")]
+    fn read_at(
+        &self,
+        buf: &mut [u8],
+        offset: u64,
+    ) -> impl std::future::Future<Output = crate::Result<usize>> + std::marker::Send {
+        self.read_at_channel(buf, offset, None)
+    }
+    #[cfg(not(feature = "async"))]
+    fn read_at(&self, buf: &mut [u8], offset: u64) -> crate::Result<usize> {
+        self.read_at_channel(buf, offset, None)
+    }
+}
+
+/// This trait describes an object that can perform write operations at a specific offset,
+/// optionally using a specific channel ID.
+///
+/// It has a single method, [`WriteAtChannel::write_at_channel`], which takes a buffer,
+/// an offset, and an optional channel ID, and returns the number of bytes written.
+///
+/// Every structure that implements this trait, also implements the [`WriteAt`] trait, being
+/// a subset of it. The [`WriteAt::write_at`] method is equivalent to calling
+/// [`WriteAtChannel::write_at_channel`] with `channel` set to `None`.
+pub trait WriteAtChannel {
+    #[cfg(feature = "async")]
+    fn write_at_channel(
+        &self,
+        buf: &[u8],
+        offset: u64,
+        channel: Option<u32>,
+    ) -> impl std::future::Future<Output = crate::Result<usize>> + std::marker::Send;
+
+    #[cfg(not(feature = "async"))]
+    fn write_at_channel(
+        &self,
+        buf: &[u8],
+        offset: u64,
+        channel: Option<u32>,
+    ) -> crate::Result<usize>;
+}
+
+/// This trait describes an object that can perform write operations at a specific offset.
+///
+/// See [`WriteAtChannel`] for an extended version of this trait, that supports
+/// specifying a channel ID for the write operation.
+pub trait WriteAt: WriteAtChannel {
     #[cfg(feature = "async")]
     fn write_at(
         &self,
         buf: &[u8],
         offset: u64,
     ) -> impl std::future::Future<Output = crate::Result<usize>> + std::marker::Send;
+
     #[cfg(not(feature = "async"))]
     fn write_at(&self, buf: &[u8], offset: u64) -> crate::Result<usize>;
+}
+
+impl<T: WriteAtChannel + ?Sized> WriteAt for T {
+    #[cfg(feature = "async")]
+    fn write_at(
+        &self,
+        buf: &[u8],
+        offset: u64,
+    ) -> impl std::future::Future<Output = crate::Result<usize>> + std::marker::Send {
+        self.write_at_channel(buf, offset, None)
+    }
+
+    #[cfg(not(feature = "async"))]
+    fn write_at(&self, buf: &[u8], offset: u64) -> crate::Result<usize> {
+        self.write_at_channel(buf, offset, None)
+    }
 }
 
 #[maybe_async(AFIT)]
@@ -56,9 +147,14 @@ mod impls {
     #[cfg(not(feature = "async"))]
     pub trait ReadSeek: Read + Seek {}
     impl ReadSeek for File {}
-    impl<F: ReadSeek + Send> ReadAt for Mutex<F> {
+    impl<F: ReadSeek + Send> ReadAtChannel for Mutex<F> {
         #[maybe_async]
-        async fn read_at(&self, buf: &mut [u8], offset: u64) -> crate::Result<usize> {
+        async fn read_at_channel(
+            &self,
+            buf: &mut [u8],
+            offset: u64,
+            _channel: Option<u32>,
+        ) -> crate::Result<usize> {
             let mut reader = self
                 .lock()
                 .await
@@ -73,9 +169,14 @@ mod impls {
     #[cfg(not(feature = "async"))]
     pub trait WriteSeek: Write + Seek {}
     impl WriteSeek for File {}
-    impl<F: WriteSeek + Send> WriteAt for Mutex<F> {
+    impl<F: WriteSeek + Send> WriteAtChannel for Mutex<F> {
         #[maybe_async]
-        async fn write_at(&self, buf: &[u8], offset: u64) -> crate::Result<usize> {
+        async fn write_at_channel(
+            &self,
+            buf: &[u8],
+            offset: u64,
+            _channel: Option<u32>,
+        ) -> crate::Result<usize> {
             let mut writer = self
                 .lock()
                 .await
@@ -161,8 +262,8 @@ mod copy {
     /// Generic block copy function.
     ///
     /// # Parameters
-    /// - `from`: The source to read from. Must implement `ReadAt` and `GetLen`.
-    /// - `to`: The destination to write to. Must implement `WriteAt` and `SetLen`.
+    /// - `from`: The source to read from. Must implement `ReadAtChannel` and `GetLen`.
+    /// - `to`: The destination to write to. Must implement `WriteAtChannel` and `SetLen`.
     /// - `jobs`: The number of parallel jobs to use. If 0, a default value will be used.
     ///
     /// # Returns
@@ -174,8 +275,8 @@ mod copy {
     ///   use that to report progress while the copy is running.
     #[maybe_async]
     pub async fn block_copy<
-        F: ReadAt + GetLen + Send + Sync + 'static,
-        T: WriteAt + SetLen + Send + Sync + 'static,
+        F: ReadAtChannel + GetLen + Send + Sync + 'static,
+        T: WriteAtChannel + SetLen + Send + Sync + 'static,
     >(
         from: F,
         to: T,
@@ -198,8 +299,8 @@ mod copy {
     /// if you don't need that, just use the [`block_copy`] function directly.
     #[maybe_async]
     pub async fn prepare_parallel_copy<
-        F: ReadAt + GetLen + Send + Sync + 'static,
-        T: WriteAt + SetLen + Send + Sync + 'static,
+        F: ReadAtChannel + GetLen + Send + Sync + 'static,
+        T: WriteAtChannel + SetLen + Send + Sync + 'static,
     >(
         from: &F,
         to: &T,
@@ -250,8 +351,8 @@ mod copy {
     /// See [`prepare_parallel_copy`] for more details.
     #[cfg(feature = "async")]
     pub async fn start_parallel_copy<
-        F: ReadAt + GetLen + Send + Sync + 'static,
-        T: WriteAt + SetLen + Send + Sync + 'static,
+        F: ReadAtChannel + GetLen + Send + Sync + 'static,
+        T: WriteAtChannel + SetLen + Send + Sync + 'static,
     >(
         from: F,
         to: T,
@@ -281,8 +382,8 @@ mod copy {
     /// See [`prepare_parallel_copy`] for more details.
     #[cfg(feature = "multi_threaded")]
     pub fn start_parallel_copy<
-        F: ReadAt + GetLen + Send + Sync + 'static,
-        T: WriteAt + SetLen + Send + Sync + 'static,
+        F: ReadAtChannel + GetLen + Send + Sync + 'static,
+        T: WriteAtChannel + SetLen + Send + Sync + 'static,
     >(
         from: F,
         to: T,
@@ -310,8 +411,8 @@ mod copy {
 
     #[maybe_async]
     async fn block_copy_task<
-        F: ReadAt + GetLen + Send + Sync,
-        T: WriteAt + SetLen + Send + Sync,
+        F: ReadAtChannel + GetLen + Send + Sync,
+        T: WriteAtChannel + SetLen + Send + Sync,
     >(
         from: Arc<F>,
         to: Arc<T>,
@@ -359,7 +460,7 @@ mod copy {
     use super::*;
 
     /// Generic block copy function.
-    pub fn block_copy<F: ReadAt + GetLen, T: WriteAt + SetLen>(
+    pub fn block_copy<F: ReadAtChannel + GetLen, T: WriteAtChannel + SetLen>(
         from: F,
         to: T,
     ) -> crate::Result<()> {
@@ -367,7 +468,7 @@ mod copy {
     }
 
     /// Generic block copy function with progress callback.
-    pub fn block_copy_progress<F: ReadAt + GetLen, T: WriteAt + SetLen>(
+    pub fn block_copy_progress<F: ReadAtChannel + GetLen, T: WriteAtChannel + SetLen>(
         from: F,
         to: T,
         progress_callback: Option<&dyn Fn(u64)>,

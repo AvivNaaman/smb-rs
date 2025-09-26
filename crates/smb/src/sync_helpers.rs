@@ -22,7 +22,7 @@ use std::sync::LockResult;
 
 // for convenience
 pub use maybe_async::*;
-pub use std::sync::Arc;
+pub use std::sync::{Arc, Weak};
 
 /// A wrapper for [tokio::sync::RwLock] that mocks the behavior of [std::sync::RwLock].
 #[cfg(feature = "async")]

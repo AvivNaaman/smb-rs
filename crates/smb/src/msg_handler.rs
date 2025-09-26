@@ -20,6 +20,9 @@ pub struct OutgoingMessage {
 
     /// Zero copy support
     pub additional_data: Option<Arc<[u8]>>,
+
+    /// Channel ID to use for this message, if any.
+    pub channel_id: Option<u32>,
 }
 
 impl OutgoingMessage {
@@ -31,6 +34,7 @@ impl OutgoingMessage {
             encrypt: false,
             has_response: true,
             additional_data: None,
+            channel_id: None,
         }
     }
 
@@ -46,6 +50,11 @@ impl OutgoingMessage {
 
     pub fn with_encrypt(mut self, encrypt: bool) -> Self {
         self.encrypt = encrypt;
+        self
+    }
+
+    pub fn with_channel_id(mut self, channel_id: Option<u32>) -> Self {
+        self.channel_id = channel_id;
         self
     }
 }
@@ -72,6 +81,8 @@ pub struct IncomingMessage {
 
     // How did the message arrive?
     pub form: MessageForm,
+
+    pub source_channel_id: Option<u32>,
 }
 
 #[derive(Debug, Default)]
@@ -111,6 +122,9 @@ pub struct ReceiveOptions<'a> {
     /// When receiving a message, only messages with this msg_id will be returned.
     /// This is mostly used for async message handling, where the client is waiting for a specific message.
     pub msg_id: u64,
+
+    /// The channel ID to receive messages from, if any.
+    pub channel_id: Option<u32>,
 
     /// Whether to allow (and wait for) async responses.
     /// If set to false, an async response from the server will trigger an error.
@@ -156,6 +170,7 @@ impl<'a> Default for ReceiveOptions<'a> {
             cmd: None,
             msg_id: 0,
             allow_async: false,
+            channel_id: None,
         }
     }
 }
@@ -213,9 +228,13 @@ pub trait MessageHandler: Send + Sync {
         msg: OutgoingMessage,
         mut options: ReceiveOptions<'_>,
     ) -> crate::Result<(SendMessageResult, IncomingMessage)> {
+        let channel_id = msg.channel_id;
         // Send the message and wait for the matching response.
         let send_result = self.sendo(msg).await?;
+
         options.msg_id = send_result.msg_id;
+        options.channel_id = channel_id;
+
         let in_result = self.recvo(options).await?;
         Ok((send_result, in_result))
     }

@@ -95,6 +95,9 @@ pub enum Error {
     #[error("Not found: {0}")]
     NotFound(String),
 
+    #[error("Channel {1} for session {0} not found.")]
+    ChannelNotFound(u64, u32),
+
     #[error("RPC error: {0}")]
     RpcError(#[from] smb_rpc::SmbRpcError),
     #[error("SMB message error: {0}")]

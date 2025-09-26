@@ -20,9 +20,9 @@ pub struct Cli {
     /// Disables DFS referral resolution.
     #[arg(long)]
     pub no_dfs: bool,
-    /// Enables multichannel support.
+    /// Configures multi-channel support.
     #[arg(long)]
-    pub multichannel: bool,
+    pub multichannel: MultiChannelMode,
 
     /// Opts-in to use SMB compression if the server supports it.
     #[arg(long)]
@@ -61,6 +61,28 @@ pub enum CliUseTransport {
     Quic,
 }
 
+/// Describes the SMB multi-channel mode to use.
+#[derive(ValueEnum, Clone, Debug, Default)]
+pub enum MultiChannelMode {
+    /// Do not use multichannel, even if the server and client support it.
+    #[default]
+    None,
+    /// Create additional server connections and multichannel
+    /// only if the server supports RDMA and the client has RDMA-capable NICs.
+    RdmaOnly,
+    /// Try using multichannel if the server supports it,
+    /// and multiple NICs are available on the server.
+    Always,
+}
+
+impl MultiChannelMode {
+    /// Returns whether multichannel should be enabled.
+    pub fn enabled(&self) -> bool {
+        let rdma_on = matches!(self, MultiChannelMode::RdmaOnly) && cfg!(feature = "rdma");
+        matches!(self, MultiChannelMode::Always) || rdma_on
+    }
+}
+
 impl Cli {
     pub fn make_smb_client_config(&self) -> ClientConfig {
         ClientConfig {
@@ -94,7 +116,7 @@ impl Cli {
                 allow_unsigned_guest_access: self.disable_message_signing,
                 compression_enabled: self.compress,
                 multichannel: smb::connection::MultiChannelConfig {
-                    enabled: self.multichannel,
+                    enabled: self.multichannel.enabled() && self.command.uses_multichannel(),
                     #[cfg(feature = "rdma")]
                     rdma: Some(RdmaConfig {}),
                 },
@@ -112,4 +134,12 @@ pub enum Commands {
     Info(InfoCmd),
     /// Configures object security
     Security(SecurityCmd),
+}
+
+impl Commands {
+    /// Returns whether the command should try initializing multichannel,
+    /// if the server and client support it (and use allowed to use it)
+    fn uses_multichannel(&self) -> bool {
+        matches!(self, Commands::Copy(_))
+    }
 }

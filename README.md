@@ -30,7 +30,7 @@ You are welcome to see the project's roadmap in the [GitHub Project](https://git
 Check out the `Client` struct, exported from the `smb` crate, to initiate a connection to an SMB server:
 
 ```rust,no_run
-use smb::{Client, ClientConfig, UncPath, FileCreateArgs, FileAccessMask, ReadAt};
+use smb::{Client, ClientConfig, UncPath, FileCreateArgs, FileAccessMask, ReadAtChannel};
 use std::str::FromStr;
 
 #[tokio::main]
