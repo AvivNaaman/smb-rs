@@ -28,6 +28,7 @@ where
     _phantom: std::marker::PhantomData<T>,
 }
 
+#[maybe_async]
 impl<'a, T> SessionSetup<'a, T>
 where
     T: SessionSetupProperties,
@@ -352,6 +353,8 @@ pub(crate) trait SessionSetupProperties {
 }
 
 pub(crate) struct SmbSessionBind;
+
+#[maybe_async(AFIT)]
 impl SessionSetupProperties for SmbSessionBind {
     async fn make_request<T>(
         _setup: &mut SessionSetup<'_, T>,
@@ -410,6 +413,8 @@ impl SessionSetupProperties for SmbSessionBind {
 }
 
 pub(crate) struct SmbSessionNew;
+
+#[maybe_async(AFIT)]
 impl SessionSetupProperties for SmbSessionNew {
     async fn error_cleanup<T>(setup: &mut SessionSetup<'_, T>) -> crate::Result<()>
     where

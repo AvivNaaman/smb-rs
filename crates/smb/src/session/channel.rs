@@ -248,7 +248,7 @@ impl MessageHandler for ChannelMessageHandler {
 #[cfg(not(feature = "async"))]
 impl Drop for ChannelMessageHandler {
     fn drop(&mut self) {
-        if !self.is_primary {
+        if !self.owns {
             return;
         }
         self.logoff().unwrap_or_else(|e| {

@@ -37,6 +37,7 @@ impl PreauthHashState {
 
                 PreauthHashState::InProgress(hasher.finalize().into())
             }
+            PreauthHashState::Unsupported => PreauthHashState::Unsupported,
             _ => panic!("Preauth hash not started/already finished."),
         }
     }

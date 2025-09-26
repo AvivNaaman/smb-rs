@@ -120,6 +120,12 @@ impl Client {
     /// See [Drop behavior][Client#drop-behavior] for more information.
     #[maybe_async]
     pub async fn close(&self) -> crate::Result<()> {
+        let mut sessions = self.share_connects.lock().await?;
+        for (_unc, tree) in sessions.iter() {
+            // TODO
+        }
+        sessions.clear();
+
         let mut connections = self.connections.write().await?;
         for (_unc, conn) in connections.iter() {
             conn.connection.close().await?;
@@ -386,6 +392,7 @@ impl Client {
         if connect_ok.is_err() {
             let mut connections = self.connections.write().await?;
             connections.remove(&server_address.ip());
+            connect_ok?;
         }
 
         log::debug!("Successfully connected to {server}",);
@@ -397,14 +404,8 @@ impl Client {
     /// after a successful call to [`Client::connect`] or [`Client::share_connect`].
     #[maybe_async]
     pub async fn get_connection(&self, server: &str) -> crate::Result<Arc<Connection>> {
-        let connections = self.connections.read().await?;
-        let server_address: SocketAddr = TransportUtils::parse_socket_address(server)?;
-        if let Some(conn) = connections.get(&server_address.ip()) {
-            return Ok(conn.connection.clone());
-        }
-        Err(Error::NotFound(format!(
-            "No connection found for server: {server}",
-        )))
+        self._with_connection(server, |c| Ok(c.connection.clone()))
+            .await
     }
 
     #[maybe_async]

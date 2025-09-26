@@ -318,12 +318,6 @@ where
     fn transformer(&self) -> &Transformer {
         &self.transformer
     }
-
-    #[maybe_async]
-    async fn set_timeout(&self, timeout: Duration) -> crate::Result<()> {
-        *self.timeout.write().await? = timeout;
-        Ok(())
-    }
 }
 
 impl<T> std::fmt::Debug for ParallelWorker<T>

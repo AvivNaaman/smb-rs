@@ -35,6 +35,7 @@ mod state;
 
 pub use channel::*;
 pub use encryptor_decryptor::{MessageDecryptor, MessageEncryptor};
+
 pub use signer::MessageSigner;
 pub use state::{ChannelInfo, SessionInfo};
 
@@ -56,12 +57,12 @@ pub struct Channel {
     conn_info: Arc<ConnectionInfo>,
 }
 
+#[maybe_async]
 impl Session {
     /// Sets up a new session on the specified connection.
     /// This method is crate-internal; Use [`Connection::authenticate`] to create a new session.
     ///
     /// [Session::bind] may be used instead, to bind an existing session to a new connection.
-    #[maybe_async]
     pub(crate) async fn create(
         identity: sspi::AuthIdentity,
         upstream: &Upstream,
@@ -87,7 +88,6 @@ impl Session {
     /// Binds an existing session to a new connection.
     ///
     /// Returns the channel ID (in the scope of the current session) of the newly created channel.
-    #[maybe_async]
     pub(crate) async fn bind(
         &self,
         identity: sspi::AuthIdentity,
@@ -191,7 +191,6 @@ impl Session {
     /// Connects to the specified tree on the current session.
     /// ## Arguments
     /// * `name` - The name of the tree to connect to.
-    #[maybe_async]
     pub async fn tree_connect(&self, name: &UncPath) -> crate::Result<Tree> {
         let name = name.clone().with_no_path().to_string();
         let tree = Tree::connect(&name, &self.session_handler, &self.conn_info).await?;
@@ -202,7 +201,6 @@ impl Session {
     ///
     /// Any resources held by the session will be released,
     /// and any [`Tree`] objects and their resources will be unusable.
-    #[maybe_async]
     pub async fn close(&self) -> crate::Result<()> {
         self.handler.logoff().await
     }
@@ -276,30 +274,39 @@ impl SessionMessageHandler {
     }
 }
 
+#[maybe_async(AFIT)]
 impl MessageHandler for SessionMessageHandler {
     async fn sendo(&self, msg: OutgoingMessage) -> crate::Result<SendMessageResult> {
         match msg.channel_id {
+            None => self.primary_channel.sendo(msg).await,
             Some(channel_id) => {
+                if channel_id == self.primary_channel_id {
+                    return self.primary_channel.sendo(msg).await;
+                }
+
                 if let Some(handler) = self.channel_handlers.read().await?.get(&channel_id) {
                     handler.sendo(msg).await
                 } else {
                     Err(Error::ChannelNotFound(self.session_id, channel_id))
                 }
             }
-            None => self.primary_channel.sendo(msg).await,
         }
     }
 
     async fn recvo(&self, options: ReceiveOptions<'_>) -> crate::Result<IncomingMessage> {
         match options.channel_id {
+            None => self.primary_channel.recvo(options).await,
             Some(channel_id) => {
+                if channel_id == self.primary_channel_id {
+                    return self.primary_channel.recvo(options).await;
+                }
+
                 if let Some(handler) = self.channel_handlers.read().await?.get(&channel_id) {
                     handler.recvo(options).await
                 } else {
                     Err(Error::ChannelNotFound(self.session_id, channel_id))
                 }
             }
-            None => self.primary_channel.recvo(options).await,
         }
     }
 }

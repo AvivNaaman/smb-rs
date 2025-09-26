@@ -148,7 +148,7 @@ impl Connection {
     /// ```no_run
     /// # use smb::*;
     /// # use std::time::Duration;
-    /// use smb::connection::transport::tcp::TcpTransport;
+    /// use smb_transport::TcpTransport;
     /// # #[cfg(not(feature = "async"))] fn main() {}
     /// #[cfg(feature = "async")]
     /// # #[tokio::main]

@@ -91,6 +91,7 @@ impl CopyFile {
         })
     }
 
+    #[cfg(not(feature = "single_threaded"))]
     #[maybe_async]
     async fn _get_channel_to_jobs_map(
         &self,
@@ -129,9 +130,17 @@ impl CopyFile {
             .map(|(&channel_id, _)| (Some(channel_id), L2R_R2L_PER_CHANNEL_WORKERS))
             .collect::<HashMap<Option<u32>, usize>>();
 
-        dbg!(&channels);
-
         Ok(channels)
+    }
+
+    #[cfg(feature = "single_threaded")]
+    fn _get_channel_to_jobs_map(
+        &self,
+        _to: &CopyFile,
+        _client: &Client,
+    ) -> smb::Result<HashMap<Option<u32>, usize>> {
+        // Well, it's ignored anyway. We keep it just to be consistent.
+        Ok(HashMap::from([(None, 1)]))
     }
 
     #[maybe_async]
@@ -191,7 +200,7 @@ impl CopyFile {
     pub fn do_copy<F: ReadAtChannel + GetLen, T: WriteAtChannel + SetLen>(
         from: F,
         to: T,
-        _jobs: usize,
+        _channels: HashMap<Option<u32>, usize>,
     ) -> smb::Result<()> {
         let progress = Self::make_progress_bar(from.get_len()?);
         block_copy_progress(

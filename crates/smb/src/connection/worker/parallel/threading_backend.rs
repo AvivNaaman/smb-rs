@@ -1,11 +1,7 @@
 #![cfg(feature = "multi_threaded")]
 
-use crate::util::IoVec;
-use crate::{
-    connection::transport::{SmbTransport, SmbTransportRead, SmbTransportWrite},
-    error::*,
-    sync_helpers::*,
-};
+use crate::{error::*, sync_helpers::*};
+use smb_transport::{IoVec, SmbTransport, SmbTransportRead, SmbTransportWrite, TransportError};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
@@ -36,19 +32,18 @@ impl ThreadingBackend {
         while !self.is_cancelled() {
             let next = rtransport.receive();
             // Handle polling fail
-            if let Err(Error::IoError(ref e)) = next {
+            if let Err(TransportError::IoError(ref e)) = next {
                 if e.kind() == std::io::ErrorKind::WouldBlock {
                     continue;
                 }
             }
             match self.worker.incoming_data_callback(next) {
                 Ok(_) => {}
-                Err(Error::NotConnected) => {
-                    if self.is_cancelled() {
-                        log::info!("Connection closed.");
-                    } else {
-                        log::error!("Connection closed.");
-                    }
+                Err(Error::TransportError(TransportError::NotConnected)) => {
+                    log::error!("Connection closed.");
+                    break;
+                }
+                Err(Error::ConnectionStopped) => {
                     break;
                 }
                 Err(e) => {
@@ -67,12 +62,11 @@ impl ThreadingBackend {
         loop {
             match self.loop_send_next(send_channel.recv(), wtransport.as_mut()) {
                 Ok(_) => {}
-                Err(Error::NotConnected) => {
-                    if self.is_cancelled() {
-                        log::info!("Connection closed.");
-                    } else {
-                        log::error!("Connection closed!");
-                    }
+                Err(Error::TransportError(TransportError::NotConnected)) => {
+                    log::error!("Connection closed.");
+                    break;
+                }
+                Err(Error::ConnectionStopped) => {
                     break;
                 }
                 Err(e) => {
@@ -145,7 +139,7 @@ impl MultiWorkerBackend for ThreadingBackend {
             .lock()
             .unwrap()
             .take()
-            .ok_or(Error::NotConnected)?;
+            .ok_or(Error::ConnectionStopped)?;
 
         // wake up the sender to stop the loop.
         self.worker.sender.send(None).unwrap();

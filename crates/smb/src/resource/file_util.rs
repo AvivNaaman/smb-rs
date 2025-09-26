@@ -423,9 +423,8 @@ mod copy {
         let from = Arc::new(from);
 
         let mut handles = JoinSet::new();
-        for (channel_id, jobs) in state.channel_jobs.iter() {
-            let channel_id = *channel_id;
-            for task_id in 0..*jobs {
+        for (&channel_id, &jobs) in state.channel_jobs.iter() {
+            for task_id in 0..jobs {
                 let from = from.clone();
                 let to = to.clone();
                 let state = state.clone();
@@ -455,8 +454,7 @@ mod copy {
         let to = Arc::new(to);
 
         let mut handles = Vec::new();
-        for (channel_id, jobs) in state.channel_jobs.iter() {
-            let channel_id = *channel_id;
+        for (&channel_id, &jobs) in state.channel_jobs.iter() {
             for task_id in 0..jobs {
                 let from = from.clone();
                 let to = to.clone();

@@ -69,12 +69,6 @@ impl SessionAlgosFactory {
         preauth_hash: &Option<PreauthHashValue>,
         info: &ConnectionInfo,
     ) -> crate::Result<ChannelAlgos> {
-        if !info.negotiation.dialect_rev.is_smb3() {
-            return Err(crate::Error::InvalidState(
-                "Channels are only supported in SMB3+ dialects.".to_string(),
-            ));
-        }
-
         let deriver = KeyDeriver::new(channel_session_key);
         let signer = if info.negotiation.dialect_rev.is_smb3() {
             Self::smb3xx_make_signer(

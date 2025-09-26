@@ -28,9 +28,6 @@ pub trait Worker: Sized + std::fmt::Debug {
     /// Stops the worker, shutting down the connection.
     async fn stop(&self) -> crate::Result<()>;
 
-    /// Sets the timeout for the worker.
-    async fn set_timeout(&self, timeout: Duration) -> crate::Result<()>;
-
     async fn send(&self, msg: OutgoingMessage) -> crate::Result<SendMessageResult>;
 
     /// (Internal)

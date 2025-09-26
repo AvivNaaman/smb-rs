@@ -8,8 +8,6 @@ use smb_msg::{Command, ErrorResponse, NegotiateDialect, Status};
 
 #[derive(Debug)]
 pub enum TimedOutTask {
-    TcpConnect,
-    QuicConnect,
     ReceiveNextMessage,
 }
 

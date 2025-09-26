@@ -21,7 +21,7 @@ pub use tokio_util::sync::CancellationToken;
 use std::sync::LockResult;
 
 // for convenience
-pub use maybe_async::*;
+pub use maybe_async::maybe_async;
 pub use std::sync::{Arc, Weak};
 
 /// A wrapper for [tokio::sync::RwLock] that mocks the behavior of [std::sync::RwLock].

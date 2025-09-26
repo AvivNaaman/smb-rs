@@ -6,14 +6,14 @@ use std::time::Duration;
 
 use common::{TestConstants, TestEnv, make_server_connection};
 use serial_test::serial;
-use smb::error::TimedOutTask;
-use smb::{Client, ClientConfig, UncPath, transport::TransportConfig};
+use smb::{Client, ClientConfig, UncPath};
 use smb::{ConnectionConfig, FileCreateArgs};
 use smb_fscc::FileDispositionInformation;
 use smb_msg::Status;
+use smb_transport::{TransportConfig, TransportError};
 
 #[maybe_async::maybe_async]
-async fn do_test_basic_integration(
+async fn _do_minimal_connection_test(
     conn_config: Option<ConnectionConfig>,
     share: Option<&str>,
 ) -> smb::Result<()> {
@@ -35,26 +35,15 @@ async fn do_test_basic_integration(
     Ok(())
 }
 
-#[test_log::test(maybe_async::test(
-    not(feature = "async"),
-    async(feature = "async", tokio::test(flavor = "multi_thread"))
-))]
-#[serial]
-async fn test_basic_integration() -> Result<(), Box<dyn std::error::Error>> {
-    Ok(do_test_basic_integration(None, None).await?)
-}
-
-#[test_log::test(maybe_async::test(
-    not(feature = "async"),
-    async(feature = "async", tokio::test(flavor = "multi_thread"))
-))]
-#[serial]
-async fn test_basic_netbios() -> Result<(), Box<dyn std::error::Error>> {
+#[maybe_async::maybe_async]
+async fn _test_basic_integration(
+    transport: TransportConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
     let conn_config = ConnectionConfig {
-        transport: TransportConfig::NetBios,
+        transport,
         ..Default::default()
     };
-    Ok(do_test_basic_integration(Some(conn_config), None).await?)
+    Ok(_do_minimal_connection_test(Some(conn_config), None).await?)
 }
 
 #[test_log::test(maybe_async::test(
@@ -68,7 +57,7 @@ async fn test_basic_guest() -> smb::Result<()> {
             (TestEnv::USER, Some(TestEnv::GUEST_USER.to_string())),
             (TestEnv::PASSWORD, Some(TestEnv::GUEST_PASSWORD.to_string())),
         ],
-        do_test_basic_integration(
+        _do_minimal_connection_test(
             ConnectionConfig {
                 allow_unsigned_guest_access: true,
                 ..Default::default()
@@ -96,7 +85,7 @@ async fn test_basic_auth_fail() -> smb::Result<()> {
 
 #[maybe_async::maybe_async]
 async fn do_test_basic_auth_fail() -> smb::Result<()> {
-    let res = do_test_basic_integration(None, None).await.unwrap_err();
+    let res = _do_minimal_connection_test(None, None).await.unwrap_err();
     match res {
         smb::Error::UnexpectedMessageStatus(status) => {
             assert_eq!(status, Status::LogonFailure as u32);
@@ -106,24 +95,23 @@ async fn do_test_basic_auth_fail() -> smb::Result<()> {
     smb::Result::Ok(())
 }
 
-#[test_log::test(maybe_async::test(
-    not(feature = "async"),
-    async(feature = "async", tokio::test(flavor = "multi_thread"))
-))]
-#[serial]
-async fn test_connection_timeout_fail() -> Result<(), Box<dyn std::error::Error>> {
+#[maybe_async::maybe_async]
+async fn _test_connection_timeout_fail(
+    transport_config: TransportConfig,
+) -> Result<(), Box<dyn std::error::Error>> {
     use std::time::Instant;
 
     const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
     let client = Client::new(ClientConfig {
         connection: ConnectionConfig {
             timeout: Some(CONNECT_TIMEOUT),
+            transport: transport_config,
             ..Default::default()
         },
         ..Default::default()
     });
 
-    const UNRESPONSIVE_SMB_HOST: &str = "8.8.8.8";
+    const UNRESPONSIVE_SMB_HOST: &str = "8.8.8.8"; // unless Google decide they like Microsoft...
     let time_before = Instant::now();
     let share_connect_result = client
         .share_connect(
@@ -137,10 +125,9 @@ async fn test_connection_timeout_fail() -> Result<(), Box<dyn std::error::Error>
 
     if !matches!(
         share_connect_result,
-        Err(smb::Error::OperationTimeout(
-            TimedOutTask::TcpConnect,
+        Err(smb::Error::TransportError(TransportError::Timeout(
             CONNECT_TIMEOUT
-        ))
+        )))
     ) {
         return Err(format!(
             "Expected OperationTimeout error, got {:?}!",
@@ -164,3 +151,35 @@ async fn test_connection_timeout_fail() -> Result<(), Box<dyn std::error::Error>
 
     Ok(())
 }
+
+/// Generates tests for different transport configurations.
+macro_rules! test_transport {
+    (
+        $($transport_config:ty,)+
+    ) => {
+            $(
+                paste::paste!{
+#[test_log::test(maybe_async::test(
+    not(feature = "async"),
+    async(feature = "async", tokio::test(flavor = "multi_thread"))
+))]
+#[serial]
+async fn [<test_basic_integration_ $transport_config:lower>]() -> Result<(), Box<dyn std::error::Error>> {
+    _test_basic_integration(TransportConfig::$transport_config).await
+}
+
+#[test_log::test(maybe_async::test(
+    not(feature = "async"),
+    async(feature = "async", tokio::test(flavor = "multi_thread"))
+))]
+#[serial]
+async fn [<test_connection_timeout_fail_ $transport_config:lower>]() -> Result<(), Box<dyn std::error::Error>> {
+    _test_connection_timeout_fail(TransportConfig::$transport_config).await
+}
+
+            }
+        )+
+    };
+}
+
+test_transport!(Tcp, NetBios,);

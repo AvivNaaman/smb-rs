@@ -340,7 +340,7 @@ impl Seek for File {
 #[cfg(not(feature = "async"))]
 impl Read for File {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let read_length = File::read_block(self, buf, self.pos, false)
+        let read_length = File::read_block(self, buf, self.pos, None, false)
             .map_err(|e| std::io::Error::other(e.to_string()))?;
         self.pos += read_length as u64;
         Ok(read_length)
@@ -350,7 +350,7 @@ impl Read for File {
 #[cfg(not(feature = "async"))]
 impl Write for File {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let written_length = File::write_block(self, buf, self.pos)?;
+        let written_length = File::write_block(self, buf, self.pos, None)?;
         self.pos += written_length as u64;
         self.dirty = true;
         Ok(written_length)
