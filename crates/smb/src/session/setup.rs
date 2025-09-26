@@ -175,6 +175,7 @@ where
 
         self.handler = Some(ChannelMessageHandler::new(
             session_id,
+            u32::MAX,
             false, // prevent logoff once this ref is dropped.
             self.upstream,
             &session,

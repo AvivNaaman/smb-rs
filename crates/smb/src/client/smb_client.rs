@@ -87,8 +87,9 @@ struct ClientConnectionInfo {
 
 struct ClientSessionInfo {
     session: Arc<Session>,
+    primary_channel: u32,
     /// alternate channels established for this session
-    session_channels: Option<HashMap<u32, Arc<Connection>>>,
+    session_alt_channels: Option<HashMap<u32, Arc<Connection>>>,
 }
 
 struct ClientConectedTree {
@@ -105,6 +106,10 @@ impl Client {
             connections: Default::default(),
             share_connects: Default::default(),
         }
+    }
+
+    pub fn config(&self) -> &ClientConfig {
+        &self.config
     }
 
     /// Shuts down the client, and all its managed connections.
@@ -194,11 +199,11 @@ impl Client {
                 .sessions
                 .get(&session.session_id())
                 .expect("session info not found, but tree has just been created");
-            if session_info.session_channels.is_none() {
+            if session_info.session_alt_channels.is_none() {
                 f.sessions
                     .get_mut(&session.session_id())
                     .unwrap()
-                    .session_channels = mchannel_map;
+                    .session_alt_channels = mchannel_map;
             }
             Ok(())
         })
@@ -221,7 +226,7 @@ impl Client {
 
         let target = target.clone().with_no_path();
 
-        let already_connected = self._with_tree(&target, |tree| Ok(())).await;
+        let already_connected = self._with_tree(&target, |_| Ok(())).await;
         if already_connected.is_ok() {
             log::debug!(
                 "Share {} is already connected. Ignoring duplicate connection attempt.",
@@ -246,7 +251,8 @@ impl Client {
                     session.session_id(),
                     ClientSessionInfo {
                         session: session.clone(),
-                        session_channels: None,
+                        primary_channel: session.channel_id(),
+                        session_alt_channels: None,
                     },
                 );
                 Ok(())
@@ -404,6 +410,43 @@ impl Client {
     #[maybe_async]
     pub async fn get_session(&self, path: &UncPath) -> crate::Result<Arc<Session>> {
         self._with_tree(path, |tree| Ok(tree.session.clone())).await
+    }
+
+    /// Returns a map of channel IDs to their corresponding connections for the specified session,
+    #[maybe_async]
+    pub async fn get_channels(
+        &self,
+        path: &UncPath,
+    ) -> crate::Result<HashMap<u32, Arc<Connection>>> {
+        let session = self.get_session(path).await?;
+        let channels = self
+            ._with_connection(path.server(), |c| {
+                let session_info = c.sessions.get(&session.session_id());
+                session_info.ok_or_else(|| {
+                    Error::NotFound(format!(
+                        "No session found for session ID: {}",
+                        session.session_id()
+                    ))
+                })?;
+
+                let session_info = session_info.unwrap();
+
+                let mut alt_channels = session_info
+                    .session_alt_channels
+                    .as_ref()
+                    .map(|m| {
+                        m.iter()
+                            .map(|(k, v)| (*k, v.clone()))
+                            .collect::<HashMap<u32, Arc<Connection>>>()
+                    })
+                    .unwrap_or_default();
+
+                alt_channels.insert(session.channel_id(), c.connection.clone());
+                Ok(alt_channels)
+            })
+            .await?;
+
+        Ok(channels)
     }
 
     /// Returns the underlying [`Tree`] for the specified UNC path,

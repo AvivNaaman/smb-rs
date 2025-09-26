@@ -3,20 +3,21 @@
 //! This module contains the session setup logic, as well as the session message handling,
 //! including encryption and signing of messages.
 
+use crate::UncPath;
 use crate::connection::connection_info::ConnectionInfo;
 use crate::connection::preauth_hash::{PreauthHashState, PreauthHashValue};
 use crate::connection::worker::Worker;
-use crate::{UncPath, smb_common_imports};
 use crate::{
+    Error,
     connection::ConnectionMessageHandler,
     crypto::KeyToDerive,
     msg_handler::{
         HandlerReference, IncomingMessage, MessageHandler, OutgoingMessage, ReceiveOptions,
         SendMessageResult,
     },
+    sync_helpers::*,
     tree::Tree,
 };
-smb_common_imports!();
 use smb_msg::{Notification, ResponseContent, Status, session_setup::*};
 use smb_transport::IoVec;
 use std::collections::HashMap;
@@ -49,6 +50,8 @@ pub struct Session {
 }
 
 pub struct Channel {
+    channel_id: u32,
+
     pub(crate) handler: HandlerReference<ChannelMessageHandler>,
     conn_info: Arc<ConnectionInfo>,
 }
@@ -67,18 +70,17 @@ impl Session {
         let setup_result =
             SessionSetup::<SmbSessionNew>::new(identity, upstream, conn_info, None).await?;
 
-        let primary_channel = Self::_common_setup(setup_result).await?;
+        const FIRST_CHANNEL_ID: u32 = 0;
+        let primary_channel = Self::_common_setup(setup_result, FIRST_CHANNEL_ID).await?;
 
-        let handler = HandlerReference::new(SessionMessageHandler::new(
-            primary_channel.session_id(),
-            primary_channel.handler.clone(),
-        ));
+        let handler =
+            HandlerReference::new(SessionMessageHandler::new(primary_channel.handler.clone()));
 
         Ok(Session {
             session_handler: handler,
             primary_channel,
             alt_channels: Default::default(),
-            channel_counter: AtomicU32::new(0),
+            channel_counter: AtomicU32::new(FIRST_CHANNEL_ID + 1),
         })
     }
 
@@ -126,11 +128,12 @@ impl Session {
         )
         .await?;
 
-        let channel = Self::_common_setup(setup_result).await?;
-
         let internal_channel_id = self
             .channel_counter
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+        let channel = Self::_common_setup(setup_result, internal_channel_id).await?;
+
         self.alt_channels
             .write()
             .await?
@@ -150,7 +153,10 @@ impl Session {
         Ok(internal_channel_id)
     }
 
-    async fn _common_setup<T>(mut session_setup: SessionSetup<'_, T>) -> crate::Result<Channel>
+    async fn _common_setup<T>(
+        mut session_setup: SessionSetup<'_, T>,
+        channel_id: u32,
+    ) -> crate::Result<Channel>
     where
         T: SessionSetupProperties,
     {
@@ -165,11 +171,17 @@ impl Session {
 
             session.id()
         };
-        let handler =
-            ChannelMessageHandler::new(session_id, true, session_setup.upstream(), &setup_result);
+        let handler = ChannelMessageHandler::new(
+            session_id,
+            channel_id,
+            true,
+            session_setup.upstream(),
+            &setup_result,
+        );
 
         let channel = Channel {
             handler,
+            channel_id,
             conn_info: session_setup.conn_info().clone(),
         };
 
@@ -213,6 +225,11 @@ impl Channel {
     pub fn session_id(&self) -> u64 {
         self.handler.session_id()
     }
+
+    #[inline]
+    pub fn channel_id(&self) -> u32 {
+        self.channel_id
+    }
 }
 
 #[derive(Clone)]
@@ -240,16 +257,21 @@ impl SessionAndChannel {
 pub(crate) struct SessionMessageHandler {
     session_id: u64,
     // this is used to speed up access to the primary channel handler.
+    primary_channel_id: u32,
     primary_channel: HandlerReference<ChannelMessageHandler>,
+
     channel_handlers: RwLock<HashMap<u32, HandlerReference<ChannelMessageHandler>>>,
 }
 
 impl SessionMessageHandler {
-    pub fn new(session_id: u64, primary_channel: HandlerReference<ChannelMessageHandler>) -> Self {
+    pub fn new(primary_channel: HandlerReference<ChannelMessageHandler>) -> Self {
+        let session_id = primary_channel.session_id();
+        let primary_channel_id = primary_channel.channel_id();
         Self {
             session_id,
-            primary_channel,
-            channel_handlers: RwLock::new(HashMap::new()),
+            primary_channel_id,
+            primary_channel: primary_channel.clone(),
+            channel_handlers: RwLock::new(HashMap::from([(primary_channel_id, primary_channel)])),
         }
     }
 }

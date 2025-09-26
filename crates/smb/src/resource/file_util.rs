@@ -215,7 +215,10 @@ pub use impls::*;
 mod copy {
     use super::*;
 
-    use std::sync::{Arc, atomic::AtomicU64};
+    use std::{
+        collections::HashMap,
+        sync::{Arc, atomic::AtomicU64},
+    };
 
     #[derive(Debug)]
     pub struct CopyState {
@@ -225,7 +228,7 @@ mod copy {
         total_size: u64,
 
         max_chunk_size: u64,
-        num_jobs: usize,
+        channel_jobs: HashMap<Option<u32>, usize>,
     }
 
     impl CopyState {
@@ -254,8 +257,8 @@ mod copy {
         }
 
         /// Returns the number of parallel jobs being used for the copy operation.
-        pub fn num_jobs(&self) -> usize {
-            self.num_jobs
+        pub fn num_total_jobs(&self) -> usize {
+            self.channel_jobs.values().sum()
         }
     }
 
@@ -273,6 +276,8 @@ mod copy {
     /// # Notes
     /// - To report progress, use the [`prepare_parallel_copy`] function to get a `CopyState`, and then
     ///   use that to report progress while the copy is running.
+    /// - This function performs operations against the default chanel of the connection.
+    ///   To specify the number of jobs per channel, use the [`block_copy_channel`] function instead.
     #[maybe_async]
     pub async fn block_copy<
         F: ReadAtChannel + GetLen + Send + Sync + 'static,
@@ -282,7 +287,43 @@ mod copy {
         to: T,
         jobs: usize,
     ) -> crate::Result<()> {
-        let copy_state = prepare_parallel_copy(&from, &to, jobs).await?;
+        let copy_state = prepare_parallel_copy(&from, &to, HashMap::from([(None, jobs)])).await?;
+
+        log::debug!("Starting parallel copy: {copy_state:?}",);
+        start_parallel_copy(from, to, Arc::new(copy_state)).await?;
+
+        Ok(())
+    }
+
+    /// Generic block copy function with channel support.
+    ///
+    /// # Parameters
+    /// - `from`: The source to read from. Must implement `ReadAtChannel` and `GetLen`.
+    /// - `to`: The destination to write to. Must implement `WriteAtChannel` and `SetLen`.
+    /// - `channel_jobs`: A map of channel IDs to the number of jobs to use for each channel.
+    ///
+    /// # Returns
+    /// - `Ok(())` if the copy was successful.
+    /// - `Err(crate::Error)` if an error occurred.
+    ///
+    /// # Notes
+    /// - To report progress, use the [`prepare_parallel_copy`] function to get a `CopyState`, and then
+    ///   use that to report progress while the copy is running.
+    #[maybe_async]
+    pub async fn block_copy_channel<
+        F: ReadAtChannel + GetLen + Send + Sync + 'static,
+        T: WriteAtChannel + SetLen + Send + Sync + 'static,
+    >(
+        from: F,
+        to: T,
+        channel_jobs: &HashMap<u32, usize>,
+    ) -> crate::Result<()> {
+        let channel_jobs = channel_jobs
+            .iter()
+            .map(|(&k, &v)| (Some(k), v))
+            .collect::<HashMap<_, _>>();
+
+        let copy_state = prepare_parallel_copy(&from, &to, channel_jobs).await?;
 
         log::debug!("Starting parallel copy: {copy_state:?}",);
         start_parallel_copy(from, to, Arc::new(copy_state)).await?;
@@ -296,7 +337,15 @@ mod copy {
     ///
     /// this is mostly useful for cases that require an additional interaction with the
     /// state, beyond the copy workers themselves - for example, reporting progress.
-    /// if you don't need that, just use the [`block_copy`] function directly.
+    /// if you don't need that, just use the [`block_copy`] or [`block_copy_channel`] functions.
+    ///
+    /// # Parameters
+    /// - `from`: The source to read from. Must implement `ReadAtChannel` and `GetLen`.
+    /// - `to`: The destination to write to. Must implement `WriteAtChannel` and `SetLen`.
+    /// - `channel_jobs`: A map of channel IDs to the number of jobs to use for each channel.
+    ///  Use `None` as the key for the default channel. The total number of jobs will be the sum of all values in the map.
+    ///  If the map is empty, a default value will be used. Setting both None and Some values is allowed, and the default channel
+    /// will use the total number of jobs specified for it. If any channel is specified with 0 jobs, it will use the default number of jobs.
     #[maybe_async]
     pub async fn prepare_parallel_copy<
         F: ReadAtChannel + GetLen + Send + Sync + 'static,
@@ -304,22 +353,30 @@ mod copy {
     >(
         from: &F,
         to: &T,
-        jobs: usize,
+        mut channel_jobs: HashMap<Option<u32>, usize>,
     ) -> crate::Result<CopyState> {
-        const MAX_JOBS: usize = 128;
-        if jobs > MAX_JOBS {
-            return Err(crate::Error::InvalidArgument(format!(
-                "Number of jobs exceeds maximum allowed ({MAX_JOBS})"
-            )));
+        const MAX_JOBS_PER_CHANNEL: usize = 128;
+        const AUTO_JOBS: usize = 16;
+        const AUTO_JOB_INDICATOR: usize = 0;
+        for (&channel, jobs) in channel_jobs.iter_mut() {
+            if *jobs > MAX_JOBS_PER_CHANNEL {
+                return Err(crate::Error::InvalidArgument(format!(
+                    "Number of jobs for channel {channel:?} exceeds maximum allowed (128)"
+                )));
+            }
+
+            if *jobs == AUTO_JOB_INDICATOR {
+                log::debug!("No jobs specified for channel {channel:?}, using default: 16",);
+                *jobs = AUTO_JOBS;
+            }
         }
 
-        const DEFAULT_JOBS: usize = 16;
-        let jobs = if jobs == 0 {
-            log::debug!("No jobs specified, using default: {DEFAULT_JOBS}",);
-            DEFAULT_JOBS
-        } else {
-            jobs
-        };
+        const MAX_TOTAL_JOBS: usize = 512;
+        if channel_jobs.values().sum::<usize>() > MAX_TOTAL_JOBS {
+            return Err(crate::Error::InvalidArgument(format!(
+                "Total number of jobs exceeds maximum allowed ({MAX_TOTAL_JOBS})"
+            )));
+        }
 
         const CHUNK_SIZE: u64 = 2u64.pow(16);
 
@@ -333,7 +390,7 @@ mod copy {
                 last_block: 0,
                 total_size: 0,
                 max_chunk_size: CHUNK_SIZE,
-                num_jobs: jobs,
+                channel_jobs,
             });
         }
 
@@ -342,7 +399,7 @@ mod copy {
             last_block: file_length / CHUNK_SIZE,
             total_size: file_length,
             max_chunk_size: CHUNK_SIZE,
-            num_jobs: jobs,
+            channel_jobs,
         })
     }
 
@@ -366,11 +423,16 @@ mod copy {
         let from = Arc::new(from);
 
         let mut handles = JoinSet::new();
-        for task_id in 0..state.num_jobs {
-            let from = from.clone();
-            let to = to.clone();
-            let state = state.clone();
-            handles.spawn(async move { block_copy_task(from, to, state, task_id).await });
+        for (channel_id, jobs) in state.channel_jobs.iter() {
+            let channel_id = *channel_id;
+            for task_id in 0..*jobs {
+                let from = from.clone();
+                let to = to.clone();
+                let state = state.clone();
+                handles.spawn(async move {
+                    block_copy_task(from, to, state, task_id, channel_id).await
+                });
+            }
         }
 
         handles.join_all().await;
@@ -393,13 +455,17 @@ mod copy {
         let to = Arc::new(to);
 
         let mut handles = Vec::new();
-        for task_id in 0..state.num_jobs {
-            let from = from.clone();
-            let to = to.clone();
-            let state = state.clone();
-            let handle =
-                std::thread::spawn(move || block_copy_task(from.clone(), to, state, task_id));
-            handles.push(handle);
+        for (channel_id, jobs) in state.channel_jobs.iter() {
+            let channel_id = *channel_id;
+            for task_id in 0..jobs {
+                let from = from.clone();
+                let to = to.clone();
+                let state = state.clone();
+                let handle = std::thread::spawn(move || {
+                    block_copy_task(from.clone(), to, state, task_id, channel_id)
+                });
+                handles.push(handle);
+            }
         }
 
         for handle in handles {
@@ -418,8 +484,9 @@ mod copy {
         to: Arc<T>,
         state: Arc<CopyState>,
         task_id: usize,
+        channel_id: Option<u32>,
     ) -> crate::Result<()> {
-        log::debug!("Starting copy task {task_id}",);
+        log::debug!("Starting copy task {task_id} of channel {channel_id:?}",);
 
         let mut curr_chunk = vec![0u8; state.max_chunk_size as usize];
 
@@ -441,16 +508,19 @@ mod copy {
             } as usize;
 
             let offset = current_block * state.max_chunk_size;
-            let bytes_read = from.read_at(&mut curr_chunk[..chunk_size], offset).await?;
+            let bytes_read = from
+                .read_at_channel(&mut curr_chunk[..chunk_size], offset, channel_id)
+                .await?;
             if bytes_read < chunk_size {
                 log::warn!(
-                    "Task {task_id}: Read less bytes than expected. File might be corrupt. Expected: {chunk_size}, Read: {bytes_read}"
+                    "Task {task_id}@{channel_id:?}: Read less bytes than expected. File might be corrupt. Expected: {chunk_size}, Read: {bytes_read}"
                 );
             }
             let valid_chunk_end = bytes_read;
-            to.write_at(&curr_chunk[..valid_chunk_end], offset).await?;
+            to.write_at_channel(&curr_chunk[..valid_chunk_end], offset, channel_id)
+                .await?;
         }
-        log::debug!("Copy task {task_id} completed",);
+        log::debug!("Copy task {task_id}@{channel_id:?} completed",);
         Ok(())
     }
 }

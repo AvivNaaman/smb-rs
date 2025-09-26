@@ -6,6 +6,7 @@ use super::*;
 /// as "theirselves", but rather, through a channel.
 pub struct ChannelMessageHandler {
     session_id: u64,
+    channel_id: u32,
     upstream: Upstream,
     /// indicates whether dropping this handler should logoff the session.
     owns: bool,
@@ -18,12 +19,14 @@ pub struct ChannelMessageHandler {
 impl ChannelMessageHandler {
     pub(crate) fn new(
         session_id: u64,
+        channel_id: u32,
         is_primary: bool,
         upstream: &Upstream,
         setup_result: &Arc<Mutex<SessionAndChannel>>,
     ) -> HandlerReference<ChannelMessageHandler> {
         HandlerReference::new(ChannelMessageHandler {
             session_id,
+            channel_id,
             owns: is_primary,
             upstream: upstream.clone(),
             session_state: setup_result.clone(),
@@ -167,6 +170,10 @@ impl ChannelMessageHandler {
         self.session_id
     }
 
+    pub fn channel_id(&self) -> u32 {
+        self.channel_id
+    }
+
     pub fn session_state(&self) -> &Arc<Mutex<SessionAndChannel>> {
         &self.session_state
     }
@@ -268,9 +275,12 @@ impl Drop for ChannelMessageHandler {
         let is_primary = self.owns;
         let upstream = self.upstream.clone();
         let session_state = self.session_state.clone();
+
+        // TODO: This should be put back in Session....
         tokio::task::spawn(async move {
             let temp_handler = ChannelMessageHandler {
                 session_id,
+                channel_id: 0, // not used
                 owns: is_primary,
                 upstream,
                 session_state,

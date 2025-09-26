@@ -21,14 +21,3 @@ pub const fn parse_byte(b: &[u8], i: usize) -> Result<u8, &'static str> {
     };
     Ok((lower_byte << 4) | upper_byte)
 }
-
-// TODO: Use this everywhere
-/// A utility macro to import all the necessary binrw and bitfield traits and macros.
-#[macro_export]
-macro_rules! common_brw_imports {
-    () => {
-        use binrw::prelude::*;
-        use modular_bitfield::prelude::*;
-        use $crate::binrw_util::prelude::*;
-    };
-}

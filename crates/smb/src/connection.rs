@@ -4,13 +4,12 @@ pub mod preauth_hash;
 pub mod transformer;
 pub mod worker;
 
-use crate::smb_common_imports;
-smb_common_imports!();
 use crate::compression;
 use crate::connection::preauth_hash::PreauthHashState;
 use crate::dialects::DialectImpl;
 use crate::session::ChannelMessageHandler;
-use crate::{crypto, msg_handler::*, session::Session};
+use crate::sync_helpers::*;
+use crate::{Error, crypto, msg_handler::*, session::Session};
 use binrw::prelude::*;
 pub use config::*;
 use connection_info::{ConnectionInfo, NegotiatedProperties};

@@ -49,16 +49,3 @@ pub type Result<T> = std::result::Result<T, crate::Error>;
 
 // Re-exports of some dependencies for convenience
 pub mod sync_helpers;
-
-pub use smb_dtyp::common_brw_imports;
-
-/// Some misc imports that are commonly used in the crate.
-#[macro_export]
-macro_rules! smb_common_imports {
-    () => {
-        use $crate::common_brw_imports;
-        common_brw_imports!();
-        use $crate::Error;
-        use $crate::sync_helpers::*;
-    };
-}
