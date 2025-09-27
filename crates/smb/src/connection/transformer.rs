@@ -276,6 +276,7 @@ impl Transformer {
                     Ok(decryptor.clone())
                 })
                 .await?;
+            form.encrypted = true;
             decryptor.decrypt_message(encrypted_message)?
         } else {
             (message, data)

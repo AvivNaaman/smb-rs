@@ -155,7 +155,7 @@ impl Connection {
     /// # async fn main() -> Result<()> {
     /// let custom_tcp_transport = Box::new(TcpTransport::new(Duration::from_millis(10))); // you may also implement you own transport!
     /// let my_connection_config = ConnectionConfig { ..Default::default() };
-    /// let connection = Connection::from_transport(custom_tcp_transport, "server", my_connection_config).await?;
+    /// let connection = Connection::from_transport(custom_tcp_transport, "server", Guid::generate(), my_connection_config).await?;
     /// # Ok(())}
     /// ```
     #[maybe_async]
