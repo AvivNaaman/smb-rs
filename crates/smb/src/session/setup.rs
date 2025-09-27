@@ -103,7 +103,7 @@ where
     ///
     /// Performs the session setup negotiation.
     ///
-    /// this function loops until the authentication is complete, requesting GSS tokens
+    /// This function loops until the authentication is complete, requesting GSS tokens
     /// and passing them to the server.
     async fn _setup_loop(&mut self) -> crate::Result<()> {
         // While there's a response to process, do so.

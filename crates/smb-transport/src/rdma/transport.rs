@@ -322,7 +322,9 @@ impl RdmaTransport {
         let mut fragment_num = 0;
 
         let mut buf_iterator = message.iter();
-        let mut current_buf = buf_iterator.next().unwrap();
+        let mut current_buf = buf_iterator
+            .next("Some data to send, but no buffers")
+            .unwrap();
         let mut current_buf_offset = 0usize;
         while data_sent < total_data_to_send {
             /// The offset must be 8-byte aligned.
@@ -330,10 +332,12 @@ impl RdmaTransport {
                 .div_ceil(SmbdDataTransferHeader::DATA_ALIGNMENT)
                 * SmbdDataTransferHeader::DATA_ALIGNMENT;
 
-            let remaining = total_data_to_send - data_sent;
+            let remaining = current_buf.len() - data_sent;
             let data_sending = remaining.min(running.max_rw_size - OFFSET);
             if data_sending == 0 {
-                current_buf = buf_iterator.next().unwrap();
+                current_buf = buf_iterator
+                    .next()
+                    .except("More data to send, but no more buffers")?;
                 current_buf_offset = 0;
                 continue;
             }

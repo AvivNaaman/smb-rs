@@ -111,7 +111,7 @@ async fn _test_connection_timeout_fail(
         ..Default::default()
     });
 
-    const UNRESPONSIVE_SMB_HOST: &str = "8.8.8.8"; // unless Google decide they like Microsoft...
+    const UNRESPONSIVE_SMB_HOST: &str = "8.8.8.8"; // unless Google decides they like Microsoft...
     let time_before = Instant::now();
     let share_connect_result = client
         .share_connect(

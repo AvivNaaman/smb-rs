@@ -24,12 +24,12 @@ impl<'a> IpcTreeRef<'a> {
             ));
         }
 
-        const QUERY_NETOWKR_INTERFACE_MAX_OUTPUT: u32 = 2u32.pow(16);
+        const QUERY_NETWORK_INTERFACE_MAX_OUTPUT: u32 = 2u32.pow(16);
         let interface_info = self
             .tree
             .fsctl_with_options(
                 QueryNetworkInterfaceInfoRequest(()),
-                QUERY_NETOWKR_INTERFACE_MAX_OUTPUT,
+                QUERY_NETWORK_INTERFACE_MAX_OUTPUT,
             )
             .await?;
 
