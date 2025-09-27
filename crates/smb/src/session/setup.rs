@@ -172,7 +172,7 @@ where
         let result = SessionAndChannel::new(session_id, session);
         let session = Arc::new(RwLock::new(result));
 
-        let setup_handler = ChannelMessageHandler::make_for_setup(&session, self.upstream).await;
+        let setup_handler = ChannelMessageHandler::make_for_setup(&session, self.upstream).await?;
         self.handler = Some(setup_handler);
 
         self.upstream
@@ -180,8 +180,7 @@ where
             .ok_or_else(|| Error::InvalidState("Worker not available!".to_string()))
             .unwrap()
             .session_started(&session)
-            .await
-            .unwrap();
+            .await?;
 
         self.result = Some(session);
 
@@ -281,7 +280,9 @@ where
     }
 
     fn next_preauth_hash(&mut self, data: &IoVec) -> &PreauthHashState {
-        self.preauth_hash = Some(self.preauth_hash.take().unwrap().next(data));
+        if let Some(ref mut hash) = self.preauth_hash {
+            *hash = hash.clone().next(data);
+        }
         self.preauth_hash.as_ref().unwrap()
     }
 

@@ -355,9 +355,13 @@ mod copy {
         to: &T,
         mut channel_jobs: HashMap<Option<u32>, usize>,
     ) -> crate::Result<CopyState> {
+        const AUTO_JOB_INDICATOR: usize = 0;
+        if channel_jobs.is_empty() {
+            channel_jobs.insert(None, AUTO_JOB_INDICATOR); // default
+        }
+
         const MAX_JOBS_PER_CHANNEL: usize = 128;
         const AUTO_JOBS: usize = 16;
-        const AUTO_JOB_INDICATOR: usize = 0;
         for (&channel, jobs) in channel_jobs.iter_mut() {
             if *jobs > MAX_JOBS_PER_CHANNEL {
                 return Err(crate::Error::InvalidArgument(format!(

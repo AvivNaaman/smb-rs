@@ -4,7 +4,7 @@
 //! This struct wraps the value, and the offset, and provides a way to iterate over them.
 //! See [`ChainedItem<T>::write_chained`] to see how to write this type when in a list.
 //!
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
 use binrw::prelude::*;
 use smb_dtyp::binrw_util::prelude::*;
@@ -189,6 +189,17 @@ where
 
     fn deref(&self) -> &Self::Target {
         &self.values
+    }
+}
+
+impl<T, const OFFSET_PAD: u32> DerefMut for ChainedItemList<T, OFFSET_PAD>
+where
+    T: BinRead + BinWrite,
+    for<'a> <T as BinRead>::Args<'a>: Default,
+    for<'b> <T as BinWrite>::Args<'b>: Default,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.values
     }
 }
 

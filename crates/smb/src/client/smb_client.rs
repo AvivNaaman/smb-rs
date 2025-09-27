@@ -209,24 +209,31 @@ impl Client {
         self._share_connect(target, &identity).await?;
 
         // Establish an additional channel if multi-channel is enabled.
-        let mchannel_map = self._setup_multi_channel(target, &identity).await?;
+        let mchannel_map = self._setup_multi_channel(target, &identity).await;
 
-        let session = self.get_session(target).await?;
+        if let Ok(mchannel_map) = mchannel_map {
+            let session = self.get_session(target).await?;
 
-        self._with_connection(target.server(), |f| {
-            let session_info = f
-                .sessions
-                .get(&session.session_id())
-                .expect("session info not found, but tree has just been created");
-            if session_info.session_alt_channels.is_none() {
-                f.sessions
-                    .get_mut(&session.session_id())
-                    .unwrap()
-                    .session_alt_channels = mchannel_map;
-            }
-            Ok(())
-        })
-        .await?;
+            self._with_connection(target.server(), |f| {
+                let session_info = f
+                    .sessions
+                    .get(&session.session_id())
+                    .expect("session info not found, but tree has just been created");
+                if session_info.session_alt_channels.is_none() {
+                    f.sessions
+                        .get_mut(&session.session_id())
+                        .unwrap()
+                        .session_alt_channels = mchannel_map;
+                }
+                Ok(())
+            })
+            .await?;
+        } else {
+            log::warn!(
+                "Failed to establish multi-channel connections: {}",
+                mchannel_map.err().unwrap()
+            );
+        }
 
         Ok(())
     }

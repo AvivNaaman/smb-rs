@@ -41,7 +41,9 @@ pub fn make_transport(
         }
 
         #[cfg(feature = "rdma")]
-        TransportConfig::Rdma(_rdma_config) => Ok(Box::new(RdmaTransport::new(timeout))),
+        TransportConfig::Rdma(rdma_config) => {
+            Ok(Box::new(RdmaTransport::new(rdma_config, timeout)))
+        }
     }
 }
 

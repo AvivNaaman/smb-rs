@@ -13,7 +13,7 @@ pub enum TransportConfig {
     NetBios,
     #[cfg(feature = "quic")]
     /// Use SMB over QUIC transport protocol.
-    /// Note that this is only suported in dialects 3.1.1 and above.
+    /// Note that this is only supported in dialects 3.1.1 and above.
     Quic(QuicConfig),
 
     #[cfg(feature = "rdma")]

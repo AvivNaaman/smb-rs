@@ -26,6 +26,7 @@ services:
       SAMBA_GLOBAL_CONFIG_server_SPACE_multi_SPACE_channel_SPACE_support: "yes"
   dev:
     build:
+      context: .
       dockerfile: dev.Dockerfile
     environment:
       CARGO_TERM_COLOR: always

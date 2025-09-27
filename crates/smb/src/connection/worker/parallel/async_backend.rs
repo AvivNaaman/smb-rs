@@ -35,6 +35,7 @@ impl AsyncBackend {
                 Ok(_) => {}
                 Err(Error::TransportError(TransportError::NotConnected)) => {
                     log::error!("Connection was force-closed by the server.");
+                    self_ref.token.cancel();
                     break;
                 }
                 Err(Error::ConnectionStopped) => {
@@ -71,6 +72,7 @@ impl AsyncBackend {
                 Ok(_) => {}
                 Err(Error::TransportError(TransportError::NotConnected)) => {
                     log::error!("Connection was force-closed by the server.");
+                    self_ref.token.cancel();
                     break;
                 }
                 Err(Error::ConnectionStopped) => {

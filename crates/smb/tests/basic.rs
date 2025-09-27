@@ -183,3 +183,9 @@ async fn [<test_connection_timeout_fail_ $transport_config:lower>]() -> Result<(
 }
 
 test_transport!(Tcp, NetBios,);
+
+#[cfg(feature = "test-quic")]
+test_transport!(Quic,);
+
+#[cfg(feature = "test-rdma")]
+test_transport!(Rdma,);

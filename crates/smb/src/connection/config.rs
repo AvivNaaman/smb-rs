@@ -21,7 +21,7 @@ pub enum EncryptionMode {
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct MultiChannelConfig {
     /// Whether to enable multichannel support.
-    /// This is enabled by default.
+    /// This is disabled by default.
     pub enabled: bool,
 
     /// Specified configuration for possible RDMA transport.

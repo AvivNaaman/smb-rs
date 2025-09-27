@@ -22,7 +22,7 @@ impl Channel {
             let channel = setup_result
                 .channel
                 .as_ref()
-                .expect("Channel not set in setup result");
+                .ok_or_else(|| Error::InvalidState("Channel not set in setup result".into()))?;
             (session.id(), channel.id())
         };
         let handler = ChannelMessageHandler::new(session_id, channel_id, upstream, setup_result);
@@ -79,22 +79,14 @@ impl ChannelMessageHandler {
     pub(crate) async fn make_for_setup(
         setup_result: &Arc<RwLock<SessionAndChannel>>,
         upstream: &ChannelUpstream,
-    ) -> Self {
-        let session_id = setup_result
-            .read()
-            .await
-            .unwrap()
-            .session
-            .read()
-            .await
-            .unwrap()
-            .id();
-        Self {
+    ) -> crate::Result<Self> {
+        let session_id = setup_result.read().await?.session.read().await?.id();
+        Ok(Self {
             session_id,
             channel_id: u32::MAX,
             upstream: upstream.clone(),
             session_state: setup_result.clone(),
-        }
+        })
     }
 
     /// (Internal)
@@ -109,12 +101,14 @@ impl ChannelMessageHandler {
     /// An empty [`crate::Result`] if the message is valid, or an error if the message is invalid.
     #[maybe_async]
     async fn _verify_incoming(&self, incoming: &IncomingMessage) -> crate::Result<()> {
-        let session = self.session_state.read().await?;
-        let session = session.session.read().await?;
         // allow unsigned messages only if the session is anonymous or guest.
         // this is enforced against configuration when setting up the session.
-        let unsigned_allowed = session.allow_unsigned()?;
-        let encryption_required = session.is_ready() && session.should_encrypt()?;
+        let (unsigned_allowed, encryption_required) = {
+            let session = self.session_state.read().await?;
+            let session = session.session.read().await?;
+            let encryption_required = session.is_ready() && session.should_encrypt()?;
+            (session.allow_unsigned()?, encryption_required)
+        };
 
         // Make sure that it's our session.
         if incoming.message.header.session_id == 0 {
@@ -249,6 +243,7 @@ impl MessageHandler for ChannelMessageHandler {
         match &msg.message.content {
             ResponseContent::ServerToClientNotification(s2c_notification) => {
                 match s2c_notification.notification {
+                    // TODO: Move this to primary session
                     Notification::NotifySessionClosed(_) => self._invalidate().await,
                 }
             }

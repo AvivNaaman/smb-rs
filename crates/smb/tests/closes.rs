@@ -67,7 +67,7 @@ async fn test_conn_close() -> smb::Result<()> {
     async(feature = "async", tokio::test(flavor = "multi_thread"))
 ))]
 #[serial]
-async fn test_session_close() -> smb::Result<()> {
+async fn test_session_logoff() -> smb::Result<()> {
     let (_client, _connection, session, _tree, file) = _close_tests_helper().await?;
     session.logoff().await?;
 

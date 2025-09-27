@@ -133,22 +133,18 @@ impl Session {
         .await?;
 
         let channel = Self::_common_setup(setup_result).await?;
+        let channel_handler = channel.handler.clone();
 
         self.alt_channels
             .write()
             .await?
             .insert(new_channel_id, channel);
 
-        self.session_handler.channel_handlers.write().await?.insert(
-            new_channel_id,
-            self.alt_channels
-                .read()
-                .await?
-                .get(&new_channel_id)
-                .unwrap()
-                .handler
-                .clone(),
-        );
+        self.session_handler
+            .channel_handlers
+            .write()
+            .await?
+            .insert(new_channel_id, channel_handler);
 
         Ok(new_channel_id)
     }

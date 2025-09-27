@@ -41,6 +41,8 @@ impl ThreadingBackend {
                 Ok(_) => {}
                 Err(Error::TransportError(TransportError::NotConnected)) => {
                     log::error!("Connection closed.");
+                    self.stopped
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
                     break;
                 }
                 Err(Error::ConnectionStopped) => {
@@ -64,6 +66,8 @@ impl ThreadingBackend {
                 Ok(_) => {}
                 Err(Error::TransportError(TransportError::NotConnected)) => {
                     log::error!("Connection closed.");
+                    self.stopped
+                        .store(true, std::sync::atomic::Ordering::SeqCst);
                     break;
                 }
                 Err(Error::ConnectionStopped) => {

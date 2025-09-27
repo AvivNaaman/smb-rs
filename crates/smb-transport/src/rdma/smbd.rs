@@ -4,6 +4,7 @@
 /// [MS-SMBD](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-smbd/b25587c4-2507-47a4-aa89-e5d3f04f7197)
 use binrw::prelude::*;
 use modular_bitfield::prelude::*;
+use std::mem::size_of;
 
 use smb_msg::Status;
 

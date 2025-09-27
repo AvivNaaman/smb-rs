@@ -19,9 +19,8 @@ use std::{
 
 use super::error::*;
 use crate::{
-    QuicConfig,
+    QuicConfig, TransportError,
     traits::{SmbTransport, SmbTransportRead, SmbTransportWrite},
-    utils::TransportUtils,
 };
 use futures_core::future::BoxFuture;
 use futures_util::FutureExt;
@@ -33,6 +32,8 @@ use tokio::select;
 pub struct QuicTransport {
     recv_stream: Option<quinn::RecvStream>,
     send_stream: Option<quinn::SendStream>,
+
+    remote_address: Option<SocketAddr>,
 
     endpoint: Endpoint,
     timeout: Duration,
@@ -52,6 +53,7 @@ impl QuicTransport {
         Ok(Self {
             recv_stream: None,
             send_stream: None,
+            remote_address: None,
             endpoint,
             timeout,
         })
@@ -67,6 +69,7 @@ impl QuicTransport {
             let (send, recv) = connection.await?.open_bi().await?;
             self.send_stream = Some(send);
             self.recv_stream = Some(recv);
+            self.remote_address = Some(server_addr);
             Ok(())
         }
         .boxed()
@@ -119,7 +122,7 @@ impl QuicTransport {
                     crate::TransportError::Timeout(self.timeout)
                 }
                 _ => {
-                    log::error!("Failed to connect to {server}: {e}");
+                    log::error!("Failed to connect to {server_name} at {server_address}: {e}");
                     QuicError::ConnectionError(e).into()
                 }
             })?;
@@ -192,12 +195,14 @@ impl SmbTransport for QuicTransport {
             Box::new(Self {
                 recv_stream: Some(recv_stream),
                 send_stream: None,
+                remote_address: self.remote_address,
                 endpoint: self.endpoint,
                 timeout: self.timeout,
             }),
             Box::new(Self {
                 recv_stream: None,
                 send_stream: Some(send_stream),
+                remote_address: self.remote_address,
                 endpoint: endpoint_clone,
                 timeout: self.timeout,
             }),
@@ -206,6 +211,10 @@ impl SmbTransport for QuicTransport {
 
     fn default_port(&self) -> u16 {
         443
+    }
+
+    fn remote_address(&self) -> crate::error::Result<SocketAddr> {
+        self.remote_address.ok_or(TransportError::NotConnected)
     }
 }
 

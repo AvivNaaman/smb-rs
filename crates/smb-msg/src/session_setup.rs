@@ -13,7 +13,7 @@ pub struct SessionSetupRequest {
     pub security_mode: SessionSecurityMode,
     pub capabilities: NegotiateCapabilities,
     #[bw(calc = 0)]
-    _channel: u32,
+    _channel: u32, // reserved
     #[bw(calc = PosMarker::default())]
     __security_buffer_offset: PosMarker<u16>,
     #[bw(calc = u16::try_from(buffer.len()).unwrap())]

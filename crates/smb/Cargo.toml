@@ -119,6 +119,8 @@ __debug-dump-keys = []
 # Tests
 test-multichannel = []
 test-ndr64 = []
+test-quic = []
+test-rdma = []
 
 [package.metadata.docs.rs]
 features = ["async", "sign", "encrypt", "compress", "kerberos", "quic"]

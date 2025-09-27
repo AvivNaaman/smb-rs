@@ -261,9 +261,9 @@ pub async fn copy(cmd: &CopyCmd, cli: &Cli) -> Result<(), Box<dyn Error>> {
     let from = CopyFile::open(&cmd.from, &client, cli, cmd, true).await?;
     let to = CopyFile::open(&cmd.to, &client, cli, cmd, false).await?;
 
-    from.copy_to(to, &client).await?;
+    let copy_ok = from.copy_to(to, &client).await;
 
     client.close().await?;
 
-    Ok(())
+    Ok(copy_ok?)
 }

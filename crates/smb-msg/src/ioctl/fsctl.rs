@@ -290,8 +290,8 @@ impl SocketAddrStorage {
 #[derive(Debug, PartialEq, Eq)]
 #[brw(magic(b"\x02\x00"))] // InterNetwork
 pub struct SocketAddrStorageV4 {
-    port: u16,
-    address: u32,
+    pub port: u16,
+    pub address: u32,
     #[bw(calc = [0; 128 - (2 + 2 + 4)])]
     _reserved: [u8; 128 - (2 + 2 + 4)],
 }
@@ -306,10 +306,10 @@ impl SocketAddrStorageV4 {
 #[derive(Debug, PartialEq, Eq)]
 #[brw(magic(b"\x17\x00"))] // InterNetworkV6
 pub struct SocketAddrStorageV6 {
-    port: u16,
-    flow_info: u32,
-    address: u128,
-    scope_id: u32,
+    pub port: u16,
+    pub flow_info: u32,
+    pub address: u128,
+    pub scope_id: u32,
     #[bw(calc = [0; 128 - (2 + 2 + 4 + 16 + 4)])]
     _reserved: [u8; 128 - (2 + 2 + 4 + 16 + 4)],
 }

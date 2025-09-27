@@ -49,8 +49,8 @@ pub struct RdmaTransport {
 }
 
 impl RdmaTransport {
-    pub fn new(_timeout: std::time::Duration) -> Self {
-        // TODO: use timeout
+    pub fn new(_config: RdmaConfig, _timeout: std::time::Duration) -> Self {
+        // TODO: use config+timeout
         RdmaTransport {
             state: RdmaTransportState::Init,
         }
@@ -318,38 +318,45 @@ impl RdmaTransport {
             return Ok(());
         }
 
-        let mut data_sent: u32 = 0;
+        /// The offset must be 8-byte aligned.
+        const IN_MR_OFFSET: u32 = (SmbdDataTransferHeader::ENCODED_SIZE as u32)
+            .div_ceil(SmbdDataTransferHeader::DATA_ALIGNMENT)
+            * SmbdDataTransferHeader::DATA_ALIGNMENT;
+        assert!(IN_MR_OFFSET <= self.max_rw_size); // TODO: do this in a nicer way.
+
+        let mut total_data_sent: u32 = 0;
         let mut fragment_num = 0;
 
         let mut buf_iterator = message.iter();
         let mut current_buf = buf_iterator
             .next("Some data to send, but no buffers")
             .unwrap();
+        let total_to_send = message.total_size();
         let mut current_buf_offset = 0usize;
-        while data_sent < total_data_to_send {
-            /// The offset must be 8-byte aligned.
-            const OFFSET: u32 = (SmbdDataTransferHeader::ENCODED_SIZE as u32)
-                .div_ceil(SmbdDataTransferHeader::DATA_ALIGNMENT)
-                * SmbdDataTransferHeader::DATA_ALIGNMENT;
-
-            let remaining = current_buf.len() - data_sent;
-            let data_sending = remaining.min(running.max_rw_size - OFFSET);
+        while total_data_sent < total_data_to_send {
+            let remaining = current_buf.len() - data_sent_current_buf;
+            let data_sending = remaining.min(running.max_rw_size - IN_MR_OFFSET);
             if data_sending == 0 {
                 current_buf = buf_iterator
                     .next()
                     .except("More data to send, but no more buffers")?;
+                data_sent_current_buf = 0;
                 current_buf_offset = 0;
                 continue;
             }
 
+            let total_remaining = total_data_to_send - total_data_sent;
             let header = SmbdDataTransferHeader {
                 data_length: data_sending,
-                remaining_data_length: remaining - data_sending,
+                remaining_data_length: total_remaining - data_sending,
                 data_offset: OFFSET,
                 flags: SmbdDataTransferFlags::new(),
                 credits_requested: 1,
                 credits_granted: 0x10,
             };
+
+            assert!(total_remaining >= data_sending);
+            assert!(total_remaining >= remaining);
 
             let data_end = OFFSET as usize + data_sending as usize;
             let mut local_mr = running
@@ -381,10 +388,13 @@ impl RdmaTransport {
                 remaining - data_sending
             );
 
-            data_sent += data_sending;
+            total_data_sent += data_sending;
+            data_sent_current_buf += data_sending as usize;
             current_buf_offset += data_sending as usize;
             fragment_num += 1;
         }
+
+        assert!(total_data_sent == total_data_to_send);
 
         Ok(())
     }
@@ -399,7 +409,7 @@ impl SmbTransport for RdmaTransport {
     }
 
     fn default_port(&self) -> u16 {
-        todo!()
+        5445
     }
 
     fn split(

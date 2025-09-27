@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # Soft-RoCE
 modprobe rdma_rxe
 modprobe ib_uverbs
