@@ -57,8 +57,8 @@ where
             _phantom: std::marker::PhantomData,
         };
 
-        if primary_session.is_some() {
-            let primary_session = primary_session.unwrap().read().await?;
+        if let Some(primary_session) = primary_session {
+            let primary_session = primary_session.read().await?;
             let session = primary_session.session.clone();
             let channel = primary_session.channel.as_ref().unwrap().clone();
             result.set_session(session).await?;
@@ -257,7 +257,6 @@ where
             &self.session_key()?,
             &self.preauth_hash_value(),
             self.conn_info,
-            T::is_session_primary(),
         )?;
 
         self.channel = Some(channel_info);
@@ -342,8 +341,6 @@ pub(crate) trait SessionSetupProperties {
     async fn on_setup_success<T>(_setup: &mut SessionSetup<'_, T>) -> crate::Result<()>
     where
         T: SessionSetupProperties;
-
-    fn is_session_primary() -> bool;
 }
 
 pub(crate) struct SmbSessionBind;
@@ -392,10 +389,6 @@ impl SessionSetupProperties for SmbSessionBind {
         T: SessionSetupProperties,
     {
         panic!("(Primary) Session should be provided in construction, rather than during setup!");
-    }
-
-    fn is_session_primary() -> bool {
-        false
     }
 
     async fn on_setup_success<T>(_setup: &mut SessionSetup<'_, T>) -> crate::Result<()>
@@ -464,10 +457,6 @@ impl SessionSetupProperties for SmbSessionNew {
         let result = setup.result.as_ref().unwrap().read().await?;
         let mut session = result.session.write().await?;
         session.ready(setup.flags.unwrap(), setup.conn_info)
-    }
-
-    fn is_session_primary() -> bool {
-        false
     }
 
     async fn init_session<T>(

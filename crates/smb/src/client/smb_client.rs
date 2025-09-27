@@ -76,7 +76,6 @@ pub struct Client {
 /// Holds information for a connection, held by the client.
 /// This is most useful to avoid creating multiple connections to the same server,
 struct ClientConnectionInfo {
-    address: SocketAddr,
     connection: Arc<Connection>,
     #[cfg(feature = "rdma")]
     /// Connections in other channels (i.e. RDMA)
@@ -87,7 +86,6 @@ struct ClientConnectionInfo {
 
 struct ClientSessionInfo {
     session: Arc<Session>,
-    primary_channel: u32,
     /// alternate channels established for this session
     session_alt_channels: Option<HashMap<u32, Arc<Connection>>>,
 }
@@ -272,7 +270,6 @@ impl Client {
                     session.session_id(),
                     ClientSessionInfo {
                         session: session.clone(),
-                        primary_channel: session.channel_id(),
                         session_alt_channels: None,
                     },
                 );
@@ -394,7 +391,6 @@ impl Client {
                 ClientConnectionInfo {
                     connection: conn.clone(),
                     sessions: Default::default(),
-                    address: server_address,
                     #[cfg(feature = "rdma")]
                     alt_connections: None,
                 },

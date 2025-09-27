@@ -226,7 +226,6 @@ enum SessionInfoState {
 pub struct SessionInfo {
     session_id: u64,
     state: Option<SessionInfoState>,
-    channels: Vec<ChannelInfo>,
 }
 
 #[derive(Clone)]
@@ -234,7 +233,6 @@ pub struct ChannelInfo {
     id: u32,
     algos: ChannelAlgos,
     valid: bool,
-    primary: bool,
 }
 
 impl ChannelInfo {
@@ -243,14 +241,12 @@ impl ChannelInfo {
         channel_session_key: &KeyToDerive,
         preauth_hash: &Option<PreauthHashValue>,
         info: &ConnectionInfo,
-        primary: bool,
     ) -> crate::Result<Self> {
         let algos = SessionAlgosFactory::new_channel(channel_session_key, preauth_hash, info)?;
         Ok(Self {
             id: internal_id,
             algos,
             valid: true,
-            primary,
         })
     }
 
@@ -278,7 +274,6 @@ impl SessionInfo {
         Self {
             session_id,
             state: Some(SessionInfoState::Initial),
-            channels: vec![],
         }
     }
 
