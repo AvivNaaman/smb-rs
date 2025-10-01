@@ -130,6 +130,9 @@ impl CopyFile {
             .map(|(&channel_id, _)| (Some(channel_id), L2R_R2L_PER_CHANNEL_WORKERS))
             .collect::<HashMap<Option<u32>, usize>>();
 
+        log::debug!("Using {} channels for copy", channels.len());
+        log::trace!("Channel to jobs map: {channels:?}");
+
         Ok(channels)
     }
 

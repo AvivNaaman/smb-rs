@@ -1,4 +1,5 @@
 use std::alloc::Layout;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use super::error::*;
@@ -37,9 +38,9 @@ struct RdmaRunningWo {
 #[derive(Debug)]
 enum RdmaTransportState {
     Init,
-    RunningRw((RdmaRunningRo, RdmaRunningWo)),
-    RunningWo(RdmaRunningWo),
-    RunningRo(RdmaRunningRo),
+    RunningRw((RdmaRunningRo, RdmaRunningWo, SocketAddr)),
+    RunningWo(RdmaRunningWo, SocketAddr),
+    RunningRo(RdmaRunningRo, SocketAddr),
     Disconnected,
 }
 
@@ -49,7 +50,7 @@ pub struct RdmaTransport {
 }
 
 impl RdmaTransport {
-    pub fn new(_config: RdmaConfig, _timeout: std::time::Duration) -> Self {
+    pub fn new(_config: &super::RdmaConfig, _timeout: std::time::Duration) -> Self {
         // TODO: use config+timeout
         RdmaTransport {
             state: RdmaTransportState::Init,
@@ -64,30 +65,35 @@ impl RdmaTransport {
 
     fn _get_read(&mut self) -> std::result::Result<&mut RdmaRunningRo, RdmaError> {
         match &mut self.state {
-            RdmaTransportState::RunningRw((ro, _)) => Ok(ro),
-            RdmaTransportState::RunningRo(ro) => Ok(ro),
+            RdmaTransportState::RunningRw((ro, _, _)) => Ok(ro),
+            RdmaTransportState::RunningRo(ro, _) => Ok(ro),
             _ => Err(RdmaError::NotConnected),
         }
     }
 
     fn _get_write(&mut self) -> std::result::Result<&mut RdmaRunningWo, RdmaError> {
         match &mut self.state {
-            RdmaTransportState::RunningWo(wo) => Ok(wo),
-            RdmaTransportState::RunningRw((_, wo)) => Ok(wo),
+            RdmaTransportState::RunningWo(wo, _) => Ok(wo),
+            RdmaTransportState::RunningRw((_, wo, _)) => Ok(wo),
             _ => Err(RdmaError::NotConnected),
         }
     }
 
-    pub async fn connect_and_negotiate(&mut self, endpoint: &str) -> Result<()> {
+    pub async fn connect_and_negotiate(&mut self, server_address: SocketAddr) -> Result<()> {
         if !matches!(self.state, RdmaTransportState::Init) {
             return Err(RdmaError::AlreadyConnected);
         }
 
-        let endpoint_parts: Vec<&str> = endpoint.split(':').collect();
-        if endpoint_parts.len() != 2 {
-            return Err(RdmaError::InvalidEndpoint(endpoint.to_string()));
+        if server_address.port() == 0 {
+            // TODO: Check if there's any way to discover available RDMA port types (iWARP/InfiniBand/RoCE)
+            // consider imitating ksmbd here.
+            return Err(RdmaError::InvalidEndpoint(
+                "Port cannot be 0 - discover correct port using ioctl instead.".to_string(),
+            ));
         }
-        let service = "445\0";
+
+        let node = server_address.ip().to_string() + "\0";
+        let service = server_address.port().to_string() + "\0";
 
         log::info!("RDMA connecting...");
         let rdma = RdmaBuilder::default()
@@ -124,6 +130,7 @@ impl RdmaTransport {
                 max_rw_size: negotiate_result.max_read_write_size,
                 max_fragmented_size: negotiate_result.max_fragmented_size,
             },
+            server_address,
         ));
 
         Ok(())
@@ -322,25 +329,24 @@ impl RdmaTransport {
         const IN_MR_OFFSET: u32 = (SmbdDataTransferHeader::ENCODED_SIZE as u32)
             .div_ceil(SmbdDataTransferHeader::DATA_ALIGNMENT)
             * SmbdDataTransferHeader::DATA_ALIGNMENT;
-        assert!(IN_MR_OFFSET <= self.max_rw_size); // TODO: do this in a nicer way.
+        assert!(IN_MR_OFFSET <= running.max_rw_size); // TODO: do this in a nicer way.
 
         let mut total_data_sent: u32 = 0;
         let mut fragment_num = 0;
 
         let mut buf_iterator = message.iter();
         let mut current_buf = buf_iterator
-            .next("Some data to send, but no buffers")
-            .unwrap();
-        let total_to_send = message.total_size();
-        let mut current_buf_offset = 0usize;
+            .next()
+            .expect("Some data to send, but no buffers");
+
+        let mut current_buf_offset: u32 = 0;
         while total_data_sent < total_data_to_send {
-            let remaining = current_buf.len() - data_sent_current_buf;
-            let data_sending = remaining.min(running.max_rw_size - IN_MR_OFFSET);
+            let remaining = current_buf.len() as u32 - current_buf_offset;
+            let data_sending: u32 = remaining.min(running.max_rw_size - IN_MR_OFFSET);
             if data_sending == 0 {
                 current_buf = buf_iterator
                     .next()
-                    .except("More data to send, but no more buffers")?;
-                data_sent_current_buf = 0;
+                    .expect("More data to send, but no more buffers");
                 current_buf_offset = 0;
                 continue;
             }
@@ -349,7 +355,7 @@ impl RdmaTransport {
             let header = SmbdDataTransferHeader {
                 data_length: data_sending,
                 remaining_data_length: total_remaining - data_sending,
-                data_offset: OFFSET,
+                data_offset: IN_MR_OFFSET,
                 flags: SmbdDataTransferFlags::new(),
                 credits_requested: 1,
                 credits_granted: 0x10,
@@ -358,7 +364,8 @@ impl RdmaTransport {
             assert!(total_remaining >= data_sending);
             assert!(total_remaining >= remaining);
 
-            let data_end = OFFSET as usize + data_sending as usize;
+            let data_end = IN_MR_OFFSET + data_sending;
+            let data_end = data_end as usize;
             let mut local_mr = running
                 .rdma
                 .alloc_local_mr(Layout::from_size_align(data_end, 1).unwrap())?;
@@ -368,7 +375,7 @@ impl RdmaTransport {
                 let mut cursor = std::io::Cursor::new(mr_data.as_mut());
                 header.write(&mut cursor)?;
 
-                mr_data[OFFSET as usize..data_end].copy_from_slice(
+                mr_data[IN_MR_OFFSET as usize..data_end].copy_from_slice(
                     &current_buf[current_buf_offset as usize
                         ..current_buf_offset as usize + data_sending as usize],
                 );
@@ -389,8 +396,7 @@ impl RdmaTransport {
             );
 
             total_data_sent += data_sending;
-            data_sent_current_buf += data_sending as usize;
-            current_buf_offset += data_sending as usize;
+            current_buf_offset += data_sending;
             fragment_num += 1;
         }
 
@@ -403,30 +409,42 @@ impl RdmaTransport {
 impl SmbTransport for RdmaTransport {
     fn connect<'a>(
         &'a mut self,
-        endpoint: &'a str,
+        _server_name: &'a str,
+        server_address: SocketAddr,
     ) -> futures_core::future::BoxFuture<'a, crate::error::Result<()>> {
-        async move { Ok(self.connect_and_negotiate(endpoint).await?) }.boxed()
+        async move { Ok(self.connect_and_negotiate(server_address).await?) }.boxed()
     }
 
+    // 445 is used for Inifinband & RoCE, 5445 is used for iWARP.
+    // the best way to determine this is probably via network interface discovery (ioctl)
     fn default_port(&self) -> u16 {
-        5445
+        0
     }
 
     fn split(
         self: Box<Self>,
     ) -> crate::error::Result<(Box<dyn SmbTransportRead>, Box<dyn SmbTransportWrite>)> {
-        let (ro, wo) = match self.state {
-            RdmaTransportState::RunningRw((ro, wo)) => (ro, wo),
+        let (ro, wo, address) = match self.state {
+            RdmaTransportState::RunningRw(x) => x,
             _ => return Err(TransportError::AlreadySplit),
         };
         Ok((
             Box::new(Self {
-                state: RdmaTransportState::RunningRo(ro),
+                state: RdmaTransportState::RunningRo(ro, address),
             }),
             Box::new(Self {
-                state: RdmaTransportState::RunningWo(wo),
+                state: RdmaTransportState::RunningWo(wo, address),
             }),
         ))
+    }
+
+    fn remote_address(&self) -> crate::error::Result<SocketAddr> {
+        match &self.state {
+            RdmaTransportState::RunningRw((_, _, addr))
+            | RdmaTransportState::RunningRo(_, addr)
+            | RdmaTransportState::RunningWo(_, addr) => Ok(*addr),
+            _ => Err(TransportError::NotConnected),
+        }
     }
 }
 

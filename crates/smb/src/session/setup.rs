@@ -59,8 +59,13 @@ where
 
         if let Some(primary_session) = primary_session {
             let primary_session = primary_session.read().await?;
+
             let session = primary_session.session.clone();
+
             let channel = primary_session.channel.as_ref().unwrap().clone();
+            #[cfg(feature = "ksmbd-multichannel-compat")]
+            let channel = channel.with_binding(true);
+
             result.set_session(session).await?;
             result.result.as_ref().unwrap().write().await?.channel = Some(channel);
         }

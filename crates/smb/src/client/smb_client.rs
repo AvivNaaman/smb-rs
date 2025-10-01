@@ -2,10 +2,8 @@ use crate::{
     Connection, Error, FileCreateArgs, Resource, Session, Tree, resource::Pipe, sync_helpers::*,
 };
 use maybe_async::maybe_async;
-use smb_msg::{ReferralEntry, ReferralEntryValue, Status};
+use smb_msg::{NetworkInterfaceInfo, ReferralEntry, ReferralEntryValue, Status};
 use smb_rpc::interface::{ShareInfo1, SrvSvc};
-#[cfg(feature = "rdma")]
-use smb_transport::RdmaTransport;
 use smb_transport::utils::TransportUtils;
 use sspi::{AuthIdentity, Secret};
 use std::net::{IpAddr, SocketAddr};
@@ -66,9 +64,20 @@ pub struct Client {
     config: ClientConfig,
     /// Server Name + [RDMA|NONE] => [`ClientConnectionInfo`]
     // It's quite common to have one connection for RDMA, and one for TCP,
-    connections: RwLock<HashMap<IpAddr, ClientConnectionInfo>>,
+    connections: RwLock<HashMap<ConnectionId, ClientConnectionInfo>>,
     /// shares (trees) that are currently connected.
     share_connects: Mutex<HashMap<UncPath, ClientConectedTree>>,
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+struct ConnectionId(IpAddr, ConnectionType);
+
+#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
+#[repr(u8)]
+enum ConnectionType {
+    None,
+    #[cfg(feature = "rdma")]
+    Rdma,
 }
 
 /// (Internal)
@@ -87,13 +96,20 @@ struct ClientConnectionInfo {
 struct ClientSessionInfo {
     session: Arc<Session>,
     /// alternate channels established for this session
-    session_alt_channels: Option<HashMap<u32, Arc<Connection>>>,
+    session_alt_channels: Option<HashMap<u32, AltChannelInfo>>,
 }
 
 struct ClientConectedTree {
     session: Arc<Session>,
     tree: Arc<Tree>,
     credentials: Option<AuthIdentity>,
+}
+
+#[derive(Clone)]
+pub struct AltChannelInfo {
+    connection: Arc<Connection>,
+    channel_id: u32,
+    connection_type: ConnectionType,
 }
 
 impl Client {
@@ -127,13 +143,14 @@ impl Client {
 
         let mut connections = self.connections.write().await?;
         // Close sessions
-        for (_unc, conn) in connections.iter() {
-            for (_session_id, session) in conn.sessions.iter() {
+        for (_unc, conn) in connections.iter_mut() {
+            for (_session_id, session) in conn.sessions.iter_mut() {
                 // First close alternate channels
-                if let Some(alt_channels) = &session.session_alt_channels {
+                if let Some(alt_channels) = &mut session.session_alt_channels {
                     for (_channel_id, alt_conn) in alt_channels.iter() {
-                        alt_conn.close().await.ok();
+                        alt_conn.connection.close().await.ok();
                     }
+                    alt_channels.clear();
                 }
                 // Close primary session
                 session.session.logoff().await.ok();
@@ -210,11 +227,14 @@ impl Client {
 
         // Establish an additional channel if multi-channel is enabled.
         let mchannel_map = self._setup_multi_channel(target, &identity).await;
-
         if let Ok(mchannel_map) = mchannel_map {
             let session = self.get_session(target).await?;
+            log::debug!(
+                "Established {} multi-channel connections",
+                mchannel_map.as_ref().map(|m| m.len()).unwrap_or(0)
+            );
 
-            self._with_connection(target.server(), |f| {
+            self._with_connection(target.server(), ConnectionType::None, |f| {
                 let session_info = f
                     .sessions
                     .get(&session.session_id())
@@ -272,7 +292,7 @@ impl Client {
             );
             let session = Arc::new(session);
 
-            self._with_connection(target.server(), |f| {
+            self._with_connection(target.server(), ConnectionType::None, |f| {
                 f.sessions.insert(
                     session.session_id(),
                     ClientSessionInfo {
@@ -376,40 +396,30 @@ impl Client {
         server: &str,
         server_address: SocketAddr,
     ) -> crate::Result<Arc<Connection>> {
-        let conn = {
-            let mut connections = self.connections.write().await?;
-            if let Some(conn) = connections.get(&server_address.ip()) {
-                log::trace!("Re-using existing connection to {server}",);
-                return Ok(conn.connection.clone());
-            }
+        let connection_id = ConnectionId(server_address.ip(), ConnectionType::None);
+        log::debug!("Creating new connection to {server}",);
 
-            log::debug!("Creating new connection to {server}",);
+        let conn = Connection::build(
+            server,
+            server_address,
+            self.config.client_guid,
+            self.config.connection.clone(),
+        )?;
+        let conn = Arc::new(conn);
 
-            let conn = Connection::build(
-                server,
-                server_address,
-                self.config.client_guid,
-                self.config.connection.clone(),
-            )?;
-            let conn = Arc::new(conn);
-
-            connections.insert(
-                server_address.ip(),
-                ClientConnectionInfo {
-                    connection: conn.clone(),
-                    sessions: Default::default(),
-                    #[cfg(feature = "rdma")]
-                    alt_connections: None,
-                },
-            );
-            conn
-        };
+        // TODO: This is a bit racy
+        if let Ok(c) = self.get_connection(server).await {
+            log::debug!("Reusing existing connection to {server}",);
+            return Ok(c);
+        }
+        self._add_connection(conn.clone(), server_address, ConnectionType::None)
+            .await?;
 
         let connect_ok = conn.connect().await;
 
         if connect_ok.is_err() {
             let mut connections = self.connections.write().await?;
-            connections.remove(&server_address.ip());
+            connections.remove(&connection_id);
             connect_ok?;
         }
 
@@ -418,11 +428,37 @@ impl Client {
         Ok(conn)
     }
 
+    #[maybe_async]
+    async fn _add_connection(
+        &self,
+        to_add: Arc<Connection>,
+        address: SocketAddr,
+        connection_type: ConnectionType,
+    ) -> crate::Result<()> {
+        let mut connections = self.connections.write().await?;
+        let conn_id = ConnectionId(address.ip(), connection_type);
+        if connections.contains_key(&conn_id) {
+            return Err(Error::InvalidArgument(format!(
+                "Connection to {address}::({connection_type:?}) already exists",
+            )));
+        }
+        connections.insert(
+            conn_id,
+            ClientConnectionInfo {
+                connection: to_add,
+                sessions: Default::default(),
+                #[cfg(feature = "rdma")]
+                alt_connections: None,
+            },
+        );
+        Ok(())
+    }
+
     /// Returns the underlying [`Connection`] for the specified server,
     /// after a successful call to [`Client::connect`] or [`Client::share_connect`].
     #[maybe_async]
     pub async fn get_connection(&self, server: &str) -> crate::Result<Arc<Connection>> {
-        self._with_connection(server, |c| Ok(c.connection.clone()))
+        self._with_connection(server, ConnectionType::None, |c| Ok(c.connection.clone()))
             .await
     }
 
@@ -436,10 +472,10 @@ impl Client {
     pub async fn get_channels(
         &self,
         path: &UncPath,
-    ) -> crate::Result<HashMap<u32, Arc<Connection>>> {
+    ) -> crate::Result<HashMap<u32, AltChannelInfo>> {
         let session = self.get_session(path).await?;
         let channels = self
-            ._with_connection(path.server(), |c| {
+            ._with_connection(path.server(), ConnectionType::None, |c| {
                 let session_info = c.sessions.get(&session.session_id());
                 session_info.ok_or_else(|| {
                     Error::NotFound(format!(
@@ -455,12 +491,20 @@ impl Client {
                     .as_ref()
                     .map(|m| {
                         m.iter()
-                            .map(|(k, v)| (*k, v.clone()))
-                            .collect::<HashMap<u32, Arc<Connection>>>()
+                            .map(|(&k, v)| (k, v.clone()))
+                            .collect::<HashMap<u32, AltChannelInfo>>()
                     })
                     .unwrap_or_default();
 
-                alt_channels.insert(session.channel_id(), c.connection.clone());
+                alt_channels.insert(
+                    session.channel_id(),
+                    AltChannelInfo {
+                        // TODO: that's a bit shady, re-think the entire HashMap key of connections.
+                        connection: c.connection.clone(),
+                        channel_id: session.channel_id(),
+                        connection_type: ConnectionType::None,
+                    },
+                );
                 Ok(alt_channels)
             })
             .await?;
@@ -476,15 +520,22 @@ impl Client {
     }
 
     #[maybe_async]
-    async fn _with_connection<F, R>(&self, server: &str, f: F) -> crate::Result<R>
+    async fn _with_connection<F, R>(
+        &self,
+        server: &str,
+        ctype: ConnectionType,
+        f: F,
+    ) -> crate::Result<R>
     where
         F: FnOnce(&mut ClientConnectionInfo) -> crate::Result<R>,
     {
         let server_address = TransportUtils::parse_socket_address(server)?;
         let mut connections = self.connections.write().await?;
-        let conn = connections.get_mut(&server_address.ip()).ok_or_else(|| {
-            Error::NotFound(format!("No connection found for server: {}", server))
-        })?;
+        let conn = connections
+            .get_mut(&ConnectionId(server_address.ip(), ctype))
+            .ok_or_else(|| {
+                Error::NotFound(format!("No connection found for server: {}", server))
+            })?;
         f(conn)
     }
 
@@ -604,7 +655,7 @@ impl Client {
         &self,
         unc: &UncPath,
         identity: &AuthIdentity,
-    ) -> crate::Result<Option<HashMap<u32, Arc<Connection>>>> {
+    ) -> crate::Result<Option<HashMap<u32, AltChannelInfo>>> {
         if unc.is_ipc_share() {
             return Err(Error::InvalidArgument(
                 "Cannot setup multi-channel for IPC$ share.".to_string(),
@@ -643,11 +694,92 @@ impl Client {
             .query_network_interfaces()
             .await?;
 
-        let current_primary_interface = network_interfaces.iter().find(|iface| {
-            iface.sockaddr.socket_addr().ip() == primary_conn_info.server_address.ip()
-        });
+        let mut result = HashMap::new();
 
-        if current_primary_interface.is_none() {
+        #[cfg(feature = "rdma")]
+        {
+            // First, try binding to RDMA interfaces
+            let rdma_interfaces =
+                MultiChannelUtils::get_rdma_interface_addresses(&network_interfaces)?;
+
+            if rdma_interfaces.is_empty() {
+                log::debug!("No RDMA-capable network interfaces found for multi-channel.");
+            } else {
+                let session = self.get_session(unc).await?;
+                for (if_index, &ip_address) in rdma_interfaces.iter() {
+                    log::debug!(
+                        "Found RDMA interface for multi-channel: {if_index} => {ip_address}"
+                    );
+
+                    let (connection, channel) = {
+                        // Manually setup the RDMA connection here. TODO: make it happen properly inside Connection?
+
+                        use smb_transport::{RdmaTransport, SmbTransport};
+                        let mut transport = RdmaTransport::new(
+                            &self
+                                .config
+                                .connection
+                                .multichannel
+                                .rdma
+                                .clone()
+                                .unwrap_or_default(),
+                            self.config.connection.timeout(),
+                        );
+
+                        let ip_address = if ip_address.port() == 0 {
+                            SocketAddr::new(ip_address.ip(), 445)
+                        } else {
+                            ip_address
+                        };
+
+                        transport.connect(unc.server(), ip_address).await?;
+
+                        let rdma_connection = Connection::from_transport(
+                            Box::new(transport),
+                            unc.server(),
+                            primary_conn_info.client_guid,
+                            self.config.connection.clone(),
+                        )
+                        .await?;
+
+                        let rdma_connection = Arc::new(rdma_connection);
+
+                        self._add_connection(
+                            rdma_connection.clone(),
+                            ip_address,
+                            ConnectionType::Rdma,
+                        )
+                        .await?;
+
+                        let channel = rdma_connection
+                            .bind_session(&session, identity.clone())
+                            .await?;
+
+                        (rdma_connection, channel)
+                    };
+                    result.insert(
+                        channel,
+                        AltChannelInfo {
+                            connection,
+                            channel_id: channel,
+                            connection_type: ConnectionType::Rdma,
+                        },
+                    );
+                }
+
+                if !result.is_empty() {
+                    return Ok(Some(result));
+                }
+            }
+        }
+
+        // Bind to other, non-rdma network interfaces.
+        let other_interfaces = MultiChannelUtils::get_alt_interface_addresses(
+            &network_interfaces,
+            primary_conn_info.server_address.ip(),
+        )?;
+
+        if other_interfaces.is_empty() {
             log::warn!(
                 "Multi-channel setup failed: unable to determine the current primary network interface. 
                 This usually means the SMB server is not on the same local network as the client, and multi-channel cannot be used.
@@ -656,39 +788,25 @@ impl Client {
             return Ok(None);
         }
 
-        let current_primary_interface = current_primary_interface.unwrap();
-
-        let interfaces_to_ip_addresses: HashMap<u32, SocketAddr> = network_interfaces
-            .iter()
-            .filter(|iface| {
-                iface.sockaddr.socket_addr().is_ipv4()
-                    && iface.if_index != current_primary_interface.if_index
-                    && !iface.capability.rdma()
-            }) // TODO: IPv6; RDMA
-            .map(|iface| (iface.if_index, iface.sockaddr.socket_addr()))
-            .collect();
-
-        if interfaces_to_ip_addresses.is_empty() {
-            log::debug!(
-                "No alternate interfaces found for multi-channel. Continuing with single channel."
-            );
-            return Ok(None);
-        }
-
-        let mut result = HashMap::new();
-
         let session = self.get_session(unc).await?;
-        for (if_index, ip_address) in interfaces_to_ip_addresses.iter() {
+        for (if_index, &ip_address) in other_interfaces.iter() {
             log::debug!("Found alternate interface for multi-channel: {if_index} => {ip_address}");
 
             let (connection, channel) = {
-                let connection = self.connect_to_address(unc.server(), *ip_address).await?;
+                let connection = self.connect_to_address(unc.server(), ip_address).await?;
 
                 let channel = connection.bind_session(&session, identity.clone()).await?;
 
                 (connection, channel)
             };
-            result.insert(channel, connection);
+            result.insert(
+                channel,
+                AltChannelInfo {
+                    connection,
+                    channel_id: channel,
+                    connection_type: ConnectionType::None,
+                },
+            );
         }
 
         Ok(Some(result))
@@ -828,5 +946,51 @@ impl<'a> DfsResolver<'a> {
                 "Unsupported DFS referral entry type".to_string(),
             )),
         }
+    }
+}
+
+struct MultiChannelUtils;
+impl MultiChannelUtils {
+    /// Given the list of network interfaces on the client machine,
+    /// this returns a map of relevant interface indexes to their IP addresses,
+    /// which are relevant for multi-channel connections.
+    fn get_alt_interface_addresses(
+        network_interfaces: &[NetworkInterfaceInfo],
+        current_server_address: IpAddr,
+    ) -> crate::Result<HashMap<u32, SocketAddr>> {
+        let current_primary_interface = network_interfaces
+            .iter()
+            .find(|iface| iface.sockaddr.socket_addr().ip() == current_server_address);
+
+        if current_primary_interface.is_none() {
+            return Ok(HashMap::new());
+        }
+
+        let current_primary_interface = current_primary_interface.unwrap();
+
+        let index_to_address = network_interfaces
+            .iter()
+            .filter(|iface| {
+                iface.sockaddr.socket_addr().is_ipv4()
+                    && iface.if_index != current_primary_interface.if_index
+                    && !iface.capability.rdma()
+            }) // TODO: IPv6; RDMA
+            .map(|iface| (iface.if_index, iface.sockaddr.socket_addr()))
+            .collect();
+
+        Ok(index_to_address)
+    }
+
+    #[cfg(feature = "rdma")]
+    fn get_rdma_interface_addresses(
+        network_interfaces: &[NetworkInterfaceInfo],
+    ) -> crate::Result<HashMap<u32, SocketAddr>> {
+        let index_to_address = network_interfaces
+            .iter()
+            .filter(|iface| iface.sockaddr.socket_addr().is_ipv4() && iface.capability.rdma())
+            .map(|iface| (iface.if_index, iface.sockaddr.socket_addr()))
+            .collect();
+
+        Ok(index_to_address)
     }
 }

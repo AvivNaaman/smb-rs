@@ -233,6 +233,11 @@ pub struct ChannelInfo {
     id: u32,
     algos: ChannelAlgos,
     valid: bool,
+
+    #[cfg(feature = "ksmbd-multichannel-compat")]
+    /// Indicates whether this channel was created temporarily for multichannel setup.
+    /// This is relevant for compatibility with ksmbd. See [`crate::connection::Transformer::verify_plain_incoming`]
+    binding: bool,
 }
 
 impl ChannelInfo {
@@ -247,7 +252,20 @@ impl ChannelInfo {
             id: internal_id,
             algos,
             valid: true,
+            #[cfg(feature = "ksmbd-multichannel-compat")]
+            binding: false,
         })
+    }
+
+    #[cfg(feature = "ksmbd-multichannel-compat")]
+    pub(crate) fn with_binding(mut self, binding: bool) -> Self {
+        self.binding = binding;
+        self
+    }
+
+    #[cfg(feature = "ksmbd-multichannel-compat")]
+    pub fn is_binding(&self) -> bool {
+        self.binding
     }
 
     pub fn signer(&self) -> crate::Result<&MessageSigner> {

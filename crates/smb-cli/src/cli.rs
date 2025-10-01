@@ -21,7 +21,7 @@ pub struct Cli {
     #[arg(long)]
     pub no_dfs: bool,
     /// Configures multi-channel support.
-    #[arg(long)]
+    #[arg(long, default_value_t = MultiChannelMode::default())]
     pub multichannel: MultiChannelMode,
 
     /// Opts-in to use SMB compression if the server supports it.
@@ -73,6 +73,16 @@ pub enum MultiChannelMode {
     /// Try using multichannel if the server supports it,
     /// and multiple NICs are available on the server.
     Always,
+}
+
+impl std::fmt::Display for MultiChannelMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            MultiChannelMode::None => write!(f, "none"),
+            MultiChannelMode::RdmaOnly => write!(f, "rdma-only"),
+            MultiChannelMode::Always => write!(f, "always"),
+        }
+    }
 }
 
 impl MultiChannelMode {

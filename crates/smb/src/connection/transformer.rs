@@ -352,7 +352,7 @@ impl Transformer {
         if form.encrypted
             || message.header.message_id == u64::MAX
             || message.header.status == Status::Pending as u32
-            || !message.header.flags.signed()
+            || !(message.header.flags.signed() || self.is_message_signed_ksmbd(message).await)
         {
             return Ok(());
         }
@@ -384,6 +384,42 @@ impl Transformer {
         );
         form.signed = true;
         Ok(())
+    }
+
+    /// (Internal)
+    ///
+    /// ksmbd multichannel setup compatibility check.
+    ///
+    // ksmbd has a subtle, but irritating bug, where it does not set the "signed" flag
+    // for responses during multi channel session setups. To resolve this, we check if the
+    // current channel is defined as "binding-only" channel. The feature `ksmbd-multichannel-compat`
+    // must also be enabled, or else this code will not be compiled.
+    // This behavior is actually against the spec - MS-SMB2 3.2.4.1.1:
+    // > "If the client signs the request, it MUST set the SMB2_FLAGS_SIGNED bit in the Flags field of the SMB2 header."
+    #[maybe_async]
+    async fn is_message_signed_ksmbd(&self, message: &PlainResponse) -> bool {
+        #[cfg(feature = "ksmbd-multichannel-compat")]
+        {
+            if message.header.command != Command::SessionSetup || message.header.signature == 0 {
+                return false;
+            }
+
+            let session_id = message.header.session_id;
+            let is_binding = self
+                ._with_channel(session_id, |session| {
+                    let channel_info = session.channel.as_ref().ok_or(crate::Error::Other(
+                        "Get channel info for ksmbd sign test failed",
+                    ))?;
+
+                    Ok(channel_info.is_binding())
+                })
+                .await;
+
+            return matches!(is_binding, Ok(true));
+        }
+
+        #[cfg(not(feature = "ksmbd-multichannel-compat"))]
+        return false;
     }
 }
 

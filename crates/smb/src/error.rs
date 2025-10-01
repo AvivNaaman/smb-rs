@@ -105,6 +105,9 @@ pub enum Error {
 
     #[error("Transport error: {0}")]
     TransportError(#[from] TransportError),
+
+    #[error("Other error: {0}")]
+    Other(&'static str),
 }
 
 impl<T> From<PoisonError<T>> for Error {
