@@ -150,6 +150,7 @@ make_status! {
     NotSupported = 0xC00000BB: "Not Supported",
     NetworkNameDeleted = 0xC00000C9: "Network Name Deleted",
     BadNetworkName = 0xC00000CC: "Bad Network Name",
+    RequestNotAccepted = 0xC00000D0: "Request Not Accepted",
     DirectoryNotEmpty = 0xC0000101: "Directory Not Empty",
     Cancelled = 0xC0000120: "Cancelled",
     UserSessionDeleted = 0xC0000203: "User Session Deleted",

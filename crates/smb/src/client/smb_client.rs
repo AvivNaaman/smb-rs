@@ -74,7 +74,7 @@ struct ConnectionId(IpAddr, ConnectionType);
 
 #[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
 #[repr(u8)]
-enum ConnectionType {
+pub enum ConnectionType {
     None,
     #[cfg(feature = "rdma")]
     Rdma,
@@ -234,7 +234,8 @@ impl Client {
                 mchannel_map.as_ref().map(|m| m.len()).unwrap_or(0)
             );
 
-            self._with_connection(target.server(), ConnectionType::None, |f| {
+            let address = TransportUtils::parse_socket_address(target.server())?;
+            self._with_connection(&ConnectionId(address.ip(), ConnectionType::None), |f| {
                 let session_info = f
                     .sessions
                     .get(&session.session_id())
@@ -292,7 +293,8 @@ impl Client {
             );
             let session = Arc::new(session);
 
-            self._with_connection(target.server(), ConnectionType::None, |f| {
+            let address = TransportUtils::parse_socket_address(target.server())?;
+            self._with_connection(&ConnectionId(address.ip(), ConnectionType::None), |f| {
                 f.sessions.insert(
                     session.session_id(),
                     ClientSessionInfo {
@@ -408,12 +410,11 @@ impl Client {
         let conn = Arc::new(conn);
 
         // TODO: This is a bit racy
-        if let Ok(c) = self.get_connection(server).await {
+        if let Ok(c) = self.get_connection_ip_channel(&connection_id).await {
             log::debug!("Reusing existing connection to {server}",);
             return Ok(c);
         }
-        self._add_connection(conn.clone(), server_address, ConnectionType::None)
-            .await?;
+        self._add_connection(conn.clone(), connection_id).await?;
 
         let connect_ok = conn.connect().await;
 
@@ -432,18 +433,16 @@ impl Client {
     async fn _add_connection(
         &self,
         to_add: Arc<Connection>,
-        address: SocketAddr,
-        connection_type: ConnectionType,
+        connection_id: ConnectionId,
     ) -> crate::Result<()> {
         let mut connections = self.connections.write().await?;
-        let conn_id = ConnectionId(address.ip(), connection_type);
-        if connections.contains_key(&conn_id) {
+        if connections.contains_key(&connection_id) {
             return Err(Error::InvalidArgument(format!(
-                "Connection to {address}::({connection_type:?}) already exists",
+                "Connection to {connection_id:?} already exists",
             )));
         }
         connections.insert(
-            conn_id,
+            connection_id,
             ClientConnectionInfo {
                 connection: to_add,
                 sessions: Default::default(),
@@ -458,7 +457,22 @@ impl Client {
     /// after a successful call to [`Client::connect`] or [`Client::share_connect`].
     #[maybe_async]
     pub async fn get_connection(&self, server: &str) -> crate::Result<Arc<Connection>> {
-        self._with_connection(server, ConnectionType::None, |c| Ok(c.connection.clone()))
+        let addr = TransportUtils::parse_socket_address(server)?;
+        self.get_connection_ip(addr.ip()).await
+    }
+
+    #[maybe_async]
+    pub async fn get_connection_ip(&self, ip: IpAddr) -> crate::Result<Arc<Connection>> {
+        self.get_connection_ip_channel(&ConnectionId(ip, ConnectionType::None))
+            .await
+    }
+
+    #[maybe_async]
+    async fn get_connection_ip_channel(
+        &self,
+        connection_id: &ConnectionId,
+    ) -> crate::Result<Arc<Connection>> {
+        self._with_connection(connection_id, |c| Ok(c.connection.clone()))
             .await
     }
 
@@ -474,8 +488,9 @@ impl Client {
         path: &UncPath,
     ) -> crate::Result<HashMap<u32, AltChannelInfo>> {
         let session = self.get_session(path).await?;
+        let address = TransportUtils::parse_socket_address(path.server())?;
         let channels = self
-            ._with_connection(path.server(), ConnectionType::None, |c| {
+            ._with_connection(&ConnectionId(address.ip(), ConnectionType::None), |c| {
                 let session_info = c.sessions.get(&session.session_id());
                 session_info.ok_or_else(|| {
                     Error::NotFound(format!(
@@ -520,22 +535,14 @@ impl Client {
     }
 
     #[maybe_async]
-    async fn _with_connection<F, R>(
-        &self,
-        server: &str,
-        ctype: ConnectionType,
-        f: F,
-    ) -> crate::Result<R>
+    async fn _with_connection<F, R>(&self, connection_id: &ConnectionId, f: F) -> crate::Result<R>
     where
         F: FnOnce(&mut ClientConnectionInfo) -> crate::Result<R>,
     {
-        let server_address = TransportUtils::parse_socket_address(server)?;
         let mut connections = self.connections.write().await?;
-        let conn = connections
-            .get_mut(&ConnectionId(server_address.ip(), ctype))
-            .ok_or_else(|| {
-                Error::NotFound(format!("No connection found for server: {}", server))
-            })?;
+        let conn = connections.get_mut(connection_id).ok_or_else(|| {
+            Error::NotFound(format!("No connection found for server: {connection_id:?}"))
+        })?;
         f(conn)
     }
 
