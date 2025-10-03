@@ -414,7 +414,7 @@ impl Client {
             log::debug!("Reusing existing connection to {server}",);
             return Ok(c);
         }
-        self._add_connection(conn.clone(), connection_id).await?;
+        self._add_connection(conn.clone(), &connection_id).await?;
 
         let connect_ok = conn.connect().await;
 
@@ -433,16 +433,16 @@ impl Client {
     async fn _add_connection(
         &self,
         to_add: Arc<Connection>,
-        connection_id: ConnectionId,
+        connection_id: &ConnectionId,
     ) -> crate::Result<()> {
         let mut connections = self.connections.write().await?;
-        if connections.contains_key(&connection_id) {
+        if connections.contains_key(connection_id) {
             return Err(Error::InvalidArgument(format!(
                 "Connection to {connection_id:?} already exists",
             )));
         }
         connections.insert(
-            connection_id,
+            *connection_id,
             ClientConnectionInfo {
                 connection: to_add,
                 sessions: Default::default(),
@@ -753,8 +753,7 @@ impl Client {
 
                         self._add_connection(
                             rdma_connection.clone(),
-                            ip_address,
-                            ConnectionType::Rdma,
+                            &ConnectionId(ip_address.ip(), ConnectionType::Rdma),
                         )
                         .await?;
 

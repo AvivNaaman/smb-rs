@@ -59,6 +59,8 @@ pub enum CliUseTransport {
     Netbios,
     #[cfg(feature = "quic")]
     Quic,
+    #[cfg(feature = "rdma")]
+    Rdma,
 }
 
 /// Describes the SMB multi-channel mode to use.
@@ -115,6 +117,8 @@ impl Cli {
                         local_address: None,
                         cert_validation: QuicCertValidationOptions::PlatformVerifier,
                     }),
+                    #[cfg(feature = "rdma")]
+                    CliUseTransport::Rdma => TransportConfig::Rdma(RdmaConfig {}),
                     CliUseTransport::Default => TransportConfig::Tcp,
                     CliUseTransport::Netbios => TransportConfig::NetBios,
                 },

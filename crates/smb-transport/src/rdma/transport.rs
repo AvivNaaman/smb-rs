@@ -25,14 +25,15 @@ struct RdmaRunningRo {
     worker: JoinHandle<()>,
     cancel: CancellationToken,
 
-    max_fragmented_size: u32,
+    max_fragmented_recv_size: u32,
 }
 
 #[derive(Debug)]
 struct RdmaRunningWo {
     rdma: Arc<Rdma>,
     max_rw_size: u32,
-    max_fragmented_size: u32,
+    max_send_size: usize,
+    max_fragmented_recv_size: u32,
 }
 
 #[derive(Debug)]
@@ -99,10 +100,12 @@ impl RdmaTransport {
         let rdma = RdmaBuilder::default()
             .set_conn_type(ConnectionType::RCCM)
             .set_raw(true)
+            .set_mr_strategy(async_rdma::MRManageStrategy::Raw) // Jemalloc is buggy here :(
             .cm_connect(&node, &service)
             .await?;
         log::info!("RDMA connected");
-        let negotiate_result = Self::negotiate_rdma(&rdma).await?;
+        let max_send_size = 0x400;
+        let negotiate_result = Self::negotiate_rdma(&rdma, max_send_size).await?;
         log::info!("RDMA negotiated");
         let rdma = Arc::new(rdma);
         let cancel = CancellationToken::new();
@@ -121,17 +124,20 @@ impl RdmaTransport {
             RdmaRunningRo {
                 receive: rx,
                 max_rw_size: negotiate_result.max_read_write_size,
-                max_fragmented_size: negotiate_result.max_fragmented_size,
+                max_fragmented_recv_size: negotiate_result.max_fragmented_size,
                 worker,
                 cancel,
             },
             RdmaRunningWo {
                 rdma,
+                max_send_size: max_send_size as usize,
                 max_rw_size: negotiate_result.max_read_write_size,
-                max_fragmented_size: negotiate_result.max_fragmented_size,
+                max_fragmented_recv_size: negotiate_result.max_fragmented_size,
             },
             server_address,
         ));
+
+        log::debug!("RDMA transport state: {:?}", self.state);
 
         Ok(())
     }
@@ -139,16 +145,23 @@ impl RdmaTransport {
     /// (Internal)
     ///
     /// Negotitates SMBD over an opened RDMA connection.
-    async fn negotiate_rdma(rdma: &Rdma) -> Result<SmbdNegotiateResponse> {
+    async fn negotiate_rdma(
+        rdma: &Rdma,
+        preferred_send_size: u32,
+    ) -> Result<SmbdNegotiateResponse> {
         let req: SmbdNegotiateRequest = SmbdNegotiateRequest {
             credits_requested: 0x10,
-            preferred_send_size: 0x400,
+            preferred_send_size,
             max_receive_size: 0x400,
             max_fragmented_size: 128 * 1024 * 2,
         };
 
         let mut neg_req_data = rdma.alloc_local_mr(
-            core::alloc::Layout::from_size_align(SmbdNegotiateRequest::ENCODED_SIZE, 1).unwrap(),
+            core::alloc::Layout::from_size_align(
+                SmbdNegotiateRequest::ENCODED_SIZE,
+                Self::MR_ALIGN_TO,
+            )
+            .unwrap(),
         )?;
         {
             let mut req_data = neg_req_data.as_mut_slice();
@@ -161,8 +174,11 @@ impl RdmaTransport {
 
         let neg_res_data = rdma
             .receive_raw(
-                core::alloc::Layout::from_size_align(SmbdNegotiateResponse::ENCODED_SIZE, 1)
-                    .unwrap(),
+                core::alloc::Layout::from_size_align(
+                    SmbdNegotiateResponse::ENCODED_SIZE,
+                    Self::MR_ALIGN_TO,
+                )
+                .unwrap(),
             )
             .await?;
         let mut cursor = std::io::Cursor::new(neg_res_data.as_slice().as_ref());
@@ -185,6 +201,8 @@ impl RdmaTransport {
         Ok(neg_res)
     }
 
+    const MR_ALIGN_TO: usize = 8;
+
     /// (Internal)
     ///
     /// A worker that calls receive_raw on the RDMA connection for
@@ -202,8 +220,11 @@ impl RdmaTransport {
         cancel: CancellationToken,
     ) {
         log::info!("RDMA receive worker started");
-        let receive_layout =
-            Layout::from_size_align(negotiate_result.max_read_write_size as usize, 1).unwrap();
+        let receive_layout = Layout::from_size_align(
+            negotiate_result.max_receive_size as usize,
+            Self::MR_ALIGN_TO,
+        )
+        .unwrap();
         loop {
             log::trace!("Waiting for RDMA data...");
             select! {
@@ -250,8 +271,16 @@ impl RdmaTransport {
             };
 
             let mr_data = mr.as_slice().as_ref();
+
+            log::trace!(
+                "Received RDMA message data (len={}): {mr_data:?}",
+                mr_data.len()
+            );
+
             let mut cursor = std::io::Cursor::new(mr_data);
             let message = SmbdDataTransferHeader::read(&mut cursor)?;
+
+            log::trace!("Parsed RDMA message header: {:?}", message);
 
             if result.capacity() == 0 {
                 if message.data_length == 0 {
@@ -268,13 +297,14 @@ impl RdmaTransport {
             let data_length = message.data_length as usize;
             let offset_in_mr = message.data_offset as usize;
 
-            if result.len() + data_length > running.max_fragmented_size as usize {
+            if result.len() + data_length > running.max_fragmented_recv_size as usize {
                 return Err(RdmaError::RequestTooLarge(
                     data_length,
-                    running.max_fragmented_size as usize,
+                    running.max_fragmented_recv_size as usize,
                 ));
             }
             if data_length > running.max_rw_size as usize {
+                // TODO: this is wrong
                 return Err(RdmaError::RequestTooLarge(
                     data_length,
                     running.max_rw_size as usize,
@@ -297,6 +327,11 @@ impl RdmaTransport {
                     message.remaining_data_length
                 );
             }
+
+            log::trace!(
+                "Dropping RDMA message local MR. Remaining data length: {}",
+                message.remaining_data_length
+            );
         }
 
         Ok(result)
@@ -312,10 +347,10 @@ impl RdmaTransport {
         );
         let running = self._get_write()?;
 
-        if message.len() > running.max_fragmented_size as usize {
+        if message.len() > running.max_fragmented_recv_size as usize {
             return Err(RdmaError::RequestTooLarge(
                 message.len(),
-                running.max_fragmented_size as usize,
+                running.max_fragmented_recv_size as usize,
             ));
         }
 
@@ -325,10 +360,7 @@ impl RdmaTransport {
             return Ok(());
         }
 
-        /// The offset must be 8-byte aligned.
-        const IN_MR_OFFSET: u32 = (SmbdDataTransferHeader::ENCODED_SIZE as u32)
-            .div_ceil(SmbdDataTransferHeader::DATA_ALIGNMENT)
-            * SmbdDataTransferHeader::DATA_ALIGNMENT;
+        const IN_MR_OFFSET: u32 = 24;
         assert!(IN_MR_OFFSET <= running.max_rw_size); // TODO: do this in a nicer way.
 
         let mut total_data_sent: u32 = 0;
@@ -338,6 +370,10 @@ impl RdmaTransport {
         let mut current_buf = buf_iterator
             .next()
             .expect("Some data to send, but no buffers");
+
+        let mut local_mr = running.rdma.alloc_local_mr(
+            Layout::from_size_align(running.max_send_size, Self::MR_ALIGN_TO).unwrap(),
+        )?;
 
         let mut current_buf_offset: u32 = 0;
         while total_data_sent < total_data_to_send {
@@ -366,9 +402,6 @@ impl RdmaTransport {
 
             let data_end = IN_MR_OFFSET + data_sending;
             let data_end = data_end as usize;
-            let mut local_mr = running
-                .rdma
-                .alloc_local_mr(Layout::from_size_align(data_end, 1).unwrap())?;
 
             {
                 let mut mr_data = local_mr.as_mut_slice();
