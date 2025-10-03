@@ -181,7 +181,6 @@ where
 
     /// This is a function that should be used by multi worker implementations (async/mtd),
     /// to send a message to the server.
-    #[maybe_async]
     pub async fn outgoing_data_callback(
         self: &Arc<Self>,
         message: Option<IoVec>,

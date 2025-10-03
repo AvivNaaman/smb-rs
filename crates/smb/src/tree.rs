@@ -41,6 +41,7 @@ pub struct Tree {
     conn_info: Arc<ConnectionInfo>,
 }
 
+#[maybe_async(AFIT)]
 impl Tree {
     #[maybe_async]
     pub(crate) async fn connect(
@@ -124,7 +125,6 @@ impl Tree {
     /// This function automatically handles the following:
     /// * *DFS operations*: If the share has been opened as a DFS referral share, the create operation will modify the file name to include the DFS path.
     ///     That is, assuming it is NOT prefixed with "\\". This is rquired for a proper DFS referral file open. ("DFS normalization", MS-SMB2 2.2.13 + 3.3.5.9)
-    #[maybe_async]
     pub async fn create(&self, file_name: &str, args: &FileCreateArgs) -> crate::Result<Resource> {
         let info = self.handler.info()?;
         Resource::create(
@@ -140,7 +140,6 @@ impl Tree {
 
     /// A wrapper around [Tree::create] that creates a file on the remote server.
     /// See [Tree::create] for more information.
-    #[maybe_async]
     pub async fn create_file(
         &self,
         file_name: &str,
@@ -161,7 +160,6 @@ impl Tree {
 
     /// A wrapper around [Tree::create] that creates a directory on the remote server.
     /// See [Tree::create] for more information.
-    #[maybe_async]
     pub async fn create_directory(
         &self,
         dir_name: &str,
@@ -182,7 +180,6 @@ impl Tree {
 
     /// A wrapper around [create][crate::tree::Tree::create] that opens an existing file or directory on the remote server.
     /// See [create][crate::tree::Tree::create] for more information.
-    #[maybe_async]
     pub async fn open_existing(
         &self,
         file_name: &str,
@@ -216,7 +213,6 @@ impl Tree {
     /// Disconnects from the tree (share) on the server.
     ///
     /// After calling this method, none of the resources held open by the tree are accessible.
-    #[maybe_async]
     pub async fn disconnect(&self) -> crate::Result<()> {
         self.handler.disconnect().await?;
         Ok(())

@@ -17,7 +17,6 @@ impl Pipe {
         Pipe { handle }
     }
 
-    #[maybe_async]
     pub async fn bind<I>(self) -> crate::Result<I>
     where
         I: RpcInterface<PipeRpcConnection>,
@@ -37,7 +36,6 @@ pub struct PipeRpcConnection {
 }
 
 impl PipeRpcConnection {
-    #[maybe_async]
     pub async fn bind<I>(mut pipe: Pipe) -> crate::Result<I>
     where
         I: RpcInterface<PipeRpcConnection>,

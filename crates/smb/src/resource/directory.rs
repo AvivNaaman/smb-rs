@@ -22,6 +22,7 @@ pub struct Directory {
     query_lock: Mutex<()>,
 }
 
+#[maybe_async(AFIT)]
 impl Directory {
     pub fn new(handle: ResourceHandle) -> Self {
         let access: DirAccessMask = handle.access.into();
@@ -219,7 +220,6 @@ impl Directory {
     /// * A vector of [`FileNotifyInformation`] objects, containing the changes that occurred.
     /// # Notes
     /// * This is a long-running operation, and will block until a result is received, or the operation gets cancelled.
-    #[maybe_async]
     pub async fn watch(
         &self,
         filter: NotifyFilter,
@@ -272,7 +272,6 @@ impl Directory {
         Ok(response.message.content.to_changenotify()?.buffer)
     }
 
-    #[maybe_async]
     pub async fn query_quota_info(&self, info: QueryQuotaInfo) -> crate::Result<QueryQuotaInfo> {
         Ok(self
             .handle
@@ -294,7 +293,6 @@ impl Directory {
     /// Sets the quota information for the current file.
     /// # Arguments
     /// * `info` - The information to set - a [QueryQuotaInfo].
-    #[maybe_async]
     pub async fn set_quota_info(&self, info: QueryQuotaInfo) -> crate::Result<()> {
         self.handle
             .set_info_common(

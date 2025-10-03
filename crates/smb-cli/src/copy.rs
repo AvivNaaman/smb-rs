@@ -260,7 +260,7 @@ pub async fn copy(cmd: &CopyCmd, cli: &Cli) -> Result<(), Box<dyn Error>> {
         return Err("Copying between two local files is not supported. Use `cp` or `copy` shell commands instead :)".into());
     }
 
-    let client = Client::new(cli.make_smb_client_config());
+    let client = Client::new(cli.make_smb_client_config()?);
     let from = CopyFile::open(&cmd.from, &client, cli, cmd, true).await?;
     let to = CopyFile::open(&cmd.to, &client, cli, cmd, false).await?;
 

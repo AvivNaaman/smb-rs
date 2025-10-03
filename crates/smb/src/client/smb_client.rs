@@ -1,9 +1,11 @@
+use crate::ConnectionConfig;
 use crate::{
     Connection, Error, FileCreateArgs, Resource, Session, Tree, resource::Pipe, sync_helpers::*,
 };
 use maybe_async::maybe_async;
 use smb_msg::{NetworkInterfaceInfo, ReferralEntry, ReferralEntryValue, Status};
 use smb_rpc::interface::{ShareInfo1, SrvSvc};
+use smb_transport::TransportConfig;
 use smb_transport::utils::TransportUtils;
 use sspi::{AuthIdentity, Secret};
 use std::net::{IpAddr, SocketAddr};
@@ -64,20 +66,9 @@ pub struct Client {
     config: ClientConfig,
     /// Server Name + [RDMA|NONE] => [`ClientConnectionInfo`]
     // It's quite common to have one connection for RDMA, and one for TCP,
-    connections: RwLock<HashMap<ConnectionId, ClientConnectionInfo>>,
+    connections: RwLock<HashMap<IpAddr, ClientConnectionInfo>>,
     /// shares (trees) that are currently connected.
     share_connects: Mutex<HashMap<UncPath, ClientConectedTree>>,
-}
-
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
-struct ConnectionId(IpAddr, ConnectionType);
-
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone)]
-#[repr(u8)]
-pub enum ConnectionType {
-    None,
-    #[cfg(feature = "rdma")]
-    Rdma,
 }
 
 /// (Internal)
@@ -86,9 +77,6 @@ pub enum ConnectionType {
 /// This is most useful to avoid creating multiple connections to the same server,
 struct ClientConnectionInfo {
     connection: Arc<Connection>,
-    #[cfg(feature = "rdma")]
-    /// Connections in other channels (i.e. RDMA)
-    alt_connections: Option<HashMap<u32, Arc<Connection>>>,
     /// Sessions owned by the connection
     sessions: HashMap<u64, ClientSessionInfo>,
 }
@@ -108,10 +96,9 @@ struct ClientConectedTree {
 #[derive(Clone)]
 pub struct AltChannelInfo {
     connection: Arc<Connection>,
-    channel_id: u32,
-    connection_type: ConnectionType,
 }
 
+#[maybe_async(AFIT)]
 impl Client {
     /// Creates a new `Client` instance with the given configuration.
     pub fn new(config: ClientConfig) -> Self {
@@ -132,7 +119,6 @@ impl Client {
     /// directly or indirectly.
     ///
     /// See [Drop behavior][Client#drop-behavior] for more information.
-    #[maybe_async]
     pub async fn close(&self) -> crate::Result<()> {
         // Close all opened shares
         let mut trees = self.share_connects.lock().await?;
@@ -166,7 +152,6 @@ impl Client {
     }
 
     /// Lists all shares on the specified server.
-    #[maybe_async]
     pub async fn list_shares(&self, server: &str) -> crate::Result<Vec<ShareInfo1>> {
         let srvsvc_pipe_name: &str = "srvsvc";
         let srvsvc_pipe = self.open_pipe(server, srvsvc_pipe_name).await?;
@@ -211,7 +196,6 @@ impl Client {
     /// let target_path = UncPath::from_str(r"\\server\share").unwrap();
     /// let connection = client.share_connect(&target_path, "username", "password".to_string()).await?;
     /// #   Ok(()) }
-    #[maybe_async]
     pub async fn share_connect(
         &self,
         target: &UncPath,
@@ -235,7 +219,7 @@ impl Client {
             );
 
             let address = TransportUtils::parse_socket_address(target.server())?;
-            self._with_connection(&ConnectionId(address.ip(), ConnectionType::None), |f| {
+            self._with_connection(address.ip(), |f| {
                 let session_info = f
                     .sessions
                     .get(&session.session_id())
@@ -263,7 +247,6 @@ impl Client {
     ///
     /// Performs the actual share connection logic,
     /// without setting up multi-channel.
-    #[maybe_async]
     async fn _share_connect(&self, target: &UncPath, identity: &AuthIdentity) -> crate::Result<()> {
         if target.share().is_none() {
             return Err(crate::Error::InvalidArgument(
@@ -294,7 +277,7 @@ impl Client {
             let session = Arc::new(session);
 
             let address = TransportUtils::parse_socket_address(target.server())?;
-            self._with_connection(&ConnectionId(address.ip(), ConnectionType::None), |f| {
+            self._with_connection(address.ip(), |f| {
                 f.sessions.insert(
                     session.session_id(),
                     ClientSessionInfo {
@@ -336,7 +319,6 @@ impl Client {
         Ok(())
     }
 
-    #[maybe_async]
     async fn _get_credentials(&self, target: &UncPath) -> crate::Result<AuthIdentity> {
         self._with_tree(target, |tree| {
             tree.credentials.as_ref().cloned().ok_or_else(|| {
@@ -348,7 +330,6 @@ impl Client {
         .await
     }
 
-    #[maybe_async]
     async fn _create_file(&self, path: &UncPath, args: &FileCreateArgs) -> crate::Result<Resource> {
         let tree = self.get_tree(path).await?;
         let resource = tree.create(path.path().unwrap_or(""), args).await?;
@@ -369,7 +350,6 @@ impl Client {
     ///
     /// ## Returns
     /// The connected connection, if succeeded. Error if failed to make the connection,
-    #[maybe_async]
     pub async fn connect(&self, server: &str) -> crate::Result<Arc<Connection>> {
         let server_address = TransportUtils::parse_socket_address(server)?;
         self.connect_to_address(server, server_address).await
@@ -392,35 +372,60 @@ impl Client {
     /// ## Returns
     /// The connected connection, if succeeded. Error if failed to make the connection,
     /// or failed to connect the remote.
-    #[maybe_async]
     pub async fn connect_to_address(
         &self,
         server: &str,
         server_address: SocketAddr,
     ) -> crate::Result<Arc<Connection>> {
-        let connection_id = ConnectionId(server_address.ip(), ConnectionType::None);
+        self._connect_transport_to_address(server, server_address, None)
+            .await
+    }
+
+    /// Just like [`Client::connect_to_address`], but allows specifying a custom transport configuration.
+    pub async fn connect_transport_to_address(
+        &self,
+        server: &str,
+        server_address: SocketAddr,
+        transport: TransportConfig,
+    ) -> crate::Result<Arc<Connection>> {
+        self._connect_transport_to_address(server, server_address, Some(transport))
+            .await
+    }
+
+    async fn _connect_transport_to_address(
+        &self,
+        server: &str,
+        server_address: SocketAddr,
+        transport: Option<TransportConfig>,
+    ) -> crate::Result<Arc<Connection>> {
         log::debug!("Creating new connection to {server}",);
 
-        let conn = Connection::build(
-            server,
-            server_address,
-            self.config.client_guid,
-            self.config.connection.clone(),
-        )?;
+        let config = if let Some(transport) = transport {
+            ConnectionConfig {
+                transport,
+                ..self.config.connection.clone()
+            }
+        } else {
+            self.config.connection.clone()
+        };
+
+        let conn = Connection::build(server, server_address, self.config.client_guid, config)?;
+
         let conn = Arc::new(conn);
 
         // TODO: This is a bit racy
-        if let Ok(c) = self.get_connection_ip_channel(&connection_id).await {
+        if let Ok(c) = self.get_connection_ip_channel(server_address.ip()).await {
             log::debug!("Reusing existing connection to {server}",);
             return Ok(c);
         }
-        self._add_connection(conn.clone(), &connection_id).await?;
+        self._add_connection(conn.clone(), &server_address.ip())
+            .await?;
 
         let connect_ok = conn.connect().await;
 
         if connect_ok.is_err() {
             let mut connections = self.connections.write().await?;
-            connections.remove(&connection_id);
+            connections.remove(&server_address.ip());
             connect_ok?;
         }
 
@@ -430,24 +435,18 @@ impl Client {
     }
 
     #[maybe_async]
-    async fn _add_connection(
-        &self,
-        to_add: Arc<Connection>,
-        connection_id: &ConnectionId,
-    ) -> crate::Result<()> {
+    async fn _add_connection(&self, to_add: Arc<Connection>, ip: &IpAddr) -> crate::Result<()> {
         let mut connections = self.connections.write().await?;
-        if connections.contains_key(connection_id) {
+        if connections.contains_key(ip) {
             return Err(Error::InvalidArgument(format!(
-                "Connection to {connection_id:?} already exists",
+                "Connection to {ip:?} already exists",
             )));
         }
         connections.insert(
-            *connection_id,
+            *ip,
             ClientConnectionInfo {
                 connection: to_add,
                 sessions: Default::default(),
-                #[cfg(feature = "rdma")]
-                alt_connections: None,
             },
         );
         Ok(())
@@ -455,34 +454,26 @@ impl Client {
 
     /// Returns the underlying [`Connection`] for the specified server,
     /// after a successful call to [`Client::connect`] or [`Client::share_connect`].
-    #[maybe_async]
     pub async fn get_connection(&self, server: &str) -> crate::Result<Arc<Connection>> {
         let addr = TransportUtils::parse_socket_address(server)?;
         self.get_connection_ip(addr.ip()).await
     }
 
-    #[maybe_async]
     pub async fn get_connection_ip(&self, ip: IpAddr) -> crate::Result<Arc<Connection>> {
-        self.get_connection_ip_channel(&ConnectionId(ip, ConnectionType::None))
-            .await
+        self.get_connection_ip_channel(ip).await
     }
 
     #[maybe_async]
-    async fn get_connection_ip_channel(
-        &self,
-        connection_id: &ConnectionId,
-    ) -> crate::Result<Arc<Connection>> {
-        self._with_connection(connection_id, |c| Ok(c.connection.clone()))
+    async fn get_connection_ip_channel(&self, ip: IpAddr) -> crate::Result<Arc<Connection>> {
+        self._with_connection(ip, |c| Ok(c.connection.clone()))
             .await
     }
 
-    #[maybe_async]
     pub async fn get_session(&self, path: &UncPath) -> crate::Result<Arc<Session>> {
         self._with_tree(path, |tree| Ok(tree.session.clone())).await
     }
 
     /// Returns a map of channel IDs to their corresponding connections for the specified session,
-    #[maybe_async]
     pub async fn get_channels(
         &self,
         path: &UncPath,
@@ -490,7 +481,7 @@ impl Client {
         let session = self.get_session(path).await?;
         let address = TransportUtils::parse_socket_address(path.server())?;
         let channels = self
-            ._with_connection(&ConnectionId(address.ip(), ConnectionType::None), |c| {
+            ._with_connection(address.ip(), |c| {
                 let session_info = c.sessions.get(&session.session_id());
                 session_info.ok_or_else(|| {
                     Error::NotFound(format!(
@@ -516,8 +507,6 @@ impl Client {
                     AltChannelInfo {
                         // TODO: that's a bit shady, re-think the entire HashMap key of connections.
                         connection: c.connection.clone(),
-                        channel_id: session.channel_id(),
-                        connection_type: ConnectionType::None,
                     },
                 );
                 Ok(alt_channels)
@@ -529,20 +518,19 @@ impl Client {
 
     /// Returns the underlying [`Tree`] for the specified UNC path,
     /// after a successful call to [`Client::share_connect`].
-    #[maybe_async]
     pub async fn get_tree(&self, path: &UncPath) -> crate::Result<Arc<Tree>> {
         self._with_tree(path, |tree| Ok(tree.tree.clone())).await
     }
 
     #[maybe_async]
-    async fn _with_connection<F, R>(&self, connection_id: &ConnectionId, f: F) -> crate::Result<R>
+    async fn _with_connection<F, R>(&self, ip: IpAddr, f: F) -> crate::Result<R>
     where
         F: FnOnce(&mut ClientConnectionInfo) -> crate::Result<R>,
     {
         let mut connections = self.connections.write().await?;
-        let conn = connections.get_mut(connection_id).ok_or_else(|| {
-            Error::NotFound(format!("No connection found for server: {connection_id:?}"))
-        })?;
+        let conn = connections
+            .get_mut(&ip)
+            .ok_or_else(|| Error::NotFound(format!("No connection found for server: {ip:?}")))?;
         f(conn)
     }
 
@@ -573,7 +561,6 @@ impl Client {
     ///
     /// ## Returns
     /// A result containing the created or opened file resource, or an error.
-    #[maybe_async]
     pub async fn create_file(
         &self,
         path: &UncPath,
@@ -601,7 +588,6 @@ impl Client {
     /// Similar [`Client::share_connect`], but connects to the SMB pipes share (IPC$).
     ///
     /// After calling this method, the [`Client::open_pipe`] method can be used to open named pipes.
-    #[maybe_async]
     pub async fn ipc_connect(
         &self,
         server: &str,
@@ -616,7 +602,6 @@ impl Client {
         self._share_connect(&ipc_share, &identity).await
     }
 
-    #[maybe_async]
     pub async fn _ipc_connect(&self, server: &str, identity: &AuthIdentity) -> crate::Result<()> {
         let ipc_share = UncPath::ipc_share(server)?;
         self._share_connect(&ipc_share, identity).await
@@ -635,7 +620,6 @@ impl Client {
     /// ## Notes
     /// before calling this method, you MUST call the [`Client::ipc_connect`] method,
     /// that connects to the IPC$ share on the server, which then allows for communication with the named pipe.
-    #[maybe_async]
     pub async fn open_pipe(&self, server: &str, pipe_name: &str) -> crate::Result<Pipe> {
         let path = UncPath::ipc_share(server)?.with_path(pipe_name);
         let pipe = self
@@ -703,82 +687,6 @@ impl Client {
 
         let mut result = HashMap::new();
 
-        #[cfg(feature = "rdma")]
-        {
-            // First, try binding to RDMA interfaces
-            let rdma_interfaces =
-                MultiChannelUtils::get_rdma_interface_addresses(&network_interfaces)?;
-
-            if rdma_interfaces.is_empty() {
-                log::debug!("No RDMA-capable network interfaces found for multi-channel.");
-            } else {
-                let session = self.get_session(unc).await?;
-                for (if_index, &ip_address) in rdma_interfaces.iter() {
-                    log::debug!(
-                        "Found RDMA interface for multi-channel: {if_index} => {ip_address}"
-                    );
-
-                    let (connection, channel) = {
-                        // Manually setup the RDMA connection here. TODO: make it happen properly inside Connection?
-
-                        use smb_transport::{RdmaTransport, SmbTransport};
-                        let mut transport = RdmaTransport::new(
-                            &self
-                                .config
-                                .connection
-                                .multichannel
-                                .rdma
-                                .clone()
-                                .unwrap_or_default(),
-                            self.config.connection.timeout(),
-                        );
-
-                        let ip_address = if ip_address.port() == 0 {
-                            SocketAddr::new(ip_address.ip(), 445)
-                        } else {
-                            ip_address
-                        };
-
-                        transport.connect(unc.server(), ip_address).await?;
-
-                        let rdma_connection = Connection::from_transport(
-                            Box::new(transport),
-                            unc.server(),
-                            primary_conn_info.client_guid,
-                            self.config.connection.clone(),
-                        )
-                        .await?;
-
-                        let rdma_connection = Arc::new(rdma_connection);
-
-                        self._add_connection(
-                            rdma_connection.clone(),
-                            &ConnectionId(ip_address.ip(), ConnectionType::Rdma),
-                        )
-                        .await?;
-
-                        let channel = rdma_connection
-                            .bind_session(&session, identity.clone())
-                            .await?;
-
-                        (rdma_connection, channel)
-                    };
-                    result.insert(
-                        channel,
-                        AltChannelInfo {
-                            connection,
-                            channel_id: channel,
-                            connection_type: ConnectionType::Rdma,
-                        },
-                    );
-                }
-
-                if !result.is_empty() {
-                    return Ok(Some(result));
-                }
-            }
-        }
-
         // Bind to other, non-rdma network interfaces.
         let other_interfaces = MultiChannelUtils::get_alt_interface_addresses(
             &network_interfaces,
@@ -795,24 +703,37 @@ impl Client {
         }
 
         let session = self.get_session(unc).await?;
-        for (if_index, &ip_address) in other_interfaces.iter() {
-            log::debug!("Found alternate interface for multi-channel: {if_index} => {ip_address}");
+        for (if_index, &interface) in other_interfaces.iter() {
+            let address = interface.sockaddr.socket_addr();
+            log::debug!("Found alternate interface for multi-channel: {if_index} => {address}");
 
             let (connection, channel) = {
-                let connection = self.connect_to_address(unc.server(), ip_address).await?;
+                let connection = if interface.capability.rdma() && cfg!(feature = "rdma") {
+                    self._connect_transport_to_address(
+                        unc.server(),
+                        address,
+                        #[cfg(feature = "rdma")]
+                        Some(TransportConfig::Rdma(crate::transport::RdmaConfig {
+                            rdma_type: self.config.rdma_type.ok_or_else(|| {
+                                Error::InvalidConfiguration(
+                                    "RDMA transport type is not specified in client configuration."
+                                        .to_string(),
+                                )
+                            })?,
+                        })),
+                        #[cfg(not(feature = "rdma"))]
+                        None,
+                    )
+                    .await?
+                } else {
+                    self.connect_to_address(unc.server(), address).await?
+                };
 
                 let channel = connection.bind_session(&session, identity.clone()).await?;
 
                 (connection, channel)
             };
-            result.insert(
-                channel,
-                AltChannelInfo {
-                    connection,
-                    channel_id: channel,
-                    connection_type: ConnectionType::None,
-                },
-            );
+            result.insert(channel, AltChannelInfo { connection });
         }
 
         Ok(Some(result))
@@ -963,7 +884,7 @@ impl MultiChannelUtils {
     fn get_alt_interface_addresses(
         network_interfaces: &[NetworkInterfaceInfo],
         current_server_address: IpAddr,
-    ) -> crate::Result<HashMap<u32, SocketAddr>> {
+    ) -> crate::Result<HashMap<u32, &NetworkInterfaceInfo>> {
         let current_primary_interface = network_interfaces
             .iter()
             .find(|iface| iface.sockaddr.socket_addr().ip() == current_server_address);
@@ -979,22 +900,8 @@ impl MultiChannelUtils {
             .filter(|iface| {
                 iface.sockaddr.socket_addr().is_ipv4()
                     && iface.if_index != current_primary_interface.if_index
-                    && !iface.capability.rdma()
             }) // TODO: IPv6; RDMA
-            .map(|iface| (iface.if_index, iface.sockaddr.socket_addr()))
-            .collect();
-
-        Ok(index_to_address)
-    }
-
-    #[cfg(feature = "rdma")]
-    fn get_rdma_interface_addresses(
-        network_interfaces: &[NetworkInterfaceInfo],
-    ) -> crate::Result<HashMap<u32, SocketAddr>> {
-        let index_to_address = network_interfaces
-            .iter()
-            .filter(|iface| iface.sockaddr.socket_addr().is_ipv4() && iface.capability.rdma())
-            .map(|iface| (iface.if_index, iface.sockaddr.socket_addr()))
+            .map(|iface| (iface.if_index, iface))
             .collect();
 
         Ok(index_to_address)

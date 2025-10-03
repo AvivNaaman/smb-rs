@@ -266,6 +266,7 @@ pub struct ResourceHandle {
     conn_info: Arc<ConnectionInfo>,
 }
 
+#[maybe_async(AFIT)]
 impl ResourceHandle {
     /// Returns the name of the resource.
     pub fn name(&self) -> &str {
@@ -347,7 +348,6 @@ impl ResourceHandle {
     /// A `Result` containing the requested information.
     /// # Notes
     /// * use [`ResourceHandle::query_full_ea_info`] to query extended attributes information.
-    #[maybe_async]
     pub async fn query_info<T>(&self) -> crate::Result<T>
     where
         T: QueryFileInfoValue,
@@ -365,7 +365,6 @@ impl ResourceHandle {
     /// # Returns
     /// A `Result` containing the requested information, of type [QueryFileFullEaInformation].
     /// See [`ResourceHandle::query_info`] for more information.
-    #[maybe_async]
     pub async fn query_full_ea_info(
         &self,
         names: Vec<&str>,
@@ -404,7 +403,6 @@ impl ResourceHandle {
     /// A `Result` containing the requested information.
     /// # Notes
     /// * use [ResourceHandle::query_full_ea_info] to query extended attributes information.
-    #[maybe_async]
     pub async fn query_info_with_options<T: QueryFileInfoValue>(
         &self,
         flags: QueryInfoFlags,
@@ -432,7 +430,6 @@ impl ResourceHandle {
     /// * `additional_info` - The information to request on the security descriptor.
     /// # Returns
     /// A `Result` containing the requested information, of type [SecurityDescriptor].
-    #[maybe_async]
     pub async fn query_security_info(
         &self,
         additional_info: AdditionalInfo,
@@ -458,7 +455,6 @@ impl ResourceHandle {
     /// * `request` - The request to send, which has an associated FSCTL code and data.
     /// # Returns
     /// A `Result` containing the requested information, as bound to [`FsctlRequest::Response`].
-    #[maybe_async]
     pub async fn fsctl<T: FsctlRequest>(&self, request: T) -> crate::Result<T::Response> {
         const DEFAULT_RESPONSE_OUT_SIZE: u32 = 1024;
         self.fsctl_with_options(request, DEFAULT_RESPONSE_OUT_SIZE)
@@ -474,7 +470,6 @@ impl ResourceHandle {
     /// * `max_output_response` - The maximum output response size.
     /// # Returns
     /// A `Result` containing the requested information, as bound to [`FsctlRequest::Response`].
-    #[maybe_async]
     pub async fn fsctl_with_options<T: FsctlRequest>(
         &self,
         request: T,
@@ -501,7 +496,6 @@ impl ResourceHandle {
     /// * `max_output_response` - The maximum output response size.
     /// # Returns
     /// A `Result` containing the response data as a vector of bytes.
-    #[maybe_async]
     pub async fn ioctl(
         &self,
         ctl_code: u32,
@@ -556,7 +550,6 @@ impl ResourceHandle {
     /// * `T` - The type of information to query. Must implement the [QueryFileSystemInfoValue] trait.
     /// # Returns
     /// A `Result` containing the requested information.
-    #[maybe_async]
     pub async fn query_fs_info<T>(&self) -> crate::Result<T>
     where
         T: QueryFileSystemInfoValue,
@@ -588,7 +581,6 @@ impl ResourceHandle {
     /// Sets the file information for the current file.
     /// # Type Parameters
     /// * `T` - The type of information to set. Must implement the [SetFileInfoValue] trait.
-    #[maybe_async]
     pub async fn set_info<T>(&self, info: T) -> crate::Result<()>
     where
         T: SetFileInfoValue,
@@ -604,7 +596,6 @@ impl ResourceHandle {
     /// Sets the file system information for the current file.
     /// # Type Parameters
     /// * `T` - The type of information to set. Must implement the [SetFileSystemInfoValue] trait.
-    #[maybe_async]
     pub async fn set_filesystem_info<T>(&self, info: T) -> crate::Result<()>
     where
         T: SetFileSystemInfoValue,
@@ -627,7 +618,6 @@ impl ResourceHandle {
     /// # Arguments
     /// * `info` - The information to set - a [SecurityDescriptor].
     /// * `additional_info` - The information that is set on the security descriptor.
-    #[maybe_async]
     pub async fn set_security_info(
         &self,
         info: SecurityDescriptor,
@@ -662,7 +652,6 @@ impl ResourceHandle {
     ///
     /// # Returns
     /// A `Result` indicating success or failure.
-    #[maybe_async]
     pub async fn close(&self) -> crate::Result<()> {
         if !self.open.swap(false, std::sync::atomic::Ordering::Relaxed) {
             return Err(Error::InvalidState("Resource is already closed".into()));

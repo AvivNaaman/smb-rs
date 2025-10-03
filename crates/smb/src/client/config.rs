@@ -17,6 +17,9 @@ pub struct ClientConfig {
     pub connection: ConnectionConfig,
 
     pub client_guid: Guid,
+
+    #[cfg(feature = "rdma")]
+    pub rdma_type: Option<crate::transport::RdmaType>,
 }
 
 impl Default for ClientConfig {
@@ -25,6 +28,8 @@ impl Default for ClientConfig {
             dfs: true,
             connection: ConnectionConfig::default(),
             client_guid: Guid::generate(),
+            #[cfg(feature = "rdma")]
+            rdma_type: None,
         }
     }
 }

@@ -43,7 +43,7 @@ pub struct InfoCmd {
 
 #[maybe_async]
 pub async fn info(cmd: &InfoCmd, cli: &Cli) -> Result<(), Box<dyn Error>> {
-    let client = Client::new(cli.make_smb_client_config());
+    let client = Client::new(cli.make_smb_client_config()?);
 
     if cmd.path.share().is_none() || cmd.path.share().unwrap().is_empty() {
         client

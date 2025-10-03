@@ -20,9 +20,14 @@ pub struct Cli {
     /// Disables DFS referral resolution.
     #[arg(long)]
     pub no_dfs: bool,
+
     /// Configures multi-channel support.
     #[arg(long, default_value_t = MultiChannelMode::default())]
     pub multichannel: MultiChannelMode,
+
+    #[cfg(feature = "rdma")]
+    #[arg(long)]
+    pub rdma_type: Option<RdmaType>,
 
     /// Opts-in to use SMB compression if the server supports it.
     #[arg(long)]
@@ -95,10 +100,34 @@ impl MultiChannelMode {
     }
 }
 
+#[derive(ValueEnum, Clone, Debug)]
+#[cfg(feature = "rdma")]
+pub enum RdmaType {
+    /// InfiniBand
+    Infiniband,
+    /// RDMA over Converged Ethernet (RoCE)
+    Roce,
+    /// Internet Wide Area RDMA Protocol (iWARP)
+    Iwarp,
+}
+
+#[cfg(feature = "rdma")]
+impl Into<smb::transport::RdmaType> for RdmaType {
+    fn into(self) -> smb::transport::RdmaType {
+        match self {
+            RdmaType::Infiniband => smb::transport::RdmaType::InfiniBand,
+            RdmaType::Roce => smb::transport::RdmaType::RoCE,
+            RdmaType::Iwarp => smb::transport::RdmaType::IWarp,
+        }
+    }
+}
+
 impl Cli {
-    pub fn make_smb_client_config(&self) -> ClientConfig {
-        ClientConfig {
+    pub fn make_smb_client_config(&self) -> Result<ClientConfig, &'static str> {
+        Ok(ClientConfig {
             dfs: !self.no_dfs,
+            #[cfg(feature = "rdma")]
+            rdma_type: self.rdma_type.clone().map(|x| x.into()),
             client_guid: Guid::generate(),
             connection: ConnectionConfig {
                 max_dialect: Some(Dialect::MAX),
@@ -118,7 +147,13 @@ impl Cli {
                         cert_validation: QuicCertValidationOptions::PlatformVerifier,
                     }),
                     #[cfg(feature = "rdma")]
-                    CliUseTransport::Rdma => TransportConfig::Rdma(RdmaConfig {}),
+                    CliUseTransport::Rdma => TransportConfig::Rdma(RdmaConfig {
+                        rdma_type: self
+                            .rdma_type
+                            .clone()
+                            .map(|x| x.into())
+                            .ok_or("RDMA type must be specified when using RDMA transport")?,
+                    }),
                     CliUseTransport::Default => TransportConfig::Tcp,
                     CliUseTransport::Netbios => TransportConfig::NetBios,
                 },
@@ -131,12 +166,10 @@ impl Cli {
                 compression_enabled: self.compress,
                 multichannel: smb::connection::MultiChannelConfig {
                     enabled: self.multichannel.enabled() && self.command.uses_multichannel(),
-                    #[cfg(feature = "rdma")]
-                    rdma: Some(RdmaConfig {}),
                 },
                 ..Default::default()
             },
-        }
+        })
     }
 }
 

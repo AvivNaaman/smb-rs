@@ -31,10 +31,10 @@ struct TransformerConfig {
     negotiated: bool,
 }
 
+#[maybe_async(AFIT)]
 impl Transformer {
     /// Notifies that the connection negotiation has been completed,
     /// with the given [`ConnectionInfo`].
-    #[maybe_async]
     pub async fn negotiated(&self, neg_info: &ConnectionInfo) -> crate::Result<()> {
         {
             let config = self.config.read().await?;
@@ -61,7 +61,6 @@ impl Transformer {
     }
 
     /// Notifies that a session has started.
-    #[maybe_async]
     pub async fn session_started(
         &self,
         session: &Arc<RwLock<SessionAndChannel>>,
@@ -89,7 +88,6 @@ impl Transformer {
     }
 
     /// Notifies that a session has ended.
-    #[maybe_async]
     pub async fn session_ended(
         &self,
         session: &Arc<RwLock<SessionAndChannel>>,
@@ -146,7 +144,6 @@ impl Transformer {
     }
 
     /// Transforms an outgoing message to a raw SMB message.
-    #[maybe_async]
     pub async fn transform_outgoing(&self, mut msg: OutgoingMessage) -> crate::Result<IoVec> {
         let should_encrypt = msg.encrypt;
         let should_sign = msg.message.header.flags.signed();
@@ -252,7 +249,6 @@ impl Transformer {
     }
 
     /// Transforms an incoming message buffer to an [`IncomingMessage`].
-    #[maybe_async]
     pub async fn transform_incoming(&self, data: Vec<u8>) -> crate::Result<IncomingMessage> {
         let message = Response::try_from(data.as_ref())?;
 
@@ -397,14 +393,14 @@ impl Transformer {
     // This behavior is actually against the spec - MS-SMB2 3.2.4.1.1:
     // > "If the client signs the request, it MUST set the SMB2_FLAGS_SIGNED bit in the Flags field of the SMB2 header."
     #[maybe_async]
-    async fn is_message_signed_ksmbd(&self, message: &PlainResponse) -> bool {
+    async fn is_message_signed_ksmbd(&self, _message: &PlainResponse) -> bool {
         #[cfg(feature = "ksmbd-multichannel-compat")]
         {
-            if message.header.command != Command::SessionSetup || message.header.signature == 0 {
+            if _message.header.command != Command::SessionSetup || _message.header.signature == 0 {
                 return false;
             }
 
-            let session_id = message.header.session_id;
+            let session_id = _message.header.session_id;
             let is_binding = self
                 ._with_channel(session_id, |session| {
                     let channel_info = session.channel.as_ref().ok_or(crate::Error::Other(

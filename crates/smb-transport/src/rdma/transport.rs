@@ -1,13 +1,14 @@
 use std::alloc::Layout;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::atomic::AtomicU16;
 
 use super::error::*;
 use super::smbd::{
     SmbdDataTransferFlags, SmbdDataTransferHeader, SmbdNegotiateRequest, SmbdNegotiateResponse,
 };
-use crate::traits::*;
 use crate::{IoVec, error::TransportError};
+use crate::{RdmaType, traits::*};
 use async_rdma::{
     ConnectionType, LocalMr, LocalMrReadAccess, LocalMrWriteAccess, Rdma, RdmaBuilder,
 };
@@ -28,7 +29,7 @@ struct RdmaRunningRo {
 
     max_fragmented_recv_size: u32,
 
-    credits: Arc<Semaphore>,
+    credits: Arc<ClientCreditState>,
 }
 
 #[derive(Debug)]
@@ -38,7 +39,17 @@ struct RdmaRunningWo {
     max_send_size: usize,
     max_fragmented_recv_size: u32,
 
-    credits: Arc<Semaphore>,
+    credits: Arc<ClientCreditState>,
+}
+
+#[derive(Debug)]
+struct ClientCreditState {
+    send_credits: Semaphore,
+
+    send_credits_target: u16,
+    recv_credits_limit: u16,
+
+    current_credit_requested: AtomicU16,
 }
 
 #[derive(Debug)]
@@ -53,13 +64,20 @@ enum RdmaTransportState {
 #[derive(Debug)]
 pub struct RdmaTransport {
     state: RdmaTransportState,
+    config: super::RdmaConfig,
 }
 
 impl RdmaTransport {
-    pub fn new(_config: &super::RdmaConfig, _timeout: std::time::Duration) -> Self {
+    pub const EXPORTED_DEFAULT_PORT: u16 = 0;
+
+    pub fn new(config: &super::RdmaConfig, _timeout: std::time::Duration) -> Self {
+        log::warn!(
+            "Rdma transport is currently alpha-quality and may not work correctly. Do not use it for production applications!"
+        );
         // TODO: use config+timeout
         RdmaTransport {
             state: RdmaTransportState::Init,
+            config: config.clone(),
         }
     }
 
@@ -85,23 +103,40 @@ impl RdmaTransport {
         }
     }
 
+    /// When transporting SMB traffic on iWARP, to permit coexistence of TCP and iWARP SMB listeners, a
+    /// mapping is standardized for the SMB Direct protocol, as follows:
+    /// smbdirect | 5445 | [IANAPORT]
+    pub const IWRAP_SMBDIRECT_PORT: u16 = 5445;
+
+    /// when serving as a transport for SMB2, the following port assignment is used, as defined in [MS-SMB2]
+    /// section 1.9.
+    /// Microsoft-DS | 445 (0x01BD) | [IANAPORT]
+    pub const DEFAULT_SMBDIRECT_PORT: u16 = crate::TcpTransport::DEFAULT_PORT;
+
+    const SEND_CREDIT_TARGET: u16 = 255;
+    const RECV_CREDIT_LIMIT: u16 = 255;
+    const MAX_RECEIVE_SIZE: usize = 0x400;
+
     pub async fn connect_and_negotiate(&mut self, server_address: SocketAddr) -> Result<()> {
         if !matches!(self.state, RdmaTransportState::Init) {
             return Err(RdmaError::AlreadyConnected);
         }
 
-        if server_address.port() == 0 {
-            // TODO: Check if there's any way to discover available RDMA port types (iWARP/InfiniBand/RoCE)
-            // consider imitating ksmbd here.
-            return Err(RdmaError::InvalidEndpoint(
-                "Port cannot be 0 - discover correct port using ioctl instead.".to_string(),
-            ));
-        }
+        let server_address = if server_address.port() == Self::EXPORTED_DEFAULT_PORT {
+            //
+            let port = match self.config.rdma_type {
+                RdmaType::RoCE | RdmaType::InfiniBand => Self::DEFAULT_SMBDIRECT_PORT,
+                RdmaType::IWarp => Self::IWRAP_SMBDIRECT_PORT,
+            };
+            SocketAddr::new(server_address.ip(), port)
+        } else {
+            server_address
+        };
 
         let node = server_address.ip().to_string() + "\0";
         let service = server_address.port().to_string() + "\0";
 
-        log::info!("RDMA connecting...");
+        log::debug!("RDMA connecting to {node}:{service}...");
         let rdma = RdmaBuilder::default()
             .set_conn_type(ConnectionType::RCCM)
             .set_raw(true)
@@ -125,7 +160,12 @@ impl RdmaTransport {
             })
         };
 
-        let credits = Arc::new(Semaphore::new(negotiate_result.credits_granted as usize));
+        let credits = Arc::new(ClientCreditState {
+            send_credits: Semaphore::new(negotiate_result.credits_granted as usize),
+            send_credits_target: Self::SEND_CREDIT_TARGET,
+            recv_credits_limit: Self::RECV_CREDIT_LIMIT,
+            current_credit_requested: AtomicU16::new(negotiate_result.credits_requested),
+        });
 
         self.state = RdmaTransportState::RunningRw((
             RdmaRunningRo {
@@ -159,9 +199,9 @@ impl RdmaTransport {
         preferred_send_size: u32,
     ) -> Result<SmbdNegotiateResponse> {
         let req: SmbdNegotiateRequest = SmbdNegotiateRequest {
-            credits_requested: 0x10,
+            credits_requested: Self::SEND_CREDIT_TARGET,
             preferred_send_size,
-            max_receive_size: 0x400,
+            max_receive_size: Self::MAX_RECEIVE_SIZE as u32,
             max_fragmented_size: 128 * 1024 * 2,
         };
 
@@ -323,6 +363,25 @@ impl RdmaTransport {
 
             result.extend_from_slice(&mr_data[offset_in_mr..offset_in_mr + data_length]);
 
+            // Update granted credits from the server
+            running
+                .credits
+                .send_credits
+                .add_permits(message.credits_granted as usize);
+
+            // Update current requested credits
+            running.credits.current_credit_requested.fetch_add(
+                message.credits_requested,
+                std::sync::atomic::Ordering::SeqCst,
+            );
+
+            log::debug!(
+                "Server granted to client {} credits (total now: {}); server requested {} credits",
+                message.credits_granted,
+                running.credits.send_credits.available_permits(),
+                message.credits_requested
+            );
+
             if message.remaining_data_length == 0 {
                 // If no more data is expected, we can stop receiving.
                 log::trace!(
@@ -427,18 +486,53 @@ impl RdmaTransport {
         );
         assert!(remaining >= data.len() as u32);
 
+        // Grant credits if needed
+        // This method is assumed to be single-threaded -- i.e., there's no actual race here.
+        // at worst, we might grant a bit less credits than we could have.
+        let grant_credits = running
+            .credits
+            .current_credit_requested
+            .load(std::sync::atomic::Ordering::SeqCst)
+            .min(running.credits.recv_credits_limit);
+
+        running
+            .credits
+            .current_credit_requested
+            .fetch_sub(grant_credits, std::sync::atomic::Ordering::SeqCst);
+
+        // Wait for credits before sending the response;
+        running
+            .credits
+            .send_credits
+            .acquire()
+            .await
+            .or_else(|_| Err(RdmaError::Other("Failed to acquire send credit")))?
+            .forget();
+        // credits are added back in the receive flow, so forgetting here goes well.
+
+        // We request target - current credits after this.
+        let current_credits = running.credits.send_credits.available_permits() as u16;
+        let credits_to_request = running.credits.send_credits_target
+            - current_credits.min(running.credits.send_credits_target);
+
+        log::debug!(
+            "Send credits left: {current_credits}, requesting {credits_to_request} more credits; granting to server: {grant_credits} (server requested: {})",
+            running
+                .credits
+                .current_credit_requested
+                .load(std::sync::atomic::Ordering::Relaxed)
+        );
         let header = SmbdDataTransferHeader {
             data_length: data.len() as u32,
             remaining_data_length: remaining - data.len() as u32,
             data_offset: Self::IN_MR_OFFSET,
             flags: SmbdDataTransferFlags::new(),
-            credits_requested: 1,
-            credits_granted: 0x10,
+            credits_requested: credits_to_request,
+            credits_granted: grant_credits,
         };
 
         let data_end = Self::IN_MR_OFFSET + data.len() as u32;
         let data_end = data_end as usize;
-
         {
             let mut mr_data = working_mr.as_mut_slice();
             let mut cursor = std::io::Cursor::new(mr_data.as_mut());
@@ -461,10 +555,8 @@ impl SmbTransport for RdmaTransport {
         async move { Ok(self.connect_and_negotiate(server_address).await?) }.boxed()
     }
 
-    // 445 is used for Inifinband & RoCE, 5445 is used for iWARP.
-    // the best way to determine this is probably via network interface discovery (ioctl)
     fn default_port(&self) -> u16 {
-        0
+        Self::DEFAULT_SMBDIRECT_PORT
     }
 
     fn split(
@@ -477,9 +569,11 @@ impl SmbTransport for RdmaTransport {
         Ok((
             Box::new(Self {
                 state: RdmaTransportState::RunningRo(ro, address),
+                config: self.config.clone(),
             }),
             Box::new(Self {
                 state: RdmaTransportState::RunningWo(wo, address),
+                config: self.config,
             }),
         ))
     }

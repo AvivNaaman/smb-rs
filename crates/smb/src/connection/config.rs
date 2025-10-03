@@ -23,11 +23,6 @@ pub struct MultiChannelConfig {
     /// Whether to enable multichannel support.
     /// This is disabled by default.
     pub enabled: bool,
-
-    /// Specified configuration for possible RDMA transport.
-    /// If this is set, the client will attempt to use RDMA transport if available.
-    #[cfg(feature = "rdma")]
-    pub rdma: Option<RdmaConfig>,
 }
 
 impl EncryptionMode {
@@ -69,9 +64,6 @@ impl Default for AuthMethodsConfig {
 pub struct ConnectionConfig {
     /// Specifies the server port to connect to.
     /// If unset, defaults to the default port for the selected transport protocol.
-    /// For Direct TCP, this is 445.
-    /// For NetBIOS, this is 139.
-    /// For SMB over QUIC, this is 443.
     pub port: Option<u16>,
 
     /// Specifies the timeout for the connection.

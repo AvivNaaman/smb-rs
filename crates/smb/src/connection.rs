@@ -40,6 +40,7 @@ pub struct Connection {
     server_address: SocketAddr,
 }
 
+#[maybe_async(AFIT)]
 impl Connection {
     /// Creates a new SMB connection, specifying a server configuration, without connecting to a server.
     /// Use the [`connect`](Connection::connect) method to establish a connection.
@@ -65,7 +66,6 @@ impl Connection {
     /// for the specified existing, primary connection.
     ///
     /// Returns the ID of the channel in the existing session.
-    #[maybe_async]
     pub async fn bind_session(
         &self,
         primary_session: &Session,
@@ -102,7 +102,6 @@ impl Connection {
     }
 
     /// Connects to the specified server, if it is not already connected, and negotiates the connection.
-    #[maybe_async]
     pub async fn connect(&self) -> crate::Result<()> {
         if self.handler.worker().is_some() {
             return Err(Error::InvalidState("Already connected".into()));
@@ -158,7 +157,6 @@ impl Connection {
     /// let connection = Connection::from_transport(custom_tcp_transport, "server", Guid::generate(), my_connection_config).await?;
     /// # Ok(())}
     /// ```
-    #[maybe_async]
     pub async fn from_transport(
         transport: Box<dyn SmbTransport>,
         server: &str,
@@ -177,7 +175,6 @@ impl Connection {
     /// calling this method.
     ///
     /// See also [`Client::close`][`crate::Client::close`].
-    #[maybe_async]
     pub async fn close(&self) -> crate::Result<()> {
         match self.handler.worker() {
             Some(c) => c.stop().await,
@@ -528,7 +525,6 @@ impl Connection {
     ///
     /// ## Notes:
     /// * Use the [`ConnectionConfig`] to configure authentication options.
-    #[maybe_async]
     pub async fn authenticate(&self, identity: sspi::AuthIdentity) -> crate::Result<Session> {
         let session = Session::create(
             identity,

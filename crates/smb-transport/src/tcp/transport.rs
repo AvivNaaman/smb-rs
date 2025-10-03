@@ -39,6 +39,8 @@ pub struct TcpTransport {
 }
 
 impl TcpTransport {
+    pub const DEFAULT_PORT: u16 = 445;
+
     pub fn new(timeout: Duration) -> TcpTransport {
         TcpTransport {
             reader: None,
@@ -198,7 +200,7 @@ impl SmbTransport for TcpTransport {
     }
 
     fn default_port(&self) -> u16 {
-        445
+        Self::DEFAULT_PORT
     }
 
     fn remote_address(&self) -> Result<SocketAddr> {

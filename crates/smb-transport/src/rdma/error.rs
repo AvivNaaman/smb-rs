@@ -16,6 +16,9 @@ pub enum RdmaError {
     SmbdParseError(#[from] binrw::Error),
     #[error("Invalid endpoint format: {0}")]
     InvalidEndpoint(String),
+
+    #[error("Other error: {0}")]
+    Other(&'static str),
 }
 
 pub type Result<T> = std::result::Result<T, RdmaError>;

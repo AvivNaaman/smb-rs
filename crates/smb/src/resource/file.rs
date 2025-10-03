@@ -28,6 +28,7 @@ pub struct File {
     end_of_file: u64,
 }
 
+#[maybe_async(AFIT)]
 impl File {
     pub fn new(handle: ResourceHandle, end_of_file: u64) -> Self {
         File {
@@ -53,7 +54,6 @@ impl File {
     /// * `unbuffered` - Whether to try using unbuffered I/O (if supported by the server).
     /// # Returns
     /// The number of bytes read, up to `buf.len()`.
-    #[maybe_async]
     pub async fn read_block(
         &self,
         buf: &mut [u8],
@@ -156,7 +156,6 @@ impl File {
     /// * `pos` - The offset in the file to write to.
     /// # Returns
     /// The number of bytes written.
-    #[maybe_async]
     pub async fn write_block_zc(
         &self,
         buf: Arc<[u8]>,
@@ -216,7 +215,6 @@ impl File {
     }
 
     /// Sends a flush request to the server to flush the file.
-    #[maybe_async]
     pub async fn flush(&self) -> std::io::Result<()> {
         let _response = self
             .handle
@@ -239,7 +237,6 @@ impl File {
     /// * `from` - The file to copy from.
     /// # Notes
     /// * This copy must be performed against a file from the same share (tree) as this file.
-    #[maybe_async]
     pub async fn srv_copy(&self, from: &File) -> crate::Result<()> {
         if !self.access.file_write_data() {
             return Err(Error::InvalidState(

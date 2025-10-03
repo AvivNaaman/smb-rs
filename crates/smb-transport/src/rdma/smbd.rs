@@ -88,10 +88,6 @@ pub struct SmbdDataTransferHeader {
 }
 
 impl SmbdDataTransferHeader {
-    /// The size of the header after encoding, in bytes.
-    /// This does NOT include any padding between the end of the header, and the actual data,
-    /// as well as the data.
-    pub const ENCODED_SIZE: usize = size_of::<u16>() * 4 + size_of::<u32>() * 3;
     /// The required alignment of the data offset, in bytes.
     pub const DATA_ALIGNMENT: u32 = 8;
 }
