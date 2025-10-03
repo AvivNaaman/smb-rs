@@ -79,13 +79,13 @@ where
     }
 }
 
+#[maybe_async(AFIT)]
 impl<T> ParallelWorker<T>
 where
     T: MultiWorkerBackend + std::fmt::Debug,
     T::AwaitingNotifier: std::fmt::Debug,
 {
     /// Returns whether the worker is stopped.
-    #[maybe_async]
     pub fn stopped(&self) -> bool {
         self.stopped.load(std::sync::atomic::Ordering::SeqCst)
     }
@@ -93,7 +93,6 @@ where
     /// This is a function that should be used by multi worker implementations (async/mtd),
     /// after gettting a messages from the server, this function processes it and
     /// notifies the awaiting tasks.
-    #[maybe_async]
     pub(crate) async fn incoming_data_callback(
         self: &Arc<Self>,
         message: Result<Vec<u8>, TransportError>,
@@ -204,12 +203,12 @@ where
     }
 }
 
+#[maybe_async(AFIT)]
 impl<T> Worker for ParallelWorker<T>
 where
     T: MultiWorkerBackend + std::fmt::Debug,
     T::AwaitingNotifier: std::fmt::Debug,
 {
-    #[maybe_async]
     async fn start(
         transport: Box<dyn SmbTransport>,
         timeout: Duration,
@@ -235,7 +234,6 @@ where
         Ok(worker)
     }
 
-    #[maybe_async]
     async fn stop(&self) -> crate::Result<()> {
         self.stopped
             .store(true, std::sync::atomic::Ordering::SeqCst);
@@ -252,7 +250,6 @@ where
         .await
     }
 
-    #[maybe_async]
     async fn send(&self, msg: OutgoingMessage) -> crate::Result<SendMessageResult> {
         log::trace!("ParallelWorker::send({msg:?}) called");
         let return_raw_data = msg.return_raw_data;
@@ -277,7 +274,6 @@ where
         Ok(SendMessageResult::new(id, raw_message_copy))
     }
 
-    #[maybe_async]
     async fn receive_next(&self, options: &ReceiveOptions<'_>) -> crate::Result<IncomingMessage> {
         let wait_for_receive = {
             let mut state = self.state.lock().await?;

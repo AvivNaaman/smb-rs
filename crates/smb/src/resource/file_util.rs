@@ -278,6 +278,7 @@ mod copy {
     ///   use that to report progress while the copy is running.
     /// - This function performs operations against the default chanel of the connection.
     ///   To specify the number of jobs per channel, use the [`block_copy_channel`] function instead.
+    #[maybe_async]
     pub async fn block_copy<
         F: ReadAtChannel + GetLen + Send + Sync + 'static,
         T: WriteAtChannel + SetLen + Send + Sync + 'static,
@@ -308,6 +309,7 @@ mod copy {
     /// # Notes
     /// - To report progress, use the [`prepare_parallel_copy`] function to get a `CopyState`, and then
     ///   use that to report progress while the copy is running.
+    #[maybe_async]
     pub async fn block_copy_channel<
         F: ReadAtChannel + GetLen + Send + Sync + 'static,
         T: WriteAtChannel + SetLen + Send + Sync + 'static,
@@ -344,6 +346,7 @@ mod copy {
     ///   Use `None` as the key for the default channel. The total number of jobs will be the sum of all values in the map.
     ///   If the map is empty, a default value will be used. Setting both None and Some values is allowed, and the default channel
     ///   will use the total number of jobs specified for it. If any channel is specified with 0 jobs, it will use the default number of jobs.
+    #[maybe_async]
     pub async fn prepare_parallel_copy<
         F: ReadAtChannel + GetLen + Send + Sync + 'static,
         T: WriteAtChannel + SetLen + Send + Sync + 'static,
