@@ -110,6 +110,12 @@ impl Transformer {
         Ok(())
     }
 
+    /// (Internal)
+    ///
+    /// Locates the current channel per the provded session ID,
+    /// and invokes the provided closure with the channel information.
+    ///
+    /// Note: this function WILL deadlock if any lock attempt is performed within the closure on `self.sessions`.
     #[maybe_async]
     #[inline]
     async fn _with_channel<F, R>(&self, session_id: u64, f: F) -> crate::Result<R>
@@ -126,6 +132,12 @@ impl Transformer {
         f(&session)
     }
 
+    /// (Internal)
+    ///
+    /// Locates the current session per the provided session ID,
+    /// and invokes the provided closure with the session information.
+    ///
+    /// Note: this function WILL deadlock if any lock attempt is performed within the closure on `self.sessions`.
     #[maybe_async]
     #[inline]
     async fn _with_session<F, R>(&self, session_id: u64, f: F) -> crate::Result<R>
@@ -324,12 +336,7 @@ impl Transformer {
             }
         };
 
-        Ok(IncomingMessage {
-            message,
-            raw: iovec,
-            form,
-            source_channel_id: None,
-        })
+        Ok(IncomingMessage::new(message, iovec, form))
     }
 
     /// (Internal)

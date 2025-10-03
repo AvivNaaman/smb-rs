@@ -330,7 +330,11 @@ impl Connection {
 
         let preauth_hash = if dialect_impl.preauth_hash_supported() {
             PreauthHashState::begin()
-                .next(&request_status.raw.unwrap())
+                .next(
+                    &request_status
+                        .raw
+                        .expect("Preauth hash must be calculated for supported dialect!"),
+                )
                 .next(&response.raw)
         } else {
             PreauthHashState::unsupported()

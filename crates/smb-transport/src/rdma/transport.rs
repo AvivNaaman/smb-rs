@@ -82,8 +82,14 @@ impl RdmaTransport {
     }
 
     pub async fn stop(&mut self) -> std::result::Result<(), RdmaError> {
-        self.state = RdmaTransportState::Disconnected;
-        // TODO: Properly stop the worker and cancel the receive channel.
+        // Cancel worker and wait for it to finish
+        match std::mem::replace(&mut self.state, RdmaTransportState::Disconnected) {
+            RdmaTransportState::RunningRw((ro, _, _)) | RdmaTransportState::RunningRo(ro, _) => {
+                ro.cancel.cancel();
+                let _ = ro.worker.await;
+            }
+            _ => {}
+        }
         Ok(())
     }
 
@@ -239,7 +245,7 @@ impl RdmaTransport {
         }
 
         // TODO: Make sure sizes are okay here properly, if not, fail negotiation.
-        if neg_res.max_read_write_size.min(neg_res.max_receive_size) <= Self::IN_MR_OFFSET as u32 {
+        if neg_res.max_read_write_size.min(neg_res.max_receive_size) <= Self::IN_MR_OFFSET {
             return Err(RdmaError::NegotiateError(
                 "Negotiation failed - max read/write size + max_receive_size too small".to_string(),
             ));
@@ -506,7 +512,7 @@ impl RdmaTransport {
             .send_credits
             .acquire()
             .await
-            .or_else(|_| Err(RdmaError::Other("Failed to acquire send credit")))?
+            .map_err(|_| RdmaError::Other("Failed to acquire send credit"))?
             .forget();
         // credits are added back in the receive flow, so forgetting here goes well.
 

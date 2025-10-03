@@ -74,9 +74,12 @@ pub enum MultiChannelMode {
     /// Do not use multichannel, even if the server and client support it.
     #[default]
     None,
+
+    #[cfg(feature = "rdma")]
     /// Create additional server connections and multichannel
     /// only if the server supports RDMA and the client has RDMA-capable NICs.
     RdmaOnly,
+
     /// Try using multichannel if the server supports it,
     /// and multiple NICs are available on the server.
     Always,
@@ -86,6 +89,7 @@ impl std::fmt::Display for MultiChannelMode {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             MultiChannelMode::None => write!(f, "none"),
+            #[cfg(feature = "rdma")]
             MultiChannelMode::RdmaOnly => write!(f, "rdma-only"),
             MultiChannelMode::Always => write!(f, "always"),
         }
@@ -95,8 +99,14 @@ impl std::fmt::Display for MultiChannelMode {
 impl MultiChannelMode {
     /// Returns whether multichannel should be enabled.
     pub fn enabled(&self) -> bool {
-        let rdma_on = matches!(self, MultiChannelMode::RdmaOnly) && cfg!(feature = "rdma");
-        matches!(self, MultiChannelMode::Always) || rdma_on
+        #[cfg(feature = "rdma")]
+        {
+            if matches!(self, MultiChannelMode::RdmaOnly) {
+                return true;
+            }
+        }
+
+        matches!(self, MultiChannelMode::Always)
     }
 }
 
@@ -112,9 +122,9 @@ pub enum RdmaType {
 }
 
 #[cfg(feature = "rdma")]
-impl Into<smb::transport::RdmaType> for RdmaType {
-    fn into(self) -> smb::transport::RdmaType {
-        match self {
+impl From<RdmaType> for smb::transport::RdmaType {
+    fn from(rdma_type: RdmaType) -> smb::transport::RdmaType {
+        match rdma_type {
             RdmaType::Infiniband => smb::transport::RdmaType::InfiniBand,
             RdmaType::Roce => smb::transport::RdmaType::RoCE,
             RdmaType::Iwarp => smb::transport::RdmaType::IWarp,

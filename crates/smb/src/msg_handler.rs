@@ -85,6 +85,17 @@ pub struct IncomingMessage {
     pub source_channel_id: Option<u32>,
 }
 
+impl IncomingMessage {
+    pub fn new(message: PlainResponse, raw: IoVec, form: MessageForm) -> IncomingMessage {
+        IncomingMessage {
+            message,
+            raw,
+            form,
+            source_channel_id: None,
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct MessageForm {
     pub compressed: bool,

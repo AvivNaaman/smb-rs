@@ -30,7 +30,7 @@ struct ChannelAlgos {
 struct SessionAlgosFactory;
 impl SessionAlgosFactory {
     const NO_PREAUTH_HASH_DERIVE_SIGN_CTX: &'static [u8] = b"SmbSign\x00";
-    const NO_PREAUTH_HASH_DERIVE_ECRNYPT_S2C_CTX: &'static [u8] = b"ServerOut\x00";
+    const NO_PREAUTH_HASH_DERIVE_ENCRYPT_S2C_CTX: &'static [u8] = b"ServerOut\x00";
     const NO_PREAUTH_HASH_DERIVE_ENCRYPT_C2S_CTX: &'static [u8] = b"ServerIn \x00";
 
     pub fn new_session(
@@ -180,7 +180,7 @@ impl SessionAlgosFactory {
         )?;
         let dec_key = deriver.derive(
             info.dialect.s2c_encrypt_key_derive_label(),
-            Self::preauth_hash_or(preauth_hash, Self::NO_PREAUTH_HASH_DERIVE_ECRNYPT_S2C_CTX),
+            Self::preauth_hash_or(preauth_hash, Self::NO_PREAUTH_HASH_DERIVE_ENCRYPT_S2C_CTX),
         )?;
 
         Ok(Some((

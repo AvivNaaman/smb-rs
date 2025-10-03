@@ -88,7 +88,7 @@ pub trait WriteAtChannel {
 ///
 /// See [`WriteAtChannel`] for an extended version of this trait, that supports
 /// specifying a channel ID for the write operation.
-pub trait WriteAt: WriteAtChannel {
+pub trait WriteAt {
     #[cfg(feature = "async")]
     fn write_at(
         &self,
@@ -540,10 +540,30 @@ mod copy {
     }
 
     /// Generic block copy function with progress callback.
+    ///
+    /// * `progress_callback` - A callback function that will be called with the number of bytes copied so far.
+    ///
+    /// # Note
+    /// * A simpler method named [`block_copy`] is also available, which does not take a progress callback.
     pub fn block_copy_progress<F: ReadAtChannel + GetLen, T: WriteAtChannel + SetLen>(
         from: F,
         to: T,
         progress_callback: Option<&dyn Fn(u64)>,
+    ) -> crate::Result<()> {
+        block_copy_channel_progress(from, to, progress_callback, None)
+    }
+
+    /// Generic block copy function with progress callback and channel specification.
+    ///
+    /// * `channel` - The channel ID to use for the copy operation. If `None`, the default channel will be used.
+    ///
+    /// # Note
+    /// * A simpler method named [`block_copy`] and [`block_copy_progress`] are also available,
+    pub fn block_copy_channel_progress<F: ReadAtChannel + GetLen, T: WriteAtChannel + SetLen>(
+        from: F,
+        to: T,
+        progress_callback: Option<&dyn Fn(u64)>,
+        channel: Option<u32>,
     ) -> crate::Result<()> {
         let file_length = from.get_len()?;
         to.set_len(file_length)?;
@@ -562,7 +582,8 @@ mod copy {
             } else {
                 curr_chunk.len()
             };
-            let bytes_read = from.read_at(&mut curr_chunk[..chunk_size], offset)?;
+            let bytes_read =
+                from.read_at_channel(&mut curr_chunk[..chunk_size], offset, channel)?;
             if bytes_read < chunk_size {
                 log::warn!(
                     "Read less bytes than expected. File might be corrupt. Expected: {chunk_size}, Read: {bytes_read}"

@@ -13,7 +13,7 @@ compile_error!(
 
 use std::{
     net::{Ipv4Addr, SocketAddr, SocketAddrV4},
-    sync::Arc,
+    sync::{Arc, atomic::AtomicBool},
     time::Duration,
 };
 
@@ -41,11 +41,11 @@ pub struct QuicTransport {
 
 const LOCALHOST_V4: SocketAddr = SocketAddr::V4(SocketAddrV4::new(Ipv4Addr::new(0, 0, 0, 0), 0));
 
+static CRYPTO_PROVIDER_INSTALLED: AtomicBool = AtomicBool::new(false);
+
 impl QuicTransport {
     pub fn new(quic_config: &QuicConfig, timeout: Duration) -> crate::error::Result<Self> {
-        rustls::crypto::ring::default_provider()
-            .install_default()
-            .expect("Failed to install rustls crypto provider");
+        Self::_init_crypto_provider();
 
         let client_addr = quic_config.local_address.unwrap_or(LOCALHOST_V4);
         let mut endpoint = Endpoint::client(client_addr)?;
@@ -57,6 +57,15 @@ impl QuicTransport {
             endpoint,
             timeout,
         })
+    }
+
+    fn _init_crypto_provider() {
+        if CRYPTO_PROVIDER_INSTALLED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+        rustls::crypto::ring::default_provider()
+            .install_default()
+            .expect("Failed to install rustls crypto provider");
     }
 
     fn _connect(
@@ -126,12 +135,15 @@ impl QuicTransport {
                     QuicError::ConnectionError(e).into()
                 }
             })?;
+        let remote_address = connection.remote_address();
         let (send, recv) = connection.open_bi().await.map_err(|e| {
             log::error!("Failed to open bidirectional stream: {e}");
             QuicError::ConnectionError(e)
         })?;
+
         self.send_stream = Some(send);
         self.recv_stream = Some(recv);
+        self.remote_address = Some(remote_address);
         Ok(())
     }
 

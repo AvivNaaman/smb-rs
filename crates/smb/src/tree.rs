@@ -204,7 +204,10 @@ impl Tree {
     pub fn as_ipc_tree(&self) -> crate::Result<IpcTreeRef<'_>> {
         let info = self.handler.info()?;
         if info.share_type != ShareType::Pipe {
-            return Err(Error::InvalidState("Tree is not an IPC tree".to_string()));
+            return Err(Error::InvalidState(format!(
+                "Tree is not IPC tree ({:?})",
+                info.share_type
+            )));
         }
 
         IpcTreeRef::new(self)

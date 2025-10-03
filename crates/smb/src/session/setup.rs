@@ -2,7 +2,11 @@ use crate::session::authenticator::Authenticator;
 
 use super::*;
 
-/// Session setup processor
+/// Session setup processor.
+///
+/// This is an internal structure.
+/// It is assume that T is properly implemented and tested in-crate,
+/// and so, the wide use of unwrap() is acceptable.
 pub(crate) struct SessionSetup<'a, T>
 where
     T: SessionSetupProperties,
@@ -62,12 +66,22 @@ where
 
             let session = primary_session.session.clone();
 
-            let channel = primary_session.channel.as_ref().unwrap().clone();
+            let channel = primary_session
+                .channel
+                .as_ref()
+                .expect("A properly initialized session is expected in session setup.")
+                .clone();
             #[cfg(feature = "ksmbd-multichannel-compat")]
             let channel = channel.with_binding(true);
 
             result.set_session(session).await?;
-            result.result.as_ref().unwrap().write().await?.channel = Some(channel);
+            result
+                .result
+                .as_ref()
+                .expect("Should have been set up by set_session()")
+                .write()
+                .await?
+                .channel = Some(channel);
         }
 
         Ok(result)
@@ -75,9 +89,9 @@ where
 
     /// Common session setup logic.
     ///
-    /// This function sets up a session against a connection, and it is somewhat abstrace.
+    /// This function sets up a session against a connection, and it is somewhat abstract.
     /// by calling impl functions, this function's behavior is modified to support both new sessions and binding to existing sessions.
-    pub async fn setup(&mut self) -> crate::Result<Arc<RwLock<SessionAndChannel>>> {
+    pub(crate) async fn setup(&mut self) -> crate::Result<Arc<RwLock<SessionAndChannel>>> {
         log::debug!(
             "Setting up session for user {} (@{}).",
             self.authenticator.user_name().account_name(),
@@ -89,16 +103,9 @@ where
             Ok(()) => Ok(self.result.take().unwrap()),
             Err(e) => {
                 log::error!("Failed to setup session: {}", e);
-                T::error_cleanup(self)
-                    .await
-                    .or_else(|ce| {
-                        log::error!("Failed to cleanup after setup error: {}", ce);
-                        crate::Result::Ok(())
-                    })
-                    .or_else(|e| {
-                        log::error!("Cleanup after setup error failed: {e}");
-                        crate::Result::Ok(())
-                    })?;
+                if let Err(ce) = T::error_cleanup(self).await {
+                    log::error!("Failed to cleanup after setup error: {}", ce);
+                }
                 Err(e)
             }
         }
@@ -236,9 +243,9 @@ where
         // therefore we update it here for the PREVIOUS repsponse, assuming that we get an empty request when done.
         let request = T::make_request(self, buf).await?;
 
-        let send_result = if self.handler.is_some() {
+        let send_result = if let Some(handler) = self.handler.as_ref() {
             log::trace!("setup loop: sending with channel handler");
-            self.handler.as_ref().unwrap().sendo(request).await?
+            handler.sendo(request).await?
         } else {
             log::trace!("setup loop: sending with upstream handler");
             self.upstream.sendo(request).await?

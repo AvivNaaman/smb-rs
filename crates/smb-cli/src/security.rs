@@ -180,7 +180,7 @@ pub async fn set_security(
     if write_dacl {
         let new_dacl = new_security_info.dacl.as_mut().ok_or_else(|| {
             log::error!("No DACL present on the object, cannot add entries");
-            Error::InvalidArgument("No DACL present on the object".into())
+            "No DACL present on the object"
         })?;
 
         // Remove DACLs. Warn if SID not found

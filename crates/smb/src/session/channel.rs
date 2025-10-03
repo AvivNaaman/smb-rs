@@ -48,10 +48,10 @@ impl Channel {
     }
 }
 
-/// Message handler a specific chanel.
+/// Message handler a specific channel.
 ///
-/// This only makes sense, since session are not actuall able to send data
-/// as "theirselves", but rather, through a channel.
+/// This only makes sense, since sessions are not actually able to send data
+/// as "themselves", but rather, through a channel.
 pub struct ChannelMessageHandler {
     session_id: u64,
     channel_id: u32,
@@ -163,7 +163,10 @@ impl ChannelMessageHandler {
             // the caller to explicitly state that it is okay to skip security validation.
             let session = self.session_state.read().await?;
             let session = session.session.read().await?;
-            assert!(session.is_initial());
+            assert!(
+                session.is_initial(),
+                "Incorrect internal state: security checks are never skipped, unless the session is still being set up!"
+            );
         }
 
         Ok(incoming)
@@ -174,7 +177,6 @@ impl ChannelMessageHandler {
     /// Assures the sessions may not be used anymore.
     async fn _invalidate(&self) -> crate::Result<()> {
         self.upstream
-            .handler
             .worker()
             .ok_or_else(|| Error::InvalidState("Worker not available!".to_string()))?
             .session_ended(&self.session_state)

@@ -155,7 +155,7 @@ async fn _test_connection_timeout_fail(
 /// Generates tests for different transport configurations.
 macro_rules! test_transport {
     (
-        $($transport_config:ty,)+
+        $($transport_config:ty: $config_value:tt)+
     ) => {
             $(
                 paste::paste!{
@@ -165,7 +165,7 @@ macro_rules! test_transport {
 ))]
 #[serial]
 async fn [<test_basic_integration_ $transport_config:lower>]() -> Result<(), Box<dyn std::error::Error>> {
-    _test_basic_integration(TransportConfig::$transport_config).await
+    _test_basic_integration(TransportConfig::$config_value).await
 }
 
 #[test_log::test(maybe_async::test(
@@ -174,12 +174,19 @@ async fn [<test_basic_integration_ $transport_config:lower>]() -> Result<(), Box
 ))]
 #[serial]
 async fn [<test_connection_timeout_fail_ $transport_config:lower>]() -> Result<(), Box<dyn std::error::Error>> {
-    _test_connection_timeout_fail(TransportConfig::$transport_config).await
+    _test_connection_timeout_fail(TransportConfig::$config_value).await
 }
 
             }
         )+
     };
+
+    // Sugary XxxTransport::XxxTransport syntax
+    (
+        $($transport_config:ty,)+
+    ) => {
+        test_transport!($($transport_config: $transport_config)+);
+    }
 }
 
 test_transport!(Tcp, NetBios,);
