@@ -16,6 +16,7 @@ smb-msg = { path = "../smb-msg" }
 smb-dtyp = { path = "../smb-dtyp" }
 smb-rpc = { path = "../smb-rpc" }
 smb-fscc = { path = "../smb-fscc" }
+smb-transport = { path = "../smb-transport" }
 
 # Encoding/Decoding
 binrw = { workspace = true }
@@ -23,9 +24,9 @@ modular-bitfield = { workspace = true }
 
 # Async
 tokio = { workspace = true, optional = true }
-futures-core = { version = "0.3", optional = true }
+futures-core = { workspace = true, optional = true }
 futures-util = { workspace = true, optional = true }
-tokio-util = { version = "0.7", optional = true }
+tokio-util = { workspace = true, optional = true }
 maybe-async = { workspace = true }
 
 # General utils
@@ -40,6 +41,7 @@ byteorder = { version = "1.5.0", optional = true }
 
 # APIs
 sspi = { version = "0.16.1", features = ["ring"], default-features = false }
+reqwest = { workspace = true, optional = true }
 
 # Crypto
 hmac = "0.12.1"
@@ -57,12 +59,6 @@ lz4_flex = { version = "0.11", default-features = false, features = [
     "std",
 ], optional = true }
 
-# Transport
-quinn = { version = "0.11.9", optional = true }
-rustls = { version = "0.23", default-features = false, optional = true }
-rustls-platform-verifier = { version = "0.6.1", default-features = false, optional = true }
-reqwest = { version = "0.12", default-features = false, optional = true }
-
 # Dev - Tests
 [dev-dependencies]
 test-log = "0.2"
@@ -70,13 +66,24 @@ serial_test = "3.2"
 temp-env = { version = "0.3.6", features = ["async_closure"] }
 
 [features]
-default = ["sign", "encrypt", "compress", "async", "kerberos"]
+default = ["sign", "encrypt", "compress", "async"]
 
 # Threading models
-async = ["dep:tokio", "dep:futures-core", "dep:tokio-util", "dep:futures-util"]
+async = [
+    "dep:tokio",
+    "dep:futures-core",
+    "dep:tokio-util",
+    "dep:futures-util",
+    "smb-transport/async",
+]
 multi_threaded = ["__is_sync"]
 single_threaded = ["__is_sync"]
-__is_sync = ["maybe-async/is_sync", "smb-rpc/is_sync", "reqwest?/blocking"]
+__is_sync = [
+    "maybe-async/is_sync",
+    "smb-rpc/is_sync",
+    "reqwest?/blocking",
+    "smb-transport/is_sync",
+]
 
 # Compression
 compress_pattern_v1 = []
@@ -99,10 +106,23 @@ sign_hmac = []
 sign = ["sign_gmac", "sign_cmac", "sign_hmac"]
 
 # Transport
-quic = ["dep:quinn", "dep:rustls", "dep:rustls-platform-verifier"]
+quic = ["smb-transport/quic"]
+rdma = ["smb-transport/rdma"]
 
 # Kerberos requires reqwest for HTTP transport, for kerberos
 kerberos = ["reqwest", "dep:byteorder"]
+
+# Estooric use cases
+ksmbd-multichannel-compat = []
+
+# Debugging
+__debug-dump-keys = []
+
+# Tests
+test-multichannel = []
+test-ndr64 = []
+test-quic = []
+test-rdma = []
 
 [package.metadata.docs.rs]
 features = ["async", "sign", "encrypt", "compress", "kerberos", "quic"]

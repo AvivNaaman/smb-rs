@@ -4,7 +4,7 @@
 //! This struct wraps the value, and the offset, and provides a way to iterate over them.
 //! See [`ChainedItem<T>::write_chained`] to see how to write this type when in a list.
 //!
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 
 use binrw::prelude::*;
 use smb_dtyp::binrw_util::prelude::*;
@@ -130,6 +130,7 @@ where
     }
 }
 
+/// Implement a chained item list.
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct ChainedItemList<T, const OFFSET_PAD: u32 = DEFAULT_OFFSET_PAD>
@@ -141,6 +142,30 @@ where
     #[br(parse_with = binrw::helpers::until_eof)]
     #[bw(write_with = ChainedItem::<T, OFFSET_PAD>::write_chained)]
     values: Vec<ChainedItem<T, OFFSET_PAD>>,
+}
+
+impl<T, const OFFSET_PAD: u32> From<ChainedItemList<T, OFFSET_PAD>> for Vec<T>
+where
+    T: BinRead + BinWrite,
+    for<'a> <T as BinRead>::Args<'a>: Default,
+    for<'b> <T as BinWrite>::Args<'b>: Default,
+{
+    fn from(list: ChainedItemList<T, OFFSET_PAD>) -> Self {
+        list.values.into_iter().map(|i| i.value).collect()
+    }
+}
+
+impl<T, const OFFSET_PAD: u32> From<Vec<T>> for ChainedItemList<T, OFFSET_PAD>
+where
+    T: BinRead + BinWrite,
+    for<'a> <T as BinRead>::Args<'a>: Default,
+    for<'b> <T as BinWrite>::Args<'b>: Default,
+{
+    fn from(vec: Vec<T>) -> Self {
+        Self {
+            values: vec.into_iter().map(|v| ChainedItem::from(v)).collect(),
+        }
+    }
 }
 
 impl<T, const OFFSET_PAD: u32> Default for ChainedItemList<T, OFFSET_PAD>
@@ -164,6 +189,17 @@ where
 
     fn deref(&self) -> &Self::Target {
         &self.values
+    }
+}
+
+impl<T, const OFFSET_PAD: u32> DerefMut for ChainedItemList<T, OFFSET_PAD>
+where
+    T: BinRead + BinWrite,
+    for<'a> <T as BinRead>::Args<'a>: Default,
+    for<'b> <T as BinWrite>::Args<'b>: Default,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.values
     }
 }
 

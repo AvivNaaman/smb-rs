@@ -2,6 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use maybe_async::*;
+use smb_msg::{FileId, FsctlRequest, IoctlRequest, IoctlRequestFlags};
 
 use crate::connection::connection_info::ConnectionInfo;
 use crate::resource::FileCreateArgs;
@@ -19,8 +20,10 @@ use crate::{
     session::SessionMessageHandler,
 };
 mod dfs_tree;
+mod ipc_tree;
 use crate::msg_handler::OutgoingMessage;
 pub use dfs_tree::*;
+pub use ipc_tree::*;
 
 type Upstream = HandlerReference<SessionMessageHandler>;
 
@@ -38,6 +41,7 @@ pub struct Tree {
     conn_info: Arc<ConnectionInfo>,
 }
 
+#[maybe_async(AFIT)]
 impl Tree {
     #[maybe_async]
     pub(crate) async fn connect(
@@ -121,7 +125,6 @@ impl Tree {
     /// This function automatically handles the following:
     /// * *DFS operations*: If the share has been opened as a DFS referral share, the create operation will modify the file name to include the DFS path.
     ///     That is, assuming it is NOT prefixed with "\\". This is rquired for a proper DFS referral file open. ("DFS normalization", MS-SMB2 2.2.13 + 3.3.5.9)
-    #[maybe_async]
     pub async fn create(&self, file_name: &str, args: &FileCreateArgs) -> crate::Result<Resource> {
         let info = self.handler.info()?;
         Resource::create(
@@ -137,7 +140,6 @@ impl Tree {
 
     /// A wrapper around [Tree::create] that creates a file on the remote server.
     /// See [Tree::create] for more information.
-    #[maybe_async]
     pub async fn create_file(
         &self,
         file_name: &str,
@@ -158,7 +160,6 @@ impl Tree {
 
     /// A wrapper around [Tree::create] that creates a directory on the remote server.
     /// See [Tree::create] for more information.
-    #[maybe_async]
     pub async fn create_directory(
         &self,
         dir_name: &str,
@@ -179,7 +180,6 @@ impl Tree {
 
     /// A wrapper around [create][crate::tree::Tree::create] that opens an existing file or directory on the remote server.
     /// See [create][crate::tree::Tree::create] for more information.
-    #[maybe_async]
     pub async fn open_existing(
         &self,
         file_name: &str,
@@ -201,13 +201,50 @@ impl Tree {
         Ok(DfsRootTreeRef::new(self))
     }
 
+    pub fn as_ipc_tree(&self) -> crate::Result<IpcTreeRef<'_>> {
+        let info = self.handler.info()?;
+        if info.share_type != ShareType::Pipe {
+            return Err(Error::InvalidState(format!(
+                "Tree is not IPC tree ({:?})",
+                info.share_type
+            )));
+        }
+
+        IpcTreeRef::new(self)
+    }
+
     /// Disconnects from the tree (share) on the server.
     ///
     /// After calling this method, none of the resources held open by the tree are accessible.
-    #[maybe_async]
     pub async fn disconnect(&self) -> crate::Result<()> {
         self.handler.disconnect().await?;
         Ok(())
+    }
+
+    // TODO: Make it common with ResourceHandle::fsctl_with_options
+    #[maybe_async]
+    pub(crate) async fn fsctl_with_options<T: FsctlRequest>(
+        &self,
+        request: T,
+        max_output_response: u32,
+    ) -> crate::Result<T::Response> {
+        const NO_INPUT_IN_RESPONSE: u32 = 0;
+        let response = self
+            .handler
+            .send_recv(RequestContent::Ioctl(IoctlRequest {
+                ctl_code: T::FSCTL_CODE as u32,
+                file_id: FileId::FULL,
+                max_input_response: NO_INPUT_IN_RESPONSE,
+                max_output_response,
+                flags: IoctlRequestFlags::new().with_is_fsctl(true),
+                buffer: request.into(),
+            }))
+            .await?
+            .message
+            .content
+            .to_ioctl()?
+            .parse_fsctl::<T::Response>()?;
+        Ok(response)
     }
 }
 
@@ -238,10 +275,10 @@ impl TreeMessageHandler {
     }
 
     #[maybe_async]
-    async fn _disconnect(upstream: Upstream, tree_id: u32) -> crate::Result<()> {
+    async fn _disconnect(upstream: Upstream, tree_id: u32, encrypt: bool) -> crate::Result<()> {
         // send and receive tree disconnect request & response.
         let request_content: RequestContent = TreeDisconnectRequest::default().into();
-        let mut message = OutgoingMessage::new(request_content);
+        let mut message = OutgoingMessage::new(request_content).with_encrypt(encrypt);
         message.message.header.tree_id = Some(tree_id);
 
         let _response = upstream.sendo_recv(message).await?;
@@ -256,7 +293,8 @@ impl TreeMessageHandler {
             // Already disconnected
             return Ok(());
         }
-        Self::_disconnect(self.upstream.clone(), tree_id).await
+        let encrypt = self.info.share_flags.encrypt_data();
+        Self::_disconnect(self.upstream.clone(), tree_id, encrypt).await
     }
 
     pub fn info(&self) -> crate::Result<&TreeConnectInfo> {
@@ -330,8 +368,9 @@ impl Drop for TreeMessageHandler {
 
         let upstream = self.upstream.clone();
         let tree_name = self.tree_name.clone();
+        let encrypt = self.info.share_flags.encrypt_data();
         tokio::task::spawn(async move {
-            Self::_disconnect(upstream, tree_id)
+            Self::_disconnect(upstream, tree_id, encrypt)
                 .await
                 .map_err(|e| {
                     log::error!("Failed to disconnect from tree {}: {e}", tree_name);

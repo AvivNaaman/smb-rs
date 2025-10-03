@@ -1,15 +1,13 @@
-use crate::{connection::preauth_hash::PreauthHashValue, util::IoVec};
 use maybe_async::*;
 use smb_msg::{Command, PlainRequest, PlainResponse, RequestContent, Status};
+use smb_transport::IoVec;
 use std::sync::Arc;
 
 #[derive(Debug)]
 pub struct OutgoingMessage {
     pub message: PlainRequest,
 
-    /// Whether to finalize the preauth hash after sending this message.
-    /// If this is set to true twice per connection, an error will be thrown.
-    pub finalize_preauth_hash: bool,
+    pub return_raw_data: bool,
 
     /// Ask the sender to compress the message before sending, if possible.
     pub compress: bool,
@@ -22,22 +20,41 @@ pub struct OutgoingMessage {
 
     /// Zero copy support
     pub additional_data: Option<Arc<[u8]>>,
+
+    /// Channel ID to use for this message, if any.
+    pub channel_id: Option<u32>,
 }
 
 impl OutgoingMessage {
     pub fn new(content: RequestContent) -> OutgoingMessage {
         OutgoingMessage {
             message: PlainRequest::new(content),
-            finalize_preauth_hash: false,
+            return_raw_data: false,
             compress: true,
             encrypt: false,
             has_response: true,
             additional_data: None,
+            channel_id: None,
         }
     }
 
     pub fn with_additional_data(mut self, data: Arc<[u8]>) -> Self {
         self.additional_data = Some(data);
+        self
+    }
+
+    pub fn with_return_raw_data(mut self, return_raw_data: bool) -> Self {
+        self.return_raw_data = return_raw_data;
+        self
+    }
+
+    pub fn with_encrypt(mut self, encrypt: bool) -> Self {
+        self.encrypt = encrypt;
+        self
+    }
+
+    pub fn with_channel_id(mut self, channel_id: Option<u32>) -> Self {
+        self.channel_id = channel_id;
         self
     }
 }
@@ -47,15 +64,12 @@ pub struct SendMessageResult {
     // The message ID for the sent message.
     pub msg_id: u64,
     // If finalized, this is set.
-    pub preauth_hash: Option<PreauthHashValue>,
+    pub raw: Option<IoVec>,
 }
 
 impl SendMessageResult {
-    pub fn new(msg_id: u64, preauth_hash: Option<PreauthHashValue>) -> SendMessageResult {
-        SendMessageResult {
-            msg_id,
-            preauth_hash,
-        }
+    pub fn new(msg_id: u64, raw: Option<IoVec>) -> SendMessageResult {
+        SendMessageResult { msg_id, raw }
     }
 }
 
@@ -67,6 +81,19 @@ pub struct IncomingMessage {
 
     // How did the message arrive?
     pub form: MessageForm,
+
+    pub source_channel_id: Option<u32>,
+}
+
+impl IncomingMessage {
+    pub fn new(message: PlainResponse, raw: IoVec, form: MessageForm) -> IncomingMessage {
+        IncomingMessage {
+            message,
+            raw,
+            form,
+            source_channel_id: None,
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -106,6 +133,9 @@ pub struct ReceiveOptions<'a> {
     /// When receiving a message, only messages with this msg_id will be returned.
     /// This is mostly used for async message handling, where the client is waiting for a specific message.
     pub msg_id: u64,
+
+    /// The channel ID to receive messages from, if any.
+    pub channel_id: Option<u32>,
 
     /// Whether to allow (and wait for) async responses.
     /// If set to false, an async response from the server will trigger an error.
@@ -151,6 +181,7 @@ impl<'a> Default for ReceiveOptions<'a> {
             cmd: None,
             msg_id: 0,
             allow_async: false,
+            channel_id: None,
         }
     }
 }
@@ -159,7 +190,7 @@ impl<'a> Default for ReceiveOptions<'a> {
 /// outgoing from the client or incoming from the server.
 #[maybe_async(AFIT)]
 #[allow(async_fn_in_trait)] // We need `async`-ed trait functions for the #[maybe_async] macro.
-pub trait MessageHandler: Send + Sync {
+pub trait MessageHandler {
     /// Send a message to the server, returning the result.
     /// This must be implemented. Each handler in the chain must call the next handler,
     /// after possibly modifying the message.
@@ -190,28 +221,47 @@ pub trait MessageHandler: Send + Sync {
 
     // -- Utility functions, accessible from references via Deref.
     #[maybe_async]
+    #[inline]
     async fn send(&self, msg: RequestContent) -> crate::Result<SendMessageResult> {
         self.sendo(OutgoingMessage::new(msg)).await
     }
 
     #[maybe_async]
+    #[inline]
     async fn recv(&self, cmd: Command) -> crate::Result<IncomingMessage> {
         self.recvo(ReceiveOptions::new().with_cmd(Some(cmd))).await
     }
 
     #[maybe_async]
-    async fn sendo_recvo(
+    #[inline]
+    async fn sendor_recvo(
         &self,
         msg: OutgoingMessage,
         mut options: ReceiveOptions<'_>,
-    ) -> crate::Result<IncomingMessage> {
+    ) -> crate::Result<(SendMessageResult, IncomingMessage)> {
+        let channel_id = msg.channel_id;
         // Send the message and wait for the matching response.
         let send_result = self.sendo(msg).await?;
+
         options.msg_id = send_result.msg_id;
-        self.recvo(options).await
+        options.channel_id = channel_id;
+
+        let in_result = self.recvo(options).await?;
+        Ok((send_result, in_result))
     }
 
     #[maybe_async]
+    #[inline]
+    async fn sendo_recvo(
+        &self,
+        msg: OutgoingMessage,
+        options: ReceiveOptions<'_>,
+    ) -> crate::Result<IncomingMessage> {
+        self.sendor_recvo(msg, options).await.map(|(_, r)| r)
+    }
+
+    #[maybe_async]
+    #[inline]
     async fn send_recvo(
         &self,
         msg: RequestContent,
@@ -221,6 +271,7 @@ pub trait MessageHandler: Send + Sync {
     }
 
     #[maybe_async]
+    #[inline]
     async fn sendo_recv(&self, msg: OutgoingMessage) -> crate::Result<IncomingMessage> {
         let cmd = msg.message.content.associated_cmd();
         let options = ReceiveOptions::new().with_cmd(Some(cmd));
@@ -228,8 +279,18 @@ pub trait MessageHandler: Send + Sync {
     }
 
     #[maybe_async]
+    #[inline]
     async fn send_recv(&self, msg: RequestContent) -> crate::Result<IncomingMessage> {
         self.sendo_recv(OutgoingMessage::new(msg)).await
+    }
+
+    #[maybe_async]
+    #[inline]
+    async fn sendor_recv(
+        &self,
+        msg: OutgoingMessage,
+    ) -> crate::Result<(SendMessageResult, IncomingMessage)> {
+        self.sendor_recvo(msg, ReceiveOptions::new()).await
     }
 }
 

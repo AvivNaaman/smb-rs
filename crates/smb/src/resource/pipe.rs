@@ -12,12 +12,12 @@ pub struct Pipe {
     handle: ResourceHandle,
 }
 
+#[maybe_async(AFIT)]
 impl Pipe {
     pub fn new(handle: ResourceHandle) -> Self {
         Pipe { handle }
     }
 
-    #[maybe_async]
     pub async fn bind<I>(self) -> crate::Result<I>
     where
         I: RpcInterface<PipeRpcConnection>,
@@ -36,8 +36,8 @@ pub struct PipeRpcConnection {
     _server_max_recv_frag: u16,
 }
 
+#[maybe_async(AFIT)]
 impl PipeRpcConnection {
-    #[maybe_async]
     pub async fn bind<I>(mut pipe: Pipe) -> crate::Result<I>
     where
         I: RpcInterface<PipeRpcConnection>,

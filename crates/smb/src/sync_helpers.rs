@@ -20,6 +20,10 @@ pub use tokio_util::sync::CancellationToken;
 #[cfg(feature = "async")]
 use std::sync::LockResult;
 
+// for convenience
+pub use maybe_async::maybe_async;
+pub use std::sync::{Arc, Weak};
+
 /// A wrapper for [tokio::sync::RwLock] that mocks the behavior of [std::sync::RwLock].
 #[cfg(feature = "async")]
 #[derive(Debug, Default)]

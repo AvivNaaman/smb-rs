@@ -9,20 +9,16 @@ use sspi::{
     DataRepresentation, InitializeSecurityContextResult, Negotiate, SecurityBuffer, Sspi,
     ntlm::NtlmConfig,
 };
-use sspi::{CredentialsBuffers, NegotiateConfig, SspiImpl};
+use sspi::{CredentialsBuffers, NegotiateConfig, SspiImpl, Username};
 
 #[derive(Debug)]
 pub struct Authenticator {
     server_hostname: String,
+    user_name: Username,
 
     ssp: Negotiate,
     cred_handle: AcquireCredentialsHandleResult<Option<CredentialsBuffers>>,
     current_state: Option<InitializeSecurityContextResult>,
-}
-
-pub enum AuthenticationStep {
-    NextToken(Vec<u8>),
-    Complete,
 }
 
 impl Authenticator {
@@ -41,18 +37,25 @@ impl Authenticator {
             Some(Self::get_available_ssp_pkgs(&conn_info.config.auth_methods)),
             client_computer_name,
         ))?;
+        let user_name = identity.username.clone();
+
         let cred_handle = negotiate_ssp
             .acquire_credentials_handle()
             .with_credential_use(CredentialUse::Outbound)
-            .with_auth_data(&sspi::Credentials::AuthIdentity(identity))
+            .with_auth_data(&sspi::Credentials::AuthIdentity(identity.clone()))
             .execute(&mut negotiate_ssp)?;
 
         Ok(Authenticator {
-            server_hostname: conn_info.server.clone(),
+            server_hostname: conn_info.server_name.clone(),
             ssp: negotiate_ssp,
             cred_handle,
             current_state: None,
+            user_name,
         })
+    }
+
+    pub fn user_name(&self) -> &Username {
+        &self.user_name
     }
 
     pub fn is_authenticated(&self) -> crate::Result<bool> {
@@ -84,9 +87,9 @@ impl Authenticator {
     const SSPI_REQ_DATA_REPRESENTATION: DataRepresentation = DataRepresentation::Native;
 
     #[maybe_async]
-    pub async fn next(&mut self, gss_token: &[u8]) -> crate::Result<AuthenticationStep> {
+    pub async fn next(&mut self, gss_token: &[u8]) -> crate::Result<Vec<u8>> {
         if self.is_authenticated()? {
-            return Ok(AuthenticationStep::Complete);
+            return Err(Error::InvalidState("Authentication already done.".into()));
         }
 
         if self.current_state.is_some()
@@ -144,12 +147,12 @@ impl Authenticator {
 
         self.current_state = Some(result);
 
-        Ok(AuthenticationStep::NextToken(
-            output_buffer
-                .pop()
-                .ok_or_else(|| Error::InvalidState("SSPI output buffer is empty.".to_string()))?
-                .buffer,
-        ))
+        let output_buffer = output_buffer
+            .pop()
+            .ok_or_else(|| Error::InvalidState("SSPI output buffer is empty.".to_string()))?
+            .buffer;
+
+        Ok(output_buffer)
     }
 
     fn get_available_ssp_pkgs(config: &AuthMethodsConfig) -> String {

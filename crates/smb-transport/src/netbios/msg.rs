@@ -84,16 +84,6 @@ impl NetBiosName {
 
         NetBiosName { name, suffix }
     }
-
-    /// The original name, including the padding.
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// The suffix of the name.
-    pub fn suffix(&self) -> u8 {
-        self.suffix
-    }
 }
 
 impl std::fmt::Display for NetBiosName {
@@ -288,12 +278,12 @@ mod tests {
             0x41, 0x43, 0x41, 0x43, 0x41, 0x0,
         ];
         let name = NetBiosName::read(&mut Cursor::new(&data)).unwrap();
-        assert_eq!(name.name(), "*SMBSERVER     ");
-        assert_eq!(name.suffix(), 0x20);
+        assert_eq!(name.name, "*SMBSERVER     ");
+        assert_eq!(name.suffix, 0x20);
         assert_eq!(name.to_string(), "*SMBSERVER<20>");
 
         let mut buf = Vec::new();
-        NetBiosName::new(name.name().to_string(), name.suffix())
+        NetBiosName::new(name.name.to_string(), name.suffix)
             .write(&mut Cursor::new(&mut buf))
             .unwrap();
         assert_eq!(buf.len(), data.len());

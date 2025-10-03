@@ -8,9 +8,9 @@
 //! This module also contains common utility structures to wrap around common FSCC structures.
 //!
 //! The module contains the following implementations:
-//! * [Querying file information][`crate::ResourceHandle::query_info`]
-//! * [Setting file information][`crate::ResourceHandle::set_info`]
-//! * [Directory query types][`crate::Directory::query`]
+//! * [Querying file information][`smb::ResourceHandle::query_info`]
+//! * [Setting file information][`smb::ResourceHandle::set_info`]
+//! * [Directory query types][`smb::Directory::query`]
 //! * Access masks types, including the [`access_mask!{...}`][`access_mask!`] macro.
 
 #![allow(unused_parens)]

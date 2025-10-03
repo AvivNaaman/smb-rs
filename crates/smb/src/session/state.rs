@@ -13,25 +13,31 @@ use smb_msg::{Dialect, EncryptionCipher, SessionFlags, SigningAlgorithmId};
 
 use super::{MessageDecryptor, MessageEncryptor, MessageSigner};
 
-/// Holds the algorithms used for the session --
-/// signing, encryption, and decryption algorithms.
 #[derive(Debug)]
 struct SessionAlgos {
-    signer: MessageSigner,
     encryptor: Option<MessageEncryptor>,
     decryptor: Option<MessageDecryptor>,
 }
 
-impl SessionAlgos {
+#[derive(Clone)]
+struct ChannelAlgos {
+    signer: MessageSigner,
+}
+
+/// A factory for creating session and channel algorithms.
+///
+/// See [`SessionAlgos::new_session`] and [`SessionAlgos::new_channel`].
+struct SessionAlgosFactory;
+impl SessionAlgosFactory {
     const NO_PREAUTH_HASH_DERIVE_SIGN_CTX: &'static [u8] = b"SmbSign\x00";
-    const NO_PREAUTH_HASH_DERIVE_ECRNYPT_S2C_CTX: &'static [u8] = b"ServerOut\x00";
+    const NO_PREAUTH_HASH_DERIVE_ENCRYPT_S2C_CTX: &'static [u8] = b"ServerOut\x00";
     const NO_PREAUTH_HASH_DERIVE_ENCRYPT_C2S_CTX: &'static [u8] = b"ServerIn \x00";
 
-    pub fn build(
+    pub fn new_session(
         session_key: &KeyToDerive,
         preauth_hash: &Option<PreauthHashValue>,
         info: &ConnectionInfo,
-    ) -> crate::Result<Self> {
+    ) -> crate::Result<SessionAlgos> {
         if (info.negotiation.dialect_rev == Dialect::Smb0311) != preauth_hash.is_some() {
             return Err(crate::Error::InvalidMessage(
                 "Preauth hash must be present for SMB3.1.1, and not present for SMB3.0.2 or older revisions."
@@ -39,17 +45,43 @@ impl SessionAlgos {
             ));
         }
 
-        let algos = if info.negotiation.dialect_rev.is_smb3() {
-            Self::smb3xx_make_ciphers(session_key, preauth_hash, info)?
+        if cfg!(feature = "__debug-dump-keys") {
+            log::debug!(
+                "Building session algorithms for dialect {:?} with session key {:02x?} and preauth hash {:02x?}",
+                info.negotiation.dialect_rev,
+                session_key,
+                preauth_hash.as_ref().map(|h| h.as_ref())
+            );
+        }
+
+        if info.negotiation.dialect_rev.is_smb3() {
+            Self::smb3xx_make_ciphers(session_key, preauth_hash, info)
         } else {
-            SessionAlgos {
-                signer: Self::smb2_make_signer(session_key, info)?,
+            Ok(SessionAlgos {
                 encryptor: None,
                 decryptor: None,
-            }
+            })
+        }
+    }
+
+    pub fn new_channel(
+        channel_session_key: &KeyToDerive,
+        preauth_hash: &Option<PreauthHashValue>,
+        info: &ConnectionInfo,
+    ) -> crate::Result<ChannelAlgos> {
+        let deriver = KeyDeriver::new(channel_session_key);
+        let signer = if info.negotiation.dialect_rev.is_smb3() {
+            Self::smb3xx_make_signer(
+                &deriver,
+                info.negotiation.signing_algo,
+                &info.dialect,
+                preauth_hash,
+            )?
+        } else {
+            Self::smb2_make_signer(channel_session_key, info)?
         };
 
-        Ok(algos)
+        Ok(ChannelAlgos { signer })
     }
 
     fn smb2_make_signer(
@@ -70,13 +102,6 @@ impl SessionAlgos {
     ) -> crate::Result<SessionAlgos> {
         let deriver = KeyDeriver::new(session_key);
 
-        let signer = Self::smb3xx_make_signer(
-            &deriver,
-            info.negotiation.signing_algo,
-            &info.dialect,
-            preauth_hash,
-        )?;
-
         let (enc, dec) = if let Some((e, d)) =
             Self::smb3xx_make_cipher_pair(&deriver, info, preauth_hash)?
         {
@@ -93,7 +118,6 @@ impl SessionAlgos {
         };
 
         Ok(SessionAlgos {
-            signer,
             encryptor: enc,
             decryptor: dec,
         })
@@ -156,7 +180,7 @@ impl SessionAlgos {
         )?;
         let dec_key = deriver.derive(
             info.dialect.s2c_encrypt_key_derive_label(),
-            Self::preauth_hash_or(preauth_hash, Self::NO_PREAUTH_HASH_DERIVE_ECRNYPT_S2C_CTX),
+            Self::preauth_hash_or(preauth_hash, Self::NO_PREAUTH_HASH_DERIVE_ENCRYPT_S2C_CTX),
         )?;
 
         Ok(Some((
@@ -199,10 +223,67 @@ enum SessionInfoState {
 /// Holds the information of a session, to be used for actions requiring data from session,
 /// without accessing the entire session object.
 /// This struct should be single-per-session, and wrapped in a shared pointer.
-#[derive(Debug)]
 pub struct SessionInfo {
     session_id: u64,
     state: Option<SessionInfoState>,
+}
+
+#[derive(Clone)]
+pub struct ChannelInfo {
+    id: u32,
+    algos: ChannelAlgos,
+    valid: bool,
+
+    #[cfg(feature = "ksmbd-multichannel-compat")]
+    /// Indicates whether this channel was created temporarily for multichannel setup.
+    /// This is relevant for compatibility with ksmbd. See [`crate::connection::Transformer::verify_plain_incoming`]
+    binding: bool,
+}
+
+impl ChannelInfo {
+    pub fn new(
+        internal_id: u32,
+        channel_session_key: &KeyToDerive,
+        preauth_hash: &Option<PreauthHashValue>,
+        info: &ConnectionInfo,
+    ) -> crate::Result<Self> {
+        let algos = SessionAlgosFactory::new_channel(channel_session_key, preauth_hash, info)?;
+        Ok(Self {
+            id: internal_id,
+            algos,
+            valid: true,
+            #[cfg(feature = "ksmbd-multichannel-compat")]
+            binding: false,
+        })
+    }
+
+    #[cfg(feature = "ksmbd-multichannel-compat")]
+    pub(crate) fn with_binding(mut self, binding: bool) -> Self {
+        self.binding = binding;
+        self
+    }
+
+    #[cfg(feature = "ksmbd-multichannel-compat")]
+    pub fn is_binding(&self) -> bool {
+        self.binding
+    }
+
+    pub fn signer(&self) -> crate::Result<&MessageSigner> {
+        if !self.valid {
+            return Err(crate::Error::InvalidState(
+                "Channel is not valid, cannot get signer.".to_string(),
+            ));
+        }
+        Ok(&self.algos.signer)
+    }
+
+    pub fn invalidate(&mut self) {
+        self.valid = false;
+    }
+
+    pub fn id(&self) -> u32 {
+        self.id
+    }
 }
 
 impl SessionInfo {
@@ -233,7 +314,7 @@ impl SessionInfo {
             ));
         }
 
-        let algos = SessionAlgos::build(session_key, preauth_hash, info)?;
+        let algos = SessionAlgosFactory::new_session(session_key, preauth_hash, info)?;
         log::trace!("Session algos set up: {algos:?}");
 
         let info_allows_unsigned = info.config.allow_unsigned_guest_access;
@@ -370,16 +451,6 @@ impl SessionInfo {
             Some(SessionInfoState::Ready { algos, .. }) => Ok(algos.encryptor.as_ref()),
             _ => Err(crate::Error::InvalidState(
                 "Session is not ready, cannot get encryptor.".to_string(),
-            )),
-        }
-    }
-
-    pub fn signer(&self) -> crate::Result<&MessageSigner> {
-        match &self.state {
-            Some(SessionInfoState::SettingUp { algos, .. }) => Ok(&algos.signer),
-            Some(SessionInfoState::Ready { algos, .. }) => Ok(&algos.signer),
-            _ => Err(crate::Error::InvalidState(
-                "Session is not ready or setting up, cannot get signer.".to_string(),
             )),
         }
     }

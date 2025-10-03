@@ -4,6 +4,7 @@ use indicatif::{ProgressBar, ProgressStyle};
 use maybe_async::*;
 use smb::sync_helpers::*;
 use smb::{Client, CreateOptions, FileAccessMask, FileAttributes, resource::*};
+use std::collections::HashMap;
 use std::error::Error;
 #[cfg(not(feature = "async"))]
 use std::fs;
@@ -90,16 +91,74 @@ impl CopyFile {
         })
     }
 
+    #[cfg(not(feature = "single_threaded"))]
     #[maybe_async]
-    async fn copy_to(self, to: CopyFile) -> Result<(), smb::Error> {
+    async fn _get_channel_to_jobs_map(
+        &self,
+        to: &CopyFile,
+        client: &Client,
+    ) -> smb::Result<HashMap<Option<u32>, usize>> {
+        use Path::*;
+
+        const R2R_WORKERS_NO_MC: usize = 8;
+        match (&self.path, &to.path) {
+            (Remote(_), Remote(_)) => return Ok(HashMap::from([(None, R2R_WORKERS_NO_MC)])),
+            (Local(_), Local(_)) => unreachable!(),
+            _ => (),
+        }
+
+        // Remote to/from local file copy
+        // Initialize multi-channel if possible
+        const R2L_L2R_WORKERS_NO_MC: usize = 16;
+        if !client.config().connection.multichannel.is_enabled() {
+            return Ok(HashMap::from([(None, R2L_L2R_WORKERS_NO_MC)]));
+        }
+
+        let remote_address = match &self.path {
+            Remote(p) => p,
+            Local(_) => match &to.path {
+                Remote(p) => p,
+                Local(_) => unreachable!(),
+            },
+        };
+
+        let channels = client.get_channels(remote_address).await?;
+
+        const L2R_R2L_PER_CHANNEL_WORKERS: usize = 16;
+        let channels = channels
+            .iter()
+            .map(|(&channel_id, _)| (Some(channel_id), L2R_R2L_PER_CHANNEL_WORKERS))
+            .collect::<HashMap<Option<u32>, usize>>();
+
+        log::debug!("Using {} channels for copy", channels.len());
+        log::trace!("Channel to jobs map: {channels:?}");
+
+        Ok(channels)
+    }
+
+    #[cfg(feature = "single_threaded")]
+    fn _get_channel_to_jobs_map(
+        &self,
+        _to: &CopyFile,
+        _client: &Client,
+    ) -> smb::Result<HashMap<Option<u32>, usize>> {
+        // Well, it's ignored anyway. We keep it just to be consistent.
+        Ok(HashMap::from([(None, 1)]))
+    }
+
+    #[maybe_async]
+    async fn copy_to(self, to: CopyFile, client: &Client) -> Result<(), smb::Error> {
         use CopyFileValue::*;
+
+        let channel_jobs = self._get_channel_to_jobs_map(&to, client).await?;
+
         match self.value {
             Local(from_local) => match to.value {
                 Local(_) => unreachable!(),
-                Remote(to_remote) => Self::do_copy(from_local, to_remote, 16).await?,
+                Remote(to_remote) => Self::do_copy(from_local, to_remote, channel_jobs).await?,
             },
             Remote(from_remote) => match to.value {
-                Local(to_local) => Self::do_copy(from_remote, to_local, 16).await?,
+                Local(to_local) => Self::do_copy(from_remote, to_local, channel_jobs).await?,
                 Remote(to_remote) => {
                     if to.path.as_remote().unwrap().server()
                         == self.path.as_remote().unwrap().server()
@@ -109,7 +168,7 @@ impl CopyFile {
                         // Use server-side copy if both files are on the same server
                         to_remote.srv_copy(&from_remote).await?
                     } else {
-                        Self::do_copy(from_remote, to_remote, 8).await?
+                        Self::do_copy(from_remote, to_remote, channel_jobs).await?
                     }
                 }
             },
@@ -120,14 +179,14 @@ impl CopyFile {
     #[maybe_async]
     #[cfg(not(feature = "single_threaded"))]
     pub async fn do_copy<
-        F: ReadAt + GetLen + Send + Sync + 'static,
-        T: WriteAt + SetLen + Send + Sync + 'static,
+        F: ReadAtChannel + GetLen + Send + Sync + 'static,
+        T: WriteAtChannel + SetLen + Send + Sync + 'static,
     >(
         from: F,
         to: T,
-        jobs: usize,
+        channel_jobs: HashMap<Option<u32>, usize>,
     ) -> smb::Result<()> {
-        let state = prepare_parallel_copy(&from, &to, jobs).await?;
+        let state = prepare_parallel_copy(&from, &to, channel_jobs).await?;
         let state = Arc::new(state);
         let progress_handle = Self::progress(state.clone());
         start_parallel_copy(from, to, state).await?;
@@ -141,10 +200,10 @@ impl CopyFile {
 
     /// Single-threaded copy implementation.
     #[cfg(feature = "single_threaded")]
-    pub fn do_copy<F: ReadAt + GetLen, T: WriteAt + SetLen>(
+    pub fn do_copy<F: ReadAtChannel + GetLen, T: WriteAtChannel + SetLen>(
         from: F,
         to: T,
-        _jobs: usize,
+        _channels: HashMap<Option<u32>, usize>,
     ) -> smb::Result<()> {
         let progress = Self::make_progress_bar(from.get_len()?);
         block_copy_progress(
@@ -201,10 +260,13 @@ pub async fn copy(cmd: &CopyCmd, cli: &Cli) -> Result<(), Box<dyn Error>> {
         return Err("Copying between two local files is not supported. Use `cp` or `copy` shell commands instead :)".into());
     }
 
-    let client = Client::new(cli.make_smb_client_config());
+    let client = Client::new(cli.make_smb_client_config()?);
     let from = CopyFile::open(&cmd.from, &client, cli, cmd, true).await?;
     let to = CopyFile::open(&cmd.to, &client, cli, cmd, false).await?;
-    from.copy_to(to).await?;
 
-    Ok(())
+    let copy_ok = from.copy_to(to, &client).await;
+
+    client.close().await?;
+
+    Ok(copy_ok?)
 }

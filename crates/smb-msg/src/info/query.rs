@@ -392,14 +392,12 @@ mod tests {
                         stream_size: 0x93,
                         stream_allocation_size: 0x1000,
                         stream_name: SizedWideString::from(":Zone.Identifier:$DATA"),
-                    }
-                    .into(),
+                    },
                     FileStreamInformationInner {
                         stream_size: 0xd6d1,
                         stream_allocation_size: 0xd000,
                         stream_name: SizedWideString::from("::$DATA"),
-                    }
-                    .into(),
+                    },
                 ]
                 .into()
             )

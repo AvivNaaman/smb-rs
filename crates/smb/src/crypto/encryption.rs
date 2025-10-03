@@ -10,7 +10,7 @@ pub struct EncryptionResult {
 }
 
 /// A trait for an implementation of an encryption algorithm.
-pub trait EncryptingAlgo: Debug + Send {
+pub trait EncryptingAlgo: Debug + Send + Sync {
     /// Algo-specific encryption function, in-place.
     fn encrypt(
         &mut self,
@@ -70,6 +70,13 @@ pub fn make_encrypting_algo(
         return Err(CryptoError::UnsupportedEncryptionAlgorithm(
             encrypting_algorithm,
         ));
+    }
+    if cfg!(feature = "__debug-dump-keys") {
+        log::debug!(
+            "Using encryption algorithm {:?} with key {:02x?}",
+            encrypting_algorithm,
+            encrypting_key
+        );
     }
     match encrypting_algorithm {
         #[cfg(feature = "encrypt_aes128ccm")]
@@ -137,6 +144,7 @@ mod encrypt_ccm {
             + KeyInit
             + Send
             + Clone
+            + Sync
             + 'static,
     {
         pub fn build(
@@ -150,7 +158,13 @@ mod encrypt_ccm {
 
     impl<C> EncryptingAlgo for CcmEncryptor<C>
     where
-        C: BlockCipher + BlockSizeUser<BlockSize = U16> + BlockEncrypt + Send + Clone + 'static,
+        C: BlockCipher
+            + BlockSizeUser<BlockSize = U16>
+            + BlockEncrypt
+            + Send
+            + Clone
+            + Sync
+            + 'static,
     {
         fn encrypt(
             &mut self,
@@ -232,6 +246,7 @@ mod encrypt_gcm {
             + KeySizeUser
             + Send
             + Clone
+            + Sync
             + 'static,
     {
         pub fn build(
@@ -251,6 +266,7 @@ mod encrypt_gcm {
             + KeySizeUser
             + Send
             + Clone
+            + Sync
             + 'static,
     {
         fn encrypt(

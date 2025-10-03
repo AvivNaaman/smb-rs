@@ -2,8 +2,8 @@
 
 use std::time::Duration;
 
-use smb_dtyp::Guid;
 use smb_msg::Dialect;
+use smb_transport::config::*;
 
 /// Specifies the encryption mode for the connection.
 /// Use this as part of the [ConnectionConfig] to specify the encryption mode for the connection.
@@ -18,34 +18,36 @@ pub enum EncryptionMode {
     Disabled,
 }
 
-/// Specifies the transport protocol to be used for the connection.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub enum TransportConfig {
-    /// Use TCP transport protocol.
+pub enum MultiChannelConfig {
+    /// Multi-channel is disabled.
     #[default]
-    Tcp,
-    /// Use NetBIOS over TCP transport protocol.
-    NetBios,
-    /// Use SMB over QUIC transport protocol.
-    /// Note that this is only suported in dialects 3.1.1 and above.
-    Quic(QuicConfig),
+    Disabled,
+    /// Multi-channel is always enabled, if supported by the server and client.
+    Always,
+    /// Multi-channel is enabled only if using RDMA transport, and if supported by the server and client.
+    #[cfg(feature = "rdma")]
+    RdmaOnly,
 }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct QuicConfig {
-    pub local_address: Option<String>,
-    pub cert_validation: QuicCertValidationOptions,
-}
+impl MultiChannelConfig {
+    /// Returns whether multichannel of any form is enabled.
+    pub fn is_enabled(&self) -> bool {
+        match self {
+            MultiChannelConfig::Always => true,
+            #[cfg(feature = "rdma")]
+            MultiChannelConfig::RdmaOnly => true,
+            MultiChannelConfig::Disabled => false,
+        }
+    }
 
-#[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub enum QuicCertValidationOptions {
-    /// Use the default platform verifier for the certificate.
-    /// See `quinn::ClientConfig::with_platform_verifier`.
-    /// This is the default option.
-    #[default]
-    PlatformVerifier,
-    /// Use a store with the provided root certificates.
-    CustomRootCerts(Vec<String>),
+    /// Returns whether multichannel is enabled only for RDMA transport.
+    pub fn is_rdma_only(&self) -> bool {
+        #[cfg(feature = "rdma")]
+        return matches!(self, MultiChannelConfig::RdmaOnly);
+        #[cfg(not(feature = "rdma"))]
+        return false;
+    }
 }
 
 impl EncryptionMode {
@@ -87,9 +89,6 @@ impl Default for AuthMethodsConfig {
 pub struct ConnectionConfig {
     /// Specifies the server port to connect to.
     /// If unset, defaults to the default port for the selected transport protocol.
-    /// For Direct TCP, this is 445.
-    /// For NetBIOS, this is 139.
-    /// For SMB over QUIC, this is 443.
     pub port: Option<u16>,
 
     /// Specifies the timeout for the connection.
@@ -121,12 +120,11 @@ pub struct ConnectionConfig {
     /// would not be available. *The compression feature is enabled by default.*
     pub compression_enabled: bool,
 
+    /// Multi-channel configuration
+    pub multichannel: MultiChannelConfig,
+
     /// Specifies the client host name to be used in the SMB2 negotiation & session setup.
     pub client_name: Option<String>,
-
-    /// Specifies the GUID of the client to be used in the SMB2 negotiate request.
-    /// If not set, a random GUID will be generated.
-    pub client_guid: Option<Guid>,
 
     /// Specifies whether to disable support for Server-to-client notifications.
     /// If set to true, the client will NOT support notifications.
@@ -164,6 +162,7 @@ impl ConnectionConfig {
             }
         }
         // Make sure transport is supported by the dialects.
+        #[cfg(feature = "quic")]
         if let Some(min) = self.min_dialect {
             if min < Dialect::Smb0311 && matches!(self.transport, TransportConfig::Quic(_)) {
                 return Err(crate::Error::InvalidConfiguration(

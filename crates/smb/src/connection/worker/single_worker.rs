@@ -1,10 +1,11 @@
 #![cfg(feature = "single_threaded")]
 
 use crate::{
-    connection::{transformer::Transformer, transport::SmbTransport},
+    connection::transformer::Transformer,
     error::*,
     msg_handler::{IncomingMessage, OutgoingMessage, ReceiveOptions, SendMessageResult},
 };
+use smb_transport::{SmbTransport, TransportError};
 use std::sync::OnceLock;
 use std::{
     sync::{Arc, Mutex},
@@ -37,35 +38,36 @@ impl Worker for SingleWorker {
         self.transport
             .lock()?
             .take()
-            .ok_or(crate::Error::NotConnected)?;
+            .ok_or(crate::Error::ConnectionStopped)?;
         Ok(())
     }
 
     fn send(&self, msg: OutgoingMessage) -> crate::Result<SendMessageResult> {
         let msg_id = msg.message.header.message_id;
-        let finalize_preauth_hash = msg.finalize_preauth_hash;
+        let return_raw_data = msg.return_raw_data;
 
         let msg_to_send = self.transformer.transform_outgoing(msg)?;
 
         let mut t = self.transport.lock()?;
         t.get_mut()
-            .ok_or(crate::Error::NotConnected)?
+            .ok_or(crate::Error::ConnectionStopped)?
             .send(&msg_to_send)?;
 
-        let hash = match finalize_preauth_hash {
-            true => self.transformer.finalize_preauth_hash()?,
-            false => None,
+        let raw_msg = if return_raw_data {
+            Some(msg_to_send)
+        } else {
+            None
         };
 
-        Ok(SendMessageResult::new(msg_id, hash))
+        Ok(SendMessageResult::new(msg_id, raw_msg))
     }
 
     fn receive_next(&self, options: &ReceiveOptions<'_>) -> crate::Result<IncomingMessage> {
         // Receive next message
         let mut self_mut = self.transport.lock()?;
-        let transport = self_mut.get_mut().ok_or(crate::Error::NotConnected)?;
+        let transport = self_mut.get_mut().ok_or(crate::Error::ConnectionStopped)?;
         let msg = transport.receive().map_err(|e| match e {
-            Error::IoError(ioe) => {
+            TransportError::IoError(ioe) => {
                 if ioe.kind() == std::io::ErrorKind::WouldBlock {
                     Error::OperationTimeout(
                         TimedOutTask::ReceiveNextMessage,
@@ -78,7 +80,7 @@ impl Worker for SingleWorker {
                     crate::Error::IoError(ioe)
                 }
             }
-            _ => e,
+            _ => e.into(),
         })?;
         // Transform the message
         let im = self.transformer.transform_incoming(msg)?;
@@ -95,17 +97,6 @@ impl Worker for SingleWorker {
 
     fn transformer(&self) -> &Transformer {
         &self.transformer
-    }
-
-    fn set_timeout(&self, timeout: Duration) -> crate::Result<()> {
-        let mut transport = self.transport.lock()?;
-        transport
-            .get_mut()
-            .ok_or(crate::Error::NotConnected)?
-            .set_read_timeout(timeout)?;
-        let mut timeout_ref = self.timeout.lock()?;
-        *timeout_ref = Some(timeout);
-        Ok(())
     }
 }
 

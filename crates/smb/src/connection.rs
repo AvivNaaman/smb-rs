@@ -2,15 +2,14 @@ pub mod config;
 pub mod connection_info;
 pub mod preauth_hash;
 pub mod transformer;
-pub mod transport;
 pub mod worker;
 
-use crate::Error;
+use crate::compression;
+use crate::connection::preauth_hash::PreauthHashState;
 use crate::dialects::DialectImpl;
-use crate::session::SessionMessageHandler;
-use crate::util::IoVec;
-use crate::{compression, sync_helpers::*};
-use crate::{crypto, msg_handler::*, session::Session};
+use crate::session::ChannelMessageHandler;
+use crate::sync_helpers::*;
+use crate::{Error, crypto, msg_handler::*, session::Session};
 use binrw::prelude::*;
 pub use config::*;
 use connection_info::{ConnectionInfo, NegotiatedProperties};
@@ -19,14 +18,14 @@ use rand::RngCore;
 use rand::rngs::OsRng;
 use smb_dtyp::*;
 use smb_msg::{Command, Response, negotiate::*, plain::*, smb1::SMB1NegotiateMessage};
+use smb_transport::*;
 use std::cmp::max;
 use std::collections::HashMap;
+use std::net::SocketAddr;
 #[cfg(feature = "multi_threaded")]
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::{AtomicU16, AtomicU64, Ordering};
-use std::sync::{Arc, Weak};
 pub use transformer::TransformError;
-use transport::{SmbTransport, make_transport};
 use worker::{Worker, WorkerImpl};
 
 /// Represents an SMB connection.
@@ -37,39 +36,94 @@ pub struct Connection {
     handler: HandlerReference<ConnectionMessageHandler>,
     config: ConnectionConfig,
 
-    server: String,
+    server_name: String,
+    server_address: SocketAddr,
 }
 
+#[maybe_async(AFIT)]
 impl Connection {
     /// Creates a new SMB connection, specifying a server configuration, without connecting to a server.
     /// Use the [`connect`](Connection::connect) method to establish a connection.
-    pub fn build(server: &str, config: ConnectionConfig) -> crate::Result<Connection> {
+    pub fn build(
+        server_name: &str,
+        server_address: SocketAddr,
+        client_guid: Guid,
+        config: ConnectionConfig,
+    ) -> crate::Result<Self> {
         config.validate()?;
-        let client_guid = config.client_guid.unwrap_or_else(Guid::generate);
         Ok(Connection {
             handler: HandlerReference::new(ConnectionMessageHandler::new(
                 client_guid,
                 config.credits_backlog,
             )),
             config,
-            server: server.to_string(),
+            server_name: server_name.to_string(),
+            server_address,
         })
     }
 
+    /// Creates a SMB connection for an alternate channel,
+    /// for the specified existing, primary connection.
+    ///
+    /// Returns the ID of the channel in the existing session.
+    pub async fn bind_session(
+        &self,
+        primary_session: &Session,
+        identity: sspi::AuthIdentity,
+    ) -> crate::Result<u32> {
+        log::debug!("Binding alternate session to new connection");
+
+        if self.conn_info().is_none() {
+            return Err(Error::InvalidState(
+                "Connection must be negotiated before binding a session.".to_string(),
+            ));
+        }
+
+        if !self
+            .conn_info()
+            .as_ref()
+            .unwrap()
+            .negotiation
+            .caps
+            .multi_channel()
+        {
+            return Err(Error::InvalidState(
+                "Server does not support multichannel.".to_string(),
+            ));
+        }
+
+        primary_session
+            .bind(
+                identity,
+                &self.handler,
+                self.handler.conn_info.get().unwrap(),
+            )
+            .await
+    }
+
     /// Connects to the specified server, if it is not already connected, and negotiates the connection.
-    #[maybe_async]
     pub async fn connect(&self) -> crate::Result<()> {
         if self.handler.worker().is_some() {
             return Err(Error::InvalidState("Already connected".into()));
         }
 
         let mut transport = make_transport(&self.config.transport, self.config.timeout())?;
-        let port = self.config.port.unwrap_or_else(|| transport.default_port());
-        let endpoint = format!("{}:{}", self.server, port);
-        log::debug!("Connecting to {}...", &endpoint);
-        transport.connect(endpoint.as_str()).await?;
 
-        log::info!("Connected to {}. Negotiating.", &endpoint);
+        let mut actual_connect_address = self.server_address;
+        if actual_connect_address.port() == 0 {
+            actual_connect_address
+                .set_port(self.config.port.unwrap_or_else(|| transport.default_port()));
+        }
+
+        log::info!(
+            "Connecting to {} (at {actual_connect_address})...",
+            &self.server_name,
+        );
+        transport
+            .connect(&self.server_name, actual_connect_address)
+            .await?;
+
+        log::info!("Connected to {}. Negotiating.", &self.server_name);
         self._negotiate(transport, self.config.smb2_only_negotiate)
             .await?;
 
@@ -93,23 +147,23 @@ impl Connection {
     /// ```no_run
     /// # use smb::*;
     /// # use std::time::Duration;
-    /// use smb::connection::transport::tcp::TcpTransport;
+    /// use smb_transport::TcpTransport;
     /// # #[cfg(not(feature = "async"))] fn main() {}
     /// #[cfg(feature = "async")]
     /// # #[tokio::main]
     /// # async fn main() -> Result<()> {
     /// let custom_tcp_transport = Box::new(TcpTransport::new(Duration::from_millis(10))); // you may also implement you own transport!
     /// let my_connection_config = ConnectionConfig { ..Default::default() };
-    /// let connection = Connection::from_transport(custom_tcp_transport, "server", my_connection_config).await?;
+    /// let connection = Connection::from_transport(custom_tcp_transport, "server", Guid::generate(), my_connection_config).await?;
     /// # Ok(())}
     /// ```
-    #[maybe_async]
     pub async fn from_transport(
         transport: Box<dyn SmbTransport>,
         server: &str,
+        client_guid: Guid,
         config: ConnectionConfig,
     ) -> crate::Result<Self> {
-        let conn = Self::build(server, config)?;
+        let conn = Self::build(server, transport.remote_address()?, client_guid, config)?;
         conn._negotiate(transport, conn.config.smb2_only_negotiate)
             .await?;
         Ok(conn)
@@ -121,7 +175,6 @@ impl Connection {
     /// calling this method.
     ///
     /// See also [`Client::close`][`crate::Client::close`].
-    #[maybe_async]
     pub async fn close(&self) -> crate::Result<()> {
         match self.handler.worker() {
             Some(c) => c.stop().await,
@@ -182,7 +235,10 @@ impl Connection {
 
     /// This method perofrms the SMB2 negotiation.
     #[maybe_async]
-    async fn _negotiate_smb2(&self) -> crate::Result<ConnectionInfo> {
+    async fn _negotiate_smb2(
+        &self,
+        server_address: std::net::SocketAddr,
+    ) -> crate::Result<ConnectionInfo> {
         // Confirm that we're not already negotiated.
         if self.handler.conn_info.get().is_some() {
             return Err(Error::InvalidState("Already negotiated".into()));
@@ -212,16 +268,19 @@ impl Connection {
         };
 
         // Send SMB2 negotiate request
-        let response = self
+        let (request_status, response) = self
             .handler
-            .send_recv(
-                self._make_smb2_neg_request(
-                    dialects,
-                    crypto::SIGNING_ALGOS.to_vec(),
-                    encryption_algos,
-                    compression::SUPPORTED_ALGORITHMS.to_vec(),
+            .sendor_recv(
+                OutgoingMessage::new(
+                    self._make_smb2_neg_request(
+                        dialects,
+                        crypto::SIGNING_ALGOS.to_vec(),
+                        encryption_algos,
+                        compression::SUPPORTED_ALGORITHMS.to_vec(),
+                    )
+                    .into(),
                 )
-                .into(),
+                .with_return_raw_data(true),
             )
             .await?;
 
@@ -269,11 +328,26 @@ impl Connection {
             &negotiation
         );
 
+        let preauth_hash = if dialect_impl.preauth_hash_supported() {
+            PreauthHashState::begin()
+                .next(
+                    &request_status
+                        .raw
+                        .expect("Preauth hash must be calculated for supported dialect!"),
+                )
+                .next(&response.raw)
+        } else {
+            PreauthHashState::unsupported()
+        };
+
         Ok(ConnectionInfo {
             negotiation,
             dialect: dialect_impl,
             config: self.config.clone(),
-            server: self.server.clone(),
+            server_name: self.server_name.clone(),
+            preauth_hash,
+            client_guid: self.handler.client_guid,
+            server_address,
         })
     }
 
@@ -338,11 +412,23 @@ impl Connection {
                 },
             ];
             // QUIC
+            #[cfg(feature = "quic")]
             if matches!(self.config.transport, TransportConfig::Quic(_)) {
                 ctx_list.push(NegotiateContext {
                     context_type: NegotiateContextType::TransportCapabilities,
                     data: NegotiateContextValue::TransportCapabilities(
                         TransportCapabilities::new().with_accept_transport_layer_security(true),
+                    ),
+                });
+            }
+            // TODO: Add to config
+            if cfg!(feature = "rdma") {
+                ctx_list.push(NegotiateContext {
+                    context_type: NegotiateContextType::RdmaTransformCapabilities,
+                    data: NegotiateContextValue::RdmaTransformCapabilities(
+                        RdmaTransformCapabilities {
+                            transforms: vec![RdmaTransformId::None],
+                        },
                     ),
                 });
             }
@@ -359,7 +445,7 @@ impl Connection {
                 .with_dfs(true)
                 .with_leasing(true)
                 .with_large_mtu(true)
-                .with_multi_channel(false)
+                .with_multi_channel(self.config.multichannel.is_enabled())
                 .with_persistent_handles(false)
                 .with_directory_leasing(true);
 
@@ -399,6 +485,7 @@ impl Connection {
             return Err(Error::InvalidState("Already negotiated".into()));
         }
 
+        let server_address = transport.remote_address()?;
         // Negotiate SMB1, Switch to SMB2
         let worker = self
             ._negotiate_switch_to_smb2(transport, smb2_only_neg)
@@ -407,7 +494,7 @@ impl Connection {
         self.handler.worker.set(worker).unwrap();
 
         // Negotiate SMB2
-        let info = self._negotiate_smb2().await?;
+        let info = self._negotiate_smb2(server_address).await?;
 
         self.handler
             .worker
@@ -419,14 +506,14 @@ impl Connection {
 
         #[cfg(not(feature = "single_threaded"))]
         if !self.config.disable_notifications && info.negotiation.caps.notifications() {
-            log::info!("Starting Notification job.");
+            log::debug!("Starting Notification job.");
             self.handler.handler.start_notify().await?;
-            log::info!("Notification job started.");
+            log::debug!("Notification job started.");
         }
 
         self.handler.conn_info.set(Arc::new(info)).unwrap();
 
-        log::info!("Negotiation successful");
+        log::debug!("Negotiation successful");
         Ok(())
     }
 
@@ -442,11 +529,9 @@ impl Connection {
     ///
     /// ## Notes:
     /// * Use the [`ConnectionConfig`] to configure authentication options.
-    #[maybe_async]
-    pub async fn authenticate(&self, user_name: &str, password: String) -> crate::Result<Session> {
-        let session = Session::setup(
-            user_name,
-            password,
+    pub async fn authenticate(&self, identity: sspi::AuthIdentity) -> crate::Result<Session> {
+        let session = Session::create(
+            identity,
             &self.handler,
             self.handler.conn_info.get().unwrap(),
         )
@@ -458,6 +543,12 @@ impl Connection {
             .await?
             .insert(session.session_id(), session_handler);
         Ok(session)
+    }
+
+    /// Returns the connection information, if the connection has been negotiated.
+    /// Otherwise, returns `None`.
+    pub fn conn_info(&self) -> Option<&Arc<ConnectionInfo>> {
+        self.handler.conn_info.get()
     }
 }
 
@@ -479,7 +570,7 @@ pub(crate) struct ConnectionMessageHandler {
     stop_notifications: Arc<AtomicBool>,
 
     /// Holds the sessions created by this connection.
-    sessions: Mutex<HashMap<u64, Weak<SessionMessageHandler>>>,
+    sessions: Mutex<HashMap<u64, Weak<ChannelMessageHandler>>>,
 
     // Negotiation-related state.
     conn_info: OnceCell<Arc<ConnectionInfo>>,

@@ -1,11 +1,10 @@
 use crate::connection::transformer::Transformer;
-use crate::connection::transport::{SmbTransport, SmbTransportWrite};
 use crate::connection::worker::Worker;
 use crate::msg_handler::ReceiveOptions;
 use crate::sync_helpers::*;
-use crate::util::iovec::IoVec;
 use maybe_async::*;
 use smb_msg::ResponseContent;
+use smb_transport::{IoVec, SmbTransport, SmbTransportWrite, TransportError};
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
@@ -80,13 +79,13 @@ where
     }
 }
 
+#[maybe_async(AFIT)]
 impl<T> ParallelWorker<T>
 where
     T: MultiWorkerBackend + std::fmt::Debug,
     T::AwaitingNotifier: std::fmt::Debug,
 {
     /// Returns whether the worker is stopped.
-    #[maybe_async]
     pub fn stopped(&self) -> bool {
         self.stopped.load(std::sync::atomic::Ordering::SeqCst)
     }
@@ -94,10 +93,9 @@ where
     /// This is a function that should be used by multi worker implementations (async/mtd),
     /// after gettting a messages from the server, this function processes it and
     /// notifies the awaiting tasks.
-    #[maybe_async]
     pub(crate) async fn incoming_data_callback(
         self: &Arc<Self>,
-        message: crate::Result<Vec<u8>>,
+        message: Result<Vec<u8>, TransportError>,
     ) -> crate::Result<()> {
         log::trace!("Received message from server.");
         let message = message?;
@@ -182,7 +180,6 @@ where
 
     /// This is a function that should be used by multi worker implementations (async/mtd),
     /// to send a message to the server.
-    #[maybe_async]
     pub async fn outgoing_data_callback(
         self: &Arc<Self>,
         message: Option<IoVec>,
@@ -192,7 +189,7 @@ where
             Some(m) => m,
             None => {
                 if self.stopped() {
-                    return Err(Error::NotConnected);
+                    return Err(Error::ConnectionStopped);
                 } else {
                     return Err(Error::MessageProcessingError(
                         "Empty message cannot be sent to the server.".to_string(),
@@ -206,12 +203,12 @@ where
     }
 }
 
+#[maybe_async(AFIT)]
 impl<T> Worker for ParallelWorker<T>
 where
     T: MultiWorkerBackend + std::fmt::Debug,
     T::AwaitingNotifier: std::fmt::Debug,
 {
-    #[maybe_async]
     async fn start(
         transport: Box<dyn SmbTransport>,
         timeout: Duration,
@@ -237,7 +234,6 @@ where
         Ok(worker)
     }
 
-    #[maybe_async]
     async fn stop(&self) -> crate::Result<()> {
         self.stopped
             .store(true, std::sync::atomic::Ordering::SeqCst);
@@ -254,18 +250,20 @@ where
         .await
     }
 
-    #[maybe_async]
     async fn send(&self, msg: OutgoingMessage) -> crate::Result<SendMessageResult> {
-        let finalize_preauth_hash = msg.finalize_preauth_hash;
+        log::trace!("ParallelWorker::send({msg:?}) called");
+        let return_raw_data = msg.return_raw_data;
+
         let id = msg.message.header.message_id;
         let message = { self.transformer.transform_outgoing(msg).await? };
 
-        let hash = match finalize_preauth_hash {
-            true => self.transformer.finalize_preauth_hash().await?,
-            false => None,
-        };
+        log::trace!("Message with ID {id} is passed to the worker for sending",);
 
-        log::trace!("Message with ID {id} is passed to the worker for sending.",);
+        let raw_message_copy = if return_raw_data {
+            Some(message.clone())
+        } else {
+            None
+        };
 
         let message = T::wrap_msg_to_send(message);
 
@@ -273,16 +271,15 @@ where
             Error::MessageProcessingError("Failed to send message to worker!".to_string())
         })?;
 
-        Ok(SendMessageResult::new(id, hash))
+        Ok(SendMessageResult::new(id, raw_message_copy))
     }
 
-    #[maybe_async]
     async fn receive_next(&self, options: &ReceiveOptions<'_>) -> crate::Result<IncomingMessage> {
         let wait_for_receive = {
             let mut state = self.state.lock().await?;
             if self.stopped() {
                 log::trace!("Connection is closed, avoid receiving.");
-                return Err(Error::NotConnected);
+                return Err(Error::ConnectionStopped);
             }
             if state.pending.contains_key(&options.msg_id) {
                 log::trace!(
@@ -306,17 +303,15 @@ where
         };
 
         let timeout = { *self.timeout.read().await? };
-        T::wait_on_waiter(wait_for_receive, timeout).await
+        let result = T::wait_on_waiter(wait_for_receive, timeout).await?;
+
+        log::trace!("Received message {result:?}");
+
+        Ok(result)
     }
 
     fn transformer(&self) -> &Transformer {
         &self.transformer
-    }
-
-    #[maybe_async]
-    async fn set_timeout(&self, timeout: Duration) -> crate::Result<()> {
-        *self.timeout.write().await? = timeout;
-        Ok(())
     }
 }
 
@@ -329,7 +324,6 @@ where
         f.debug_struct("ParallelWorker")
             .field("state", &self.state)
             .field("backend", &self.backend_impl)
-            .field("transformer", &self.transformer)
             .field("sender", &self.sender)
             .field("stopped", &self.stopped)
             .finish()

@@ -1,9 +1,8 @@
 #![cfg(feature = "async")]
 
-use crate::connection::transport::traits::{SmbTransport, SmbTransportRead, SmbTransportWrite};
 use crate::msg_handler::IncomingMessage;
-use crate::util::iovec::IoVec;
 use crate::{error::*, sync_helpers::*};
+use smb_transport::{IoVec, SmbTransport, SmbTransportRead, SmbTransportWrite, TransportError};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::{select, sync::oneshot};
@@ -20,10 +19,6 @@ pub struct AsyncBackend {
 }
 
 impl AsyncBackend {
-    fn is_cancelled(&self) -> bool {
-        self.token.is_cancelled()
-    }
-
     /// Internal message loop handler.
     async fn loop_receive(
         self: Arc<Self>,
@@ -38,12 +33,12 @@ impl AsyncBackend {
                 .await
             {
                 Ok(_) => {}
-                Err(Error::NotConnected) => {
-                    if self.is_cancelled() {
-                        log::info!("Connection closed.");
-                    } else {
-                        log::error!("Connection closed.");
-                    }
+                Err(Error::TransportError(TransportError::NotConnected)) => {
+                    log::error!("Connection was force-closed by the server.");
+                    self_ref.token.cancel();
+                    break;
+                }
+                Err(Error::ConnectionStopped) => {
                     break;
                 }
                 Err(e) => {
@@ -56,7 +51,7 @@ impl AsyncBackend {
         log::debug!("Cleaning up worker loop.");
         if let Ok(mut state) = worker.state.lock().await {
             for (_, tx) in state.awaiting.drain() {
-                let _notify_result = tx.send(Err(Error::NotConnected));
+                let _notify_result = tx.send(Err(Error::ConnectionStopped));
             }
         }
     }
@@ -75,12 +70,12 @@ impl AsyncBackend {
                 .await
             {
                 Ok(_) => {}
-                Err(Error::NotConnected) => {
-                    if self.is_cancelled() {
-                        log::info!("Connection closed.");
-                    } else {
-                        log::error!("Connection closed.");
-                    }
+                Err(Error::TransportError(TransportError::NotConnected)) => {
+                    log::error!("Connection was force-closed by the server.");
+                    self_ref.token.cancel();
+                    break;
+                }
+                Err(Error::ConnectionStopped) => {
                     break;
                 }
                 Err(e) => {
@@ -94,6 +89,9 @@ impl AsyncBackend {
 
     /// Handles the next message in the receive loop:
     /// receives a message, transforms it, and sends it to the correct awaiting task.
+    ///
+    /// - If the connection is stopped using the `stop` method, this will return `Error::ConnectionStopped`.
+    /// - A [`TransportError`] might be returned if the underlying transport fails.
     async fn handle_next_recv(
         &self,
         rtransport: &mut dyn SmbTransportRead,
@@ -106,7 +104,7 @@ impl AsyncBackend {
             }
             // Cancel the loop.
             _ = self.token.cancelled() => {
-                Err(Error::NotConnected)
+                Err(Error::ConnectionStopped)
             }
         }
     }
@@ -126,7 +124,7 @@ impl AsyncBackend {
             },
             // Cancel the loop.
             _ = self.token.cancelled() => {
-                Err(Error::NotConnected)
+                Err(Error::ConnectionStopped)
             }
         }
     }
@@ -175,7 +173,7 @@ impl MultiWorkerBackend for AsyncBackend {
             .lock()
             .await?
             .take()
-            .ok_or(Error::NotConnected)?;
+            .ok_or(Error::ConnectionStopped)?;
         loop_handles.0.await?;
         loop_handles.1.await?;
         Ok(())

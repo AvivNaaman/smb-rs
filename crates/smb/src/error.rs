@@ -1,5 +1,6 @@
 use std::{num::TryFromIntError, sync::PoisonError};
 
+use smb_transport::TransportError;
 use thiserror::Error;
 
 use crate::{UncPath, connection::TransformError, sync_helpers::AcquireError};
@@ -7,8 +8,6 @@ use smb_msg::{Command, ErrorResponse, NegotiateDialect, Status};
 
 #[derive(Debug)]
 pub enum TimedOutTask {
-    TcpConnect,
-    QuicConnect,
     ReceiveNextMessage,
 }
 
@@ -24,8 +23,13 @@ pub enum Error {
     BinRWError(#[from] binrw::Error),
     #[error("Int parsing Error: {0}")]
     ParsingError(#[from] TryFromIntError),
-    #[error("Client is not connected.")]
-    NotConnected,
+
+    /// Indicates connection stopped - due to error or closed by user.
+    /// See [`TransportError::NotConnected`] for transport-level disconnection.
+    /// Usually, this is the actual error returned when trying to use a stopped connection, anyway.
+    #[error("Client connection is stopped")]
+    ConnectionStopped,
+
     #[error("Invalid state: {0}")]
     InvalidState(String),
     #[error("Unable to transform message: {0}")]
@@ -89,6 +93,9 @@ pub enum Error {
     #[error("Not found: {0}")]
     NotFound(String),
 
+    #[error("Channel {1} for session {0} not found.")]
+    ChannelNotFound(u64, u32),
+
     #[error("RPC error: {0}")]
     RpcError(#[from] smb_rpc::SmbRpcError),
     #[error("SMB message error: {0}")]
@@ -96,25 +103,11 @@ pub enum Error {
     #[error("SMB FSCC error: {0}")]
     FsccError(#[from] smb_fscc::SmbFsccError),
 
-    // -- QUIC --
-    #[cfg(feature = "quic")]
-    #[error("QUIC start connect error: {0}")]
-    QuicConnectError(#[from] quinn::ConnectError),
-    #[cfg(feature = "quic")]
-    #[error("QUIC connection error: {0}")]
-    QuicConnectionError(#[from] quinn::ConnectionError),
-    #[cfg(feature = "quic")]
-    #[error("QUIC write error: {0}")]
-    QuicWriteError(#[from] quinn::WriteError),
-    #[cfg(feature = "quic")]
-    #[error("QUIC read error: {0}")]
-    QuicReadError(#[from] quinn::ReadExactError),
-    #[cfg(feature = "quic")]
-    #[error("TLS error: {0}")]
-    TlsError(#[from] rustls::Error),
-    #[cfg(feature = "quic")]
-    #[error("No cipher suites found")]
-    NoCipherSuitesFound(#[from] quinn::crypto::rustls::NoInitialCipherSuite),
+    #[error("Transport error: {0}")]
+    TransportError(#[from] TransportError),
+
+    #[error("Other error: {0}")]
+    Other(&'static str),
 }
 
 impl<T> From<PoisonError<T>> for Error {

@@ -28,6 +28,7 @@ pub struct File {
     end_of_file: u64,
 }
 
+#[maybe_async(AFIT)]
 impl File {
     pub fn new(handle: ResourceHandle, end_of_file: u64) -> Self {
         File {
@@ -53,11 +54,11 @@ impl File {
     /// * `unbuffered` - Whether to try using unbuffered I/O (if supported by the server).
     /// # Returns
     /// The number of bytes read, up to `buf.len()`.
-    #[maybe_async]
     pub async fn read_block(
         &self,
         buf: &mut [u8],
         pos: u64,
+        channel: Option<u32>,
         unbuffered: bool,
     ) -> std::io::Result<usize> {
         if buf.is_empty() {
@@ -94,18 +95,21 @@ impl File {
             flags.set_read_unbuffered(true);
         }
 
+        let request = OutgoingMessage::new(
+            ReadRequest {
+                flags,
+                length: buf.len() as u32,
+                offset: pos,
+                file_id: self.handle.file_id().map_err(std::io::Error::other)?,
+                minimum_count: 1,
+            }
+            .into(),
+        )
+        .with_channel_id(channel);
+
         let response = self
             .handle
-            .send_receive(
-                ReadRequest {
-                    flags,
-                    length: buf.len() as u32,
-                    offset: pos,
-                    file_id: self.handle.file_id().map_err(std::io::Error::other)?,
-                    minimum_count: 1,
-                }
-                .into(),
-            )
+            .sendo_recvo(request, ReceiveOptions::new())
             .await
             .map_err(|e| std::io::Error::other(e.to_string()))?;
         let content = response
@@ -137,8 +141,13 @@ impl File {
     /// If you want to avoid this copy, use [`File::write_block_zc`] instead.
     #[maybe_async]
     #[inline]
-    pub async fn write_block(&self, buf: &[u8], pos: u64) -> std::io::Result<usize> {
-        self.write_block_zc(buf.into(), pos).await
+    pub async fn write_block(
+        &self,
+        buf: &[u8],
+        pos: u64,
+        channel: Option<u32>,
+    ) -> std::io::Result<usize> {
+        self.write_block_zc(buf.into(), pos, channel).await
     }
 
     /// Write a block of data to an opened file, without copying the data.
@@ -147,8 +156,12 @@ impl File {
     /// * `pos` - The offset in the file to write to.
     /// # Returns
     /// The number of bytes written.
-    #[maybe_async]
-    pub async fn write_block_zc(&self, buf: Arc<[u8]>, pos: u64) -> std::io::Result<usize> {
+    pub async fn write_block_zc(
+        &self,
+        buf: Arc<[u8]>,
+        pos: u64,
+        channel: Option<u32>,
+    ) -> std::io::Result<usize> {
         if buf.is_empty() {
             return Ok(0);
         }
@@ -178,7 +191,8 @@ impl File {
             )
             .into(),
         )
-        .with_additional_data(Arc::clone(&buf));
+        .with_additional_data(Arc::clone(&buf))
+        .with_channel_id(channel);
 
         let response = self
             .handle
@@ -201,7 +215,6 @@ impl File {
     }
 
     /// Sends a flush request to the server to flush the file.
-    #[maybe_async]
     pub async fn flush(&self) -> std::io::Result<()> {
         let _response = self
             .handle
@@ -224,7 +237,6 @@ impl File {
     /// * `from` - The file to copy from.
     /// # Notes
     /// * This copy must be performed against a file from the same share (tree) as this file.
-    #[maybe_async]
     pub async fn srv_copy(&self, from: &File) -> crate::Result<()> {
         if !self.access.file_write_data() {
             return Err(Error::InvalidState(
@@ -325,7 +337,7 @@ impl Seek for File {
 #[cfg(not(feature = "async"))]
 impl Read for File {
     fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
-        let read_length = File::read_block(self, buf, self.pos, false)
+        let read_length = File::read_block(self, buf, self.pos, None, false)
             .map_err(|e| std::io::Error::other(e.to_string()))?;
         self.pos += read_length as u64;
         Ok(read_length)
@@ -335,7 +347,7 @@ impl Read for File {
 #[cfg(not(feature = "async"))]
 impl Write for File {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        let written_length = File::write_block(self, buf, self.pos)?;
+        let written_length = File::write_block(self, buf, self.pos, None)?;
         self.pos += written_length as u64;
         self.dirty = true;
         Ok(written_length)
@@ -349,19 +361,29 @@ impl Write for File {
     }
 }
 
-impl ReadAt for File {
+impl ReadAtChannel for File {
     #[maybe_async]
-    async fn read_at(&self, buf: &mut [u8], offset: u64) -> crate::Result<usize> {
-        self.read_block(buf, offset, false)
+    async fn read_at_channel(
+        &self,
+        buf: &mut [u8],
+        offset: u64,
+        channel: Option<u32>,
+    ) -> crate::Result<usize> {
+        self.read_block(buf, offset, channel, false)
             .await
             .map_err(crate::Error::IoError)
     }
 }
 
-impl WriteAt for File {
+impl WriteAtChannel for File {
     #[maybe_async]
-    async fn write_at(&self, buf: &[u8], offset: u64) -> crate::Result<usize> {
-        self.write_block(buf, offset)
+    async fn write_at_channel(
+        &self,
+        buf: &[u8],
+        offset: u64,
+        channel: Option<u32>,
+    ) -> crate::Result<usize> {
+        self.write_block(buf, offset, channel)
             .await
             .map_err(crate::Error::IoError)
     }

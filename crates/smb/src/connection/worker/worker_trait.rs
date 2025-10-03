@@ -1,11 +1,10 @@
 use std::{sync::Arc, time::Duration};
 
 use crate::{
-    Error,
-    connection::{connection_info::ConnectionInfo, transport::traits::SmbTransport},
-    msg_handler::ReceiveOptions,
-    sync_helpers::*,
+    Error, connection::connection_info::ConnectionInfo, msg_handler::ReceiveOptions,
+    session::SessionAndChannel, sync_helpers::*,
 };
+use smb_transport::SmbTransport;
 
 use maybe_async::*;
 use smb_msg::Status;
@@ -13,7 +12,6 @@ use smb_msg::Status;
 use crate::{
     connection::transformer::Transformer,
     msg_handler::{IncomingMessage, OutgoingMessage, SendMessageResult},
-    session::SessionInfo,
 };
 
 /// SMB2 connection worker.
@@ -29,9 +27,6 @@ pub trait Worker: Sized + std::fmt::Debug {
     -> crate::Result<Arc<Self>>;
     /// Stops the worker, shutting down the connection.
     async fn stop(&self) -> crate::Result<()>;
-
-    /// Sets the timeout for the worker.
-    async fn set_timeout(&self, timeout: Duration) -> crate::Result<()>;
 
     async fn send(&self, msg: OutgoingMessage) -> crate::Result<SendMessageResult>;
 
@@ -130,12 +125,12 @@ pub trait Worker: Sized + std::fmt::Debug {
     }
 
     #[maybe_async]
-    async fn session_started(&self, session: Arc<Mutex<SessionInfo>>) -> crate::Result<()> {
-        self.transformer().session_started(session).await
+    async fn session_started(&self, info: &Arc<RwLock<SessionAndChannel>>) -> crate::Result<()> {
+        self.transformer().session_started(info).await
     }
 
     #[maybe_async]
-    async fn session_ended(&self, session_id: u64) -> crate::Result<()> {
-        self.transformer().session_ended(session_id).await
+    async fn session_ended(&self, info: &Arc<RwLock<SessionAndChannel>>) -> crate::Result<()> {
+        self.transformer().session_ended(info).await
     }
 }

@@ -28,13 +28,13 @@ pub mod msg_handler;
 pub mod resource;
 pub mod session;
 pub mod tree;
-pub mod util;
 
 pub use client::{Client, ClientConfig, UncPath};
-pub use connection::{Connection, ConnectionConfig, transport::*};
+pub use connection::{Connection, ConnectionConfig};
 pub use error::Error;
 pub use resource::{
-    Directory, File, FileCreateArgs, GetLen, ReadAt, Resource, ResourceHandle, WriteAt,
+    Directory, File, FileCreateArgs, GetLen, ReadAt, ReadAtChannel, Resource, ResourceHandle,
+    WriteAt, WriteAtChannel,
 };
 pub use session::Session;
 pub use tree::{DfsRootTreeRef, Tree};
@@ -42,6 +42,7 @@ pub use tree::{DfsRootTreeRef, Tree};
 pub use smb_dtyp::*;
 pub use smb_fscc::*;
 pub use smb_msg::*;
+pub use smb_transport as transport;
 
 /// SMB Result type
 pub type Result<T> = std::result::Result<T, crate::Error>;

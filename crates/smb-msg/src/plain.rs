@@ -33,6 +33,28 @@ impl $struct_name {
                 }),
             }
         }
+
+        #[doc = concat!("Attempts to cast the current content type to [", stringify!($struct_type),"].")]
+        pub fn [<as_ $variant:lower>](&self) -> crate::Result<&$struct_type> {
+            match self {
+                $struct_name::[<$variant>](req) => Ok(req),
+                _ => Err(crate::SmbMsgError::UnexpectedContent{
+                    expected: stringify!([<$variant>]),
+                    actual: self.content_name(),
+                }),
+            }
+        }
+
+        #[doc = concat!("Attempts to cast the current content type to [", stringify!($struct_type),"].")]
+        pub fn [<as_mut_ $variant:lower>](&mut self) -> crate::Result<&mut $struct_type> {
+            match self {
+                $struct_name::[<$variant>](req) => Ok(req),
+                _ => Err(crate::SmbMsgError::UnexpectedContent{
+                    expected: stringify!([<$variant>]),
+                    actual: self.content_name(),
+                }),
+            }
+        }
     )+
 }
         }

@@ -4,7 +4,10 @@ use common::{TestConstants, make_server_connection};
 #[cfg(feature = "async")]
 use futures_util::StreamExt;
 use serial_test::serial;
-use smb::{ConnectionConfig, FileCreateArgs, connection::EncryptionMode, resource::Directory};
+use smb::{
+    ConnectionConfig, FileCreateArgs, ReadAt, WriteAt, connection::EncryptionMode,
+    resource::Directory,
+};
 use smb_fscc::*;
 use smb_msg::{AdditionalInfo, CreateOptions, Dialect};
 use std::sync::Arc;
@@ -72,7 +75,7 @@ async fn test_smb_integration_dialect_encrpytion_mode(
             .await?
             .unwrap_file();
 
-        file.write_block(TEST_DATA, 0).await?;
+        file.write_at(TEST_DATA, 0).await?;
 
         // Query security info (owner only)
         let r = file
@@ -151,7 +154,7 @@ async fn test_smb_integration_dialect_encrpytion_mode(
     .await?;
 
     let mut buf = [0u8; TEST_DATA.len() + 2];
-    let read_length = file.read_block(&mut buf, 0, false).await?;
+    let read_length = file.read_at(&mut buf, 0).await?;
     assert_eq!(read_length, TEST_DATA.len());
     assert_eq!(&buf[..read_length], TEST_DATA);
 

@@ -16,14 +16,12 @@ pub mod ioctl;
 pub mod lock;
 pub mod message;
 pub mod negotiate;
-pub mod netbios;
 pub mod notify;
 pub mod oplock;
 pub mod plain;
 pub mod query_dir;
 pub mod session_setup;
 pub mod smb1;
-pub mod transport;
 pub mod tree_connect;
 
 pub use cancel::*;
@@ -45,7 +43,6 @@ pub use oplock::*;
 pub use plain::*;
 pub use query_dir::*;
 pub use session_setup::*;
-pub use transport::*;
 pub use tree_connect::*;
 
 #[cfg(test)]

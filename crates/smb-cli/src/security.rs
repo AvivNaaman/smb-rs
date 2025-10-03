@@ -82,7 +82,10 @@ impl FromStr for DaclEntryArg {
 }
 
 #[maybe_async::maybe_async]
-pub async fn security(cmd: &SecurityCmd, cli: &Cli) -> Result<()> {
+pub async fn security(
+    cmd: &SecurityCmd,
+    cli: &Cli,
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
     match &cmd.subcommand {
         SecuritySubCommand::Get(c) => get_security(c, cmd, cli).await,
         SecuritySubCommand::Set(c) => set_security(c, cmd, cli).await,
@@ -94,13 +97,11 @@ async fn open_resource(
     security_cmd: &SecurityCmd,
     cli: &Cli,
     access: FileAccessMask,
-) -> Result<Resource> {
-    let client = Client::new(cli.make_smb_client_config());
+) -> std::result::Result<Resource, Box<dyn std::error::Error>> {
+    let client = Client::new(cli.make_smb_client_config()?);
 
     if security_cmd.path.share().is_none() || security_cmd.path.share().unwrap().is_empty() {
-        return Err(Error::InvalidArgument(
-            "Specified path must include a share".into(),
-        ));
+        return Err("Specified path must include a share".into());
     }
 
     client
@@ -133,7 +134,7 @@ pub async fn get_security(
     cmd: &GetSecurityCmd,
     security_cmd: &SecurityCmd,
     cli: &Cli,
-) -> Result<()> {
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let access = FileAccessMask::new().with_read_control(true);
     let resource = open_resource(security_cmd, cli, access).await?;
     let resource_handle = resource_handle(&resource);
@@ -154,7 +155,7 @@ pub async fn set_security(
     cmd: &SetSecurityCmd,
     security_cmd: &SecurityCmd,
     cli: &Cli,
-) -> Result<()> {
+) -> std::result::Result<(), Box<dyn std::error::Error>> {
     let write_dacl = !cmd.add_dacl.is_empty() || !cmd.remove_dacl.is_empty();
 
     let access = FileAccessMask::new()
@@ -179,7 +180,7 @@ pub async fn set_security(
     if write_dacl {
         let new_dacl = new_security_info.dacl.as_mut().ok_or_else(|| {
             log::error!("No DACL present on the object, cannot add entries");
-            Error::InvalidArgument("No DACL present on the object".into())
+            "No DACL present on the object"
         })?;
 
         // Remove DACLs. Warn if SID not found

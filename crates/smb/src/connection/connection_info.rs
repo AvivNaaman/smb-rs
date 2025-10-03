@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::dialects::DialectImpl;
+use crate::{connection::preauth_hash::PreauthHashState, dialects::DialectImpl};
 use binrw::prelude::*;
 use smb_dtyp::Guid;
 use smb_msg::*;
@@ -50,11 +50,19 @@ pub struct NegotiatedProperties {
 /// It contains all the information about the connection.
 #[derive(Debug)]
 pub struct ConnectionInfo {
-    pub server: String,
+    /// The server name used for the connection.
+    pub server_name: String,
+    /// The server address used for the connection.
+    pub server_address: std::net::SocketAddr,
+
     /// Contains negotiated properties of the connection.
     pub negotiation: NegotiatedProperties,
     /// Contains the implementation of the selected dialect.
     pub dialect: Arc<DialectImpl>,
     /// Contains the configuration of the connection, as specified by the user when the connection was established.
     pub config: ConnectionConfig,
+    /// Preauthentication hash state, if applicable.
+    pub preauth_hash: PreauthHashState,
+    /// The client GUID used for the connection.
+    pub client_guid: Guid,
 }

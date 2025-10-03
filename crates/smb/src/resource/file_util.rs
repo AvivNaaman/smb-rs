@@ -1,6 +1,36 @@
 use crate::sync_helpers::*;
 use maybe_async::*;
 
+/// This trait describes an object that can perform read operations at a specific offset,
+/// optionally using a specific channel ID.
+///
+/// It has a single method, [`ReadAtChannel::read_at_channel`], which takes a mutable buffer,
+/// an offset, and an optional channel ID, and returns the number of bytes read.
+///
+/// Every structure that implements this trait, also implements the [`ReadAt`] trait, being
+/// a subset of it. The [`ReadAt::read_at`] method is equivalent to calling
+/// [`ReadAtChannel::read_at_channel`] with `channel` set to `None`.
+pub trait ReadAtChannel {
+    #[cfg(feature = "async")]
+    fn read_at_channel(
+        &self,
+        buf: &mut [u8],
+        offset: u64,
+        channel: Option<u32>,
+    ) -> impl std::future::Future<Output = crate::Result<usize>> + std::marker::Send;
+    #[cfg(not(feature = "async"))]
+    fn read_at_channel(
+        &self,
+        buf: &mut [u8],
+        offset: u64,
+        channel: Option<u32>,
+    ) -> crate::Result<usize>;
+}
+
+/// This trait describes an object that can perform read operations at a specific offset.
+///
+/// See [`ReadAtChannel`] for an extended version of this trait, that supports
+/// specifying a channel ID for the read operation.
 pub trait ReadAt {
     #[cfg(feature = "async")]
     fn read_at(
@@ -12,8 +42,52 @@ pub trait ReadAt {
     fn read_at(&self, buf: &mut [u8], offset: u64) -> crate::Result<usize>;
 }
 
-#[maybe_async(AFIT)]
-#[allow(async_fn_in_trait)]
+impl<T: ReadAtChannel + ?Sized> ReadAt for T {
+    #[cfg(feature = "async")]
+    fn read_at(
+        &self,
+        buf: &mut [u8],
+        offset: u64,
+    ) -> impl std::future::Future<Output = crate::Result<usize>> + std::marker::Send {
+        self.read_at_channel(buf, offset, None)
+    }
+    #[cfg(not(feature = "async"))]
+    fn read_at(&self, buf: &mut [u8], offset: u64) -> crate::Result<usize> {
+        self.read_at_channel(buf, offset, None)
+    }
+}
+
+/// This trait describes an object that can perform write operations at a specific offset,
+/// optionally using a specific channel ID.
+///
+/// It has a single method, [`WriteAtChannel::write_at_channel`], which takes a buffer,
+/// an offset, and an optional channel ID, and returns the number of bytes written.
+///
+/// Every structure that implements this trait, also implements the [`WriteAt`] trait, being
+/// a subset of it. The [`WriteAt::write_at`] method is equivalent to calling
+/// [`WriteAtChannel::write_at_channel`] with `channel` set to `None`.
+pub trait WriteAtChannel {
+    #[cfg(feature = "async")]
+    fn write_at_channel(
+        &self,
+        buf: &[u8],
+        offset: u64,
+        channel: Option<u32>,
+    ) -> impl std::future::Future<Output = crate::Result<usize>> + std::marker::Send;
+
+    #[cfg(not(feature = "async"))]
+    fn write_at_channel(
+        &self,
+        buf: &[u8],
+        offset: u64,
+        channel: Option<u32>,
+    ) -> crate::Result<usize>;
+}
+
+/// This trait describes an object that can perform write operations at a specific offset.
+///
+/// See [`WriteAtChannel`] for an extended version of this trait, that supports
+/// specifying a channel ID for the write operation.
 pub trait WriteAt {
     #[cfg(feature = "async")]
     fn write_at(
@@ -21,8 +95,25 @@ pub trait WriteAt {
         buf: &[u8],
         offset: u64,
     ) -> impl std::future::Future<Output = crate::Result<usize>> + std::marker::Send;
+
     #[cfg(not(feature = "async"))]
     fn write_at(&self, buf: &[u8], offset: u64) -> crate::Result<usize>;
+}
+
+impl<T: WriteAtChannel + ?Sized> WriteAt for T {
+    #[cfg(feature = "async")]
+    fn write_at(
+        &self,
+        buf: &[u8],
+        offset: u64,
+    ) -> impl std::future::Future<Output = crate::Result<usize>> + std::marker::Send {
+        self.write_at_channel(buf, offset, None)
+    }
+
+    #[cfg(not(feature = "async"))]
+    fn write_at(&self, buf: &[u8], offset: u64) -> crate::Result<usize> {
+        self.write_at_channel(buf, offset, None)
+    }
 }
 
 #[maybe_async(AFIT)]
@@ -56,9 +147,14 @@ mod impls {
     #[cfg(not(feature = "async"))]
     pub trait ReadSeek: Read + Seek {}
     impl ReadSeek for File {}
-    impl<F: ReadSeek + Send> ReadAt for Mutex<F> {
+    impl<F: ReadSeek + Send> ReadAtChannel for Mutex<F> {
         #[maybe_async]
-        async fn read_at(&self, buf: &mut [u8], offset: u64) -> crate::Result<usize> {
+        async fn read_at_channel(
+            &self,
+            buf: &mut [u8],
+            offset: u64,
+            _channel: Option<u32>,
+        ) -> crate::Result<usize> {
             let mut reader = self
                 .lock()
                 .await
@@ -73,9 +169,14 @@ mod impls {
     #[cfg(not(feature = "async"))]
     pub trait WriteSeek: Write + Seek {}
     impl WriteSeek for File {}
-    impl<F: WriteSeek + Send> WriteAt for Mutex<F> {
+    impl<F: WriteSeek + Send> WriteAtChannel for Mutex<F> {
         #[maybe_async]
-        async fn write_at(&self, buf: &[u8], offset: u64) -> crate::Result<usize> {
+        async fn write_at_channel(
+            &self,
+            buf: &[u8],
+            offset: u64,
+            _channel: Option<u32>,
+        ) -> crate::Result<usize> {
             let mut writer = self
                 .lock()
                 .await
@@ -114,7 +215,10 @@ pub use impls::*;
 mod copy {
     use super::*;
 
-    use std::sync::{Arc, atomic::AtomicU64};
+    use std::{
+        collections::HashMap,
+        sync::{Arc, atomic::AtomicU64},
+    };
 
     #[derive(Debug)]
     pub struct CopyState {
@@ -124,7 +228,7 @@ mod copy {
         total_size: u64,
 
         max_chunk_size: u64,
-        num_jobs: usize,
+        channel_jobs: HashMap<Option<u32>, usize>,
     }
 
     impl CopyState {
@@ -153,16 +257,16 @@ mod copy {
         }
 
         /// Returns the number of parallel jobs being used for the copy operation.
-        pub fn num_jobs(&self) -> usize {
-            self.num_jobs
+        pub fn num_total_jobs(&self) -> usize {
+            self.channel_jobs.values().sum()
         }
     }
 
     /// Generic block copy function.
     ///
     /// # Parameters
-    /// - `from`: The source to read from. Must implement `ReadAt` and `GetLen`.
-    /// - `to`: The destination to write to. Must implement `WriteAt` and `SetLen`.
+    /// - `from`: The source to read from. Must implement `ReadAtChannel` and `GetLen`.
+    /// - `to`: The destination to write to. Must implement `WriteAtChannel` and `SetLen`.
     /// - `jobs`: The number of parallel jobs to use. If 0, a default value will be used.
     ///
     /// # Returns
@@ -172,16 +276,54 @@ mod copy {
     /// # Notes
     /// - To report progress, use the [`prepare_parallel_copy`] function to get a `CopyState`, and then
     ///   use that to report progress while the copy is running.
+    /// - This function performs operations against the default chanel of the connection.
+    ///   To specify the number of jobs per channel, use the [`block_copy_channel`] function instead.
     #[maybe_async]
     pub async fn block_copy<
-        F: ReadAt + GetLen + Send + Sync + 'static,
-        T: WriteAt + SetLen + Send + Sync + 'static,
+        F: ReadAtChannel + GetLen + Send + Sync + 'static,
+        T: WriteAtChannel + SetLen + Send + Sync + 'static,
     >(
         from: F,
         to: T,
         jobs: usize,
     ) -> crate::Result<()> {
-        let copy_state = prepare_parallel_copy(&from, &to, jobs).await?;
+        let copy_state = prepare_parallel_copy(&from, &to, HashMap::from([(None, jobs)])).await?;
+
+        log::debug!("Starting parallel copy: {copy_state:?}",);
+        start_parallel_copy(from, to, Arc::new(copy_state)).await?;
+
+        Ok(())
+    }
+
+    /// Generic block copy function with channel support.
+    ///
+    /// # Parameters
+    /// - `from`: The source to read from. Must implement `ReadAtChannel` and `GetLen`.
+    /// - `to`: The destination to write to. Must implement `WriteAtChannel` and `SetLen`.
+    /// - `channel_jobs`: A map of channel IDs to the number of jobs to use for each channel.
+    ///
+    /// # Returns
+    /// - `Ok(())` if the copy was successful.
+    /// - `Err(crate::Error)` if an error occurred.
+    ///
+    /// # Notes
+    /// - To report progress, use the [`prepare_parallel_copy`] function to get a `CopyState`, and then
+    ///   use that to report progress while the copy is running.
+    #[maybe_async]
+    pub async fn block_copy_channel<
+        F: ReadAtChannel + GetLen + Send + Sync + 'static,
+        T: WriteAtChannel + SetLen + Send + Sync + 'static,
+    >(
+        from: F,
+        to: T,
+        channel_jobs: &HashMap<u32, usize>,
+    ) -> crate::Result<()> {
+        let channel_jobs = channel_jobs
+            .iter()
+            .map(|(&k, &v)| (Some(k), v))
+            .collect::<HashMap<_, _>>();
+
+        let copy_state = prepare_parallel_copy(&from, &to, channel_jobs).await?;
 
         log::debug!("Starting parallel copy: {copy_state:?}",);
         start_parallel_copy(from, to, Arc::new(copy_state)).await?;
@@ -195,30 +337,50 @@ mod copy {
     ///
     /// this is mostly useful for cases that require an additional interaction with the
     /// state, beyond the copy workers themselves - for example, reporting progress.
-    /// if you don't need that, just use the [`block_copy`] function directly.
+    /// if you don't need that, just use the [`block_copy`] or [`block_copy_channel`] functions.
+    ///
+    /// # Parameters
+    /// - `from`: The source to read from. Must implement `ReadAtChannel` and `GetLen`.
+    /// - `to`: The destination to write to. Must implement `WriteAtChannel` and `SetLen`.
+    /// - `channel_jobs`: A map of channel IDs to the number of jobs to use for each channel.
+    ///   Use `None` as the key for the default channel. The total number of jobs will be the sum of all values in the map.
+    ///   If the map is empty, a default value will be used. Setting both None and Some values is allowed, and the default channel
+    ///   will use the total number of jobs specified for it. If any channel is specified with 0 jobs, it will use the default number of jobs.
     #[maybe_async]
     pub async fn prepare_parallel_copy<
-        F: ReadAt + GetLen + Send + Sync + 'static,
-        T: WriteAt + SetLen + Send + Sync + 'static,
+        F: ReadAtChannel + GetLen + Send + Sync + 'static,
+        T: WriteAtChannel + SetLen + Send + Sync + 'static,
     >(
         from: &F,
         to: &T,
-        jobs: usize,
+        mut channel_jobs: HashMap<Option<u32>, usize>,
     ) -> crate::Result<CopyState> {
-        const MAX_JOBS: usize = 128;
-        if jobs > MAX_JOBS {
-            return Err(crate::Error::InvalidArgument(format!(
-                "Number of jobs exceeds maximum allowed ({MAX_JOBS})"
-            )));
+        const AUTO_JOB_INDICATOR: usize = 0;
+        if channel_jobs.is_empty() {
+            channel_jobs.insert(None, AUTO_JOB_INDICATOR); // default
         }
 
-        const DEFAULT_JOBS: usize = 16;
-        let jobs = if jobs == 0 {
-            log::debug!("No jobs specified, using default: {DEFAULT_JOBS}",);
-            DEFAULT_JOBS
-        } else {
-            jobs
-        };
+        const MAX_JOBS_PER_CHANNEL: usize = 128;
+        const AUTO_JOBS: usize = 16;
+        for (&channel, jobs) in channel_jobs.iter_mut() {
+            if *jobs > MAX_JOBS_PER_CHANNEL {
+                return Err(crate::Error::InvalidArgument(format!(
+                    "Number of jobs for channel {channel:?} exceeds maximum allowed (128)"
+                )));
+            }
+
+            if *jobs == AUTO_JOB_INDICATOR {
+                log::debug!("No jobs specified for channel {channel:?}, using default: 16",);
+                *jobs = AUTO_JOBS;
+            }
+        }
+
+        const MAX_TOTAL_JOBS: usize = 512;
+        if channel_jobs.values().sum::<usize>() > MAX_TOTAL_JOBS {
+            return Err(crate::Error::InvalidArgument(format!(
+                "Total number of jobs exceeds maximum allowed ({MAX_TOTAL_JOBS})"
+            )));
+        }
 
         const CHUNK_SIZE: u64 = 2u64.pow(16);
 
@@ -232,7 +394,7 @@ mod copy {
                 last_block: 0,
                 total_size: 0,
                 max_chunk_size: CHUNK_SIZE,
-                num_jobs: jobs,
+                channel_jobs,
             });
         }
 
@@ -241,7 +403,7 @@ mod copy {
             last_block: file_length / CHUNK_SIZE,
             total_size: file_length,
             max_chunk_size: CHUNK_SIZE,
-            num_jobs: jobs,
+            channel_jobs,
         })
     }
 
@@ -250,8 +412,8 @@ mod copy {
     /// See [`prepare_parallel_copy`] for more details.
     #[cfg(feature = "async")]
     pub async fn start_parallel_copy<
-        F: ReadAt + GetLen + Send + Sync + 'static,
-        T: WriteAt + SetLen + Send + Sync + 'static,
+        F: ReadAtChannel + GetLen + Send + Sync + 'static,
+        T: WriteAtChannel + SetLen + Send + Sync + 'static,
     >(
         from: F,
         to: T,
@@ -265,11 +427,15 @@ mod copy {
         let from = Arc::new(from);
 
         let mut handles = JoinSet::new();
-        for task_id in 0..state.num_jobs {
-            let from = from.clone();
-            let to = to.clone();
-            let state = state.clone();
-            handles.spawn(async move { block_copy_task(from, to, state, task_id).await });
+        for (&channel_id, &jobs) in state.channel_jobs.iter() {
+            for task_id in 0..jobs {
+                let from = from.clone();
+                let to = to.clone();
+                let state = state.clone();
+                handles.spawn(async move {
+                    block_copy_task(from, to, state, task_id, channel_id).await
+                });
+            }
         }
 
         handles.join_all().await;
@@ -281,8 +447,8 @@ mod copy {
     /// See [`prepare_parallel_copy`] for more details.
     #[cfg(feature = "multi_threaded")]
     pub fn start_parallel_copy<
-        F: ReadAt + GetLen + Send + Sync + 'static,
-        T: WriteAt + SetLen + Send + Sync + 'static,
+        F: ReadAtChannel + GetLen + Send + Sync + 'static,
+        T: WriteAtChannel + SetLen + Send + Sync + 'static,
     >(
         from: F,
         to: T,
@@ -292,13 +458,16 @@ mod copy {
         let to = Arc::new(to);
 
         let mut handles = Vec::new();
-        for task_id in 0..state.num_jobs {
-            let from = from.clone();
-            let to = to.clone();
-            let state = state.clone();
-            let handle =
-                std::thread::spawn(move || block_copy_task(from.clone(), to, state, task_id));
-            handles.push(handle);
+        for (&channel_id, &jobs) in state.channel_jobs.iter() {
+            for task_id in 0..jobs {
+                let from = from.clone();
+                let to = to.clone();
+                let state = state.clone();
+                let handle = std::thread::spawn(move || {
+                    block_copy_task(from.clone(), to, state, task_id, channel_id)
+                });
+                handles.push(handle);
+            }
         }
 
         for handle in handles {
@@ -310,15 +479,16 @@ mod copy {
 
     #[maybe_async]
     async fn block_copy_task<
-        F: ReadAt + GetLen + Send + Sync,
-        T: WriteAt + SetLen + Send + Sync,
+        F: ReadAtChannel + GetLen + Send + Sync,
+        T: WriteAtChannel + SetLen + Send + Sync,
     >(
         from: Arc<F>,
         to: Arc<T>,
         state: Arc<CopyState>,
         task_id: usize,
+        channel_id: Option<u32>,
     ) -> crate::Result<()> {
-        log::debug!("Starting copy task {task_id}",);
+        log::debug!("Starting copy task {task_id} of channel {channel_id:?}",);
 
         let mut curr_chunk = vec![0u8; state.max_chunk_size as usize];
 
@@ -340,16 +510,19 @@ mod copy {
             } as usize;
 
             let offset = current_block * state.max_chunk_size;
-            let bytes_read = from.read_at(&mut curr_chunk[..chunk_size], offset).await?;
+            let bytes_read = from
+                .read_at_channel(&mut curr_chunk[..chunk_size], offset, channel_id)
+                .await?;
             if bytes_read < chunk_size {
                 log::warn!(
-                    "Task {task_id}: Read less bytes than expected. File might be corrupt. Expected: {chunk_size}, Read: {bytes_read}"
+                    "Task {task_id}@{channel_id:?}: Read less bytes than expected. File might be corrupt. Expected: {chunk_size}, Read: {bytes_read}"
                 );
             }
             let valid_chunk_end = bytes_read;
-            to.write_at(&curr_chunk[..valid_chunk_end], offset).await?;
+            to.write_at_channel(&curr_chunk[..valid_chunk_end], offset, channel_id)
+                .await?;
         }
-        log::debug!("Copy task {task_id} completed",);
+        log::debug!("Copy task {task_id}@{channel_id:?} completed",);
         Ok(())
     }
 }
@@ -359,7 +532,7 @@ mod copy {
     use super::*;
 
     /// Generic block copy function.
-    pub fn block_copy<F: ReadAt + GetLen, T: WriteAt + SetLen>(
+    pub fn block_copy<F: ReadAtChannel + GetLen, T: WriteAtChannel + SetLen>(
         from: F,
         to: T,
     ) -> crate::Result<()> {
@@ -367,10 +540,30 @@ mod copy {
     }
 
     /// Generic block copy function with progress callback.
-    pub fn block_copy_progress<F: ReadAt + GetLen, T: WriteAt + SetLen>(
+    ///
+    /// * `progress_callback` - A callback function that will be called with the number of bytes copied so far.
+    ///
+    /// # Note
+    /// * A simpler method named [`block_copy`] is also available, which does not take a progress callback.
+    pub fn block_copy_progress<F: ReadAtChannel + GetLen, T: WriteAtChannel + SetLen>(
         from: F,
         to: T,
         progress_callback: Option<&dyn Fn(u64)>,
+    ) -> crate::Result<()> {
+        block_copy_channel_progress(from, to, progress_callback, None)
+    }
+
+    /// Generic block copy function with progress callback and channel specification.
+    ///
+    /// * `channel` - The channel ID to use for the copy operation. If `None`, the default channel will be used.
+    ///
+    /// # Note
+    /// * A simpler method named [`block_copy`] and [`block_copy_progress`] are also available,
+    pub fn block_copy_channel_progress<F: ReadAtChannel + GetLen, T: WriteAtChannel + SetLen>(
+        from: F,
+        to: T,
+        progress_callback: Option<&dyn Fn(u64)>,
+        channel: Option<u32>,
     ) -> crate::Result<()> {
         let file_length = from.get_len()?;
         to.set_len(file_length)?;
@@ -389,7 +582,8 @@ mod copy {
             } else {
                 curr_chunk.len()
             };
-            let bytes_read = from.read_at(&mut curr_chunk[..chunk_size], offset)?;
+            let bytes_read =
+                from.read_at_channel(&mut curr_chunk[..chunk_size], offset, channel)?;
             if bytes_read < chunk_size {
                 log::warn!(
                     "Read less bytes than expected. File might be corrupt. Expected: {chunk_size}, Read: {bytes_read}"

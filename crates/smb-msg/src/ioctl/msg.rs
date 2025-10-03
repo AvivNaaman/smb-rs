@@ -103,7 +103,7 @@ ioctl_req_data! {
     PipePeek: PipePeekRequest, PipePeekResponse,
     SrvEnumerateSnapshots: SrvEnumerateSnapshotsRequest, SrvEnumerateSnapshotsResponse,
     SrvRequestResumeKey: SrvRequestResumeKeyRequest, SrvRequestResumeKey,
-    QueryNetworkInterfaceInfo: QueryNetworkInterfaceInfoRequest, NetworkInterfaceInfo,
+    QueryNetworkInterfaceInfo: QueryNetworkInterfaceInfoRequest, NetworkInterfacesInfo,
     SrvCopychunk: SrvCopychunkCopy, SrvCopychunkResponse,
     SrvCopychunkWrite: SrvCopyChunkCopyWrite, SrvCopychunkResponse,
     SrvReadHash: SrvReadHashReq, SrvReadHashRes,

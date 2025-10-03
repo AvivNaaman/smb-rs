@@ -43,7 +43,7 @@ pub struct InfoCmd {
 
 #[maybe_async]
 pub async fn info(cmd: &InfoCmd, cli: &Cli) -> Result<(), Box<dyn Error>> {
-    let client = Client::new(cli.make_smb_client_config());
+    let client = Client::new(cli.make_smb_client_config()?);
 
     if cmd.path.share().is_none() || cmd.path.share().unwrap().is_empty() {
         client
@@ -114,11 +114,27 @@ fn display_item_info(info: &FileIdBothDirectoryInformation, dir_path: &UncPath) 
     match info.file_attributes.directory() {
         true => log::info!("  - {} {dir_path}/{}/", "(D)", info.file_name),
         false => log::info!(
-            "  - {} {dir_path}/{} ~{}kB",
+            "  - {} {dir_path}/{} ~{}",
             "(F)",
             info.file_name,
-            info.end_of_file.div_ceil(1024)
+            get_size_string(info.end_of_file)
         ),
+    }
+}
+
+fn get_size_string(size_bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * KB;
+    const GB: u64 = 1024 * MB;
+
+    if size_bytes >= GB {
+        format!("{:.2} GB", size_bytes as f64 / GB as f64)
+    } else if size_bytes >= MB {
+        format!("{:.2} MB", size_bytes as f64 / MB as f64)
+    } else if size_bytes >= KB {
+        format!("{:.2} kB", size_bytes as f64 / KB as f64)
+    } else {
+        format!("{} bytes", size_bytes)
     }
 }
 
