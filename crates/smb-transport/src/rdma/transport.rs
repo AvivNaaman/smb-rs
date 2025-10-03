@@ -13,6 +13,7 @@ use async_rdma::{
 };
 use binrw::prelude::*;
 use futures_util::FutureExt;
+use tokio::sync::Semaphore;
 use tokio::{select, sync::mpsc, task::JoinHandle};
 use tokio_util::sync::CancellationToken;
 
@@ -26,6 +27,8 @@ struct RdmaRunningRo {
     cancel: CancellationToken,
 
     max_fragmented_recv_size: u32,
+
+    credits: Arc<Semaphore>,
 }
 
 #[derive(Debug)]
@@ -34,6 +37,8 @@ struct RdmaRunningWo {
     max_rw_size: u32,
     max_send_size: usize,
     max_fragmented_recv_size: u32,
+
+    credits: Arc<Semaphore>,
 }
 
 #[derive(Debug)]
@@ -120,6 +125,8 @@ impl RdmaTransport {
             })
         };
 
+        let credits = Arc::new(Semaphore::new(negotiate_result.credits_granted as usize));
+
         self.state = RdmaTransportState::RunningRw((
             RdmaRunningRo {
                 receive: rx,
@@ -127,12 +134,14 @@ impl RdmaTransport {
                 max_fragmented_recv_size: negotiate_result.max_fragmented_size,
                 worker,
                 cancel,
+                credits: credits.clone(),
             },
             RdmaRunningWo {
                 rdma,
                 max_send_size: max_send_size as usize,
                 max_rw_size: negotiate_result.max_read_write_size,
                 max_fragmented_recv_size: negotiate_result.max_fragmented_size,
+                credits,
             },
             server_address,
         ));
@@ -189,9 +198,10 @@ impl RdmaTransport {
             ));
         }
 
-        if neg_res.max_read_write_size <= SmbdDataTransferHeader::ENCODED_SIZE as u32 {
+        // TODO: Make sure sizes are okay here properly, if not, fail negotiation.
+        if neg_res.max_read_write_size.min(neg_res.max_receive_size) <= Self::IN_MR_OFFSET as u32 {
             return Err(RdmaError::NegotiateError(
-                "Negotiation failed - max read/write size too small".to_string(),
+                "Negotiation failed - max read/write size + max_receive_size too small".to_string(),
             ));
         }
 
@@ -337,6 +347,7 @@ impl RdmaTransport {
         Ok(result)
     }
 
+    const IN_MR_OFFSET: u32 = 24;
     async fn _send_fragmented_data(
         &mut self,
         message: &IoVec,
@@ -354,15 +365,6 @@ impl RdmaTransport {
             ));
         }
 
-        let total_data_to_send = message.total_size() as u32;
-        if total_data_to_send == 0 {
-            log::trace!("Sending empty message, nothing to do.");
-            return Ok(());
-        }
-
-        const IN_MR_OFFSET: u32 = 24;
-        assert!(IN_MR_OFFSET <= running.max_rw_size); // TODO: do this in a nicer way.
-
         let mut total_data_sent: u32 = 0;
         let mut fragment_num = 0;
 
@@ -376,9 +378,10 @@ impl RdmaTransport {
         )?;
 
         let mut current_buf_offset: u32 = 0;
+        let total_data_to_send = message.total_size() as u32;
         while total_data_sent < total_data_to_send {
             let remaining = current_buf.len() as u32 - current_buf_offset;
-            let data_sending: u32 = remaining.min(running.max_rw_size - IN_MR_OFFSET);
+            let data_sending: u32 = remaining.min(running.max_rw_size - Self::IN_MR_OFFSET);
             if data_sending == 0 {
                 current_buf = buf_iterator
                     .next()
@@ -388,53 +391,63 @@ impl RdmaTransport {
             }
 
             let total_remaining = total_data_to_send - total_data_sent;
-            let header = SmbdDataTransferHeader {
-                data_length: data_sending,
-                remaining_data_length: total_remaining - data_sending,
-                data_offset: IN_MR_OFFSET,
-                flags: SmbdDataTransferFlags::new(),
-                credits_requested: 1,
-                credits_granted: 0x10,
-            };
-
-            assert!(total_remaining >= data_sending);
-            assert!(total_remaining >= remaining);
-
-            let data_end = IN_MR_OFFSET + data_sending;
-            let data_end = data_end as usize;
-
-            {
-                let mut mr_data = local_mr.as_mut_slice();
-                let mut cursor = std::io::Cursor::new(mr_data.as_mut());
-                header.write(&mut cursor)?;
-
-                mr_data[IN_MR_OFFSET as usize..data_end].copy_from_slice(
-                    &current_buf[current_buf_offset as usize
-                        ..current_buf_offset as usize + data_sending as usize],
-                );
-
-                log::trace!(
-                    "Prepared fragment {fragment_num}: header: {:?}, data: {:?}",
-                    header,
-                    &mr_data[..data_end]
-                );
-            }
-
-            running.rdma.send_raw(&local_mr).await?;
+            let data_to_send = &current_buf
+                [current_buf_offset as usize..(current_buf_offset + data_sending) as usize];
 
             log::trace!(
-                "Sent fragment {fragment_num}: {} bytes, remaining: {}",
-                data_sending,
-                remaining - data_sending
+                "Rdma sending fragment #{fragment_num} (len={} remaining={} total_sent={} total={})",
+                data_to_send.len(),
+                total_remaining,
+                total_data_sent,
+                total_data_to_send
             );
+            Self::_send_fragment(data_to_send, &mut local_mr, total_remaining, running).await?;
 
-            total_data_sent += data_sending;
-            current_buf_offset += data_sending;
+            total_data_sent += data_to_send.len() as u32;
+            current_buf_offset += data_to_send.len() as u32;
             fragment_num += 1;
         }
 
         assert!(total_data_sent == total_data_to_send);
 
+        Ok(())
+    }
+
+    async fn _send_fragment(
+        data: &[u8],
+        working_mr: &mut LocalMr,
+        remaining: u32,
+        running: &RdmaRunningWo,
+    ) -> std::result::Result<(), RdmaError> {
+        assert!(
+            data.len() <= running.max_send_size - Self::IN_MR_OFFSET as usize,
+            "Data length {} exceeds max send size {}",
+            data.len(),
+            running.max_send_size - Self::IN_MR_OFFSET as usize
+        );
+        assert!(remaining >= data.len() as u32);
+
+        let header = SmbdDataTransferHeader {
+            data_length: data.len() as u32,
+            remaining_data_length: remaining - data.len() as u32,
+            data_offset: Self::IN_MR_OFFSET,
+            flags: SmbdDataTransferFlags::new(),
+            credits_requested: 1,
+            credits_granted: 0x10,
+        };
+
+        let data_end = Self::IN_MR_OFFSET + data.len() as u32;
+        let data_end = data_end as usize;
+
+        {
+            let mut mr_data = working_mr.as_mut_slice();
+            let mut cursor = std::io::Cursor::new(mr_data.as_mut());
+            header.write(&mut cursor)?;
+
+            mr_data[Self::IN_MR_OFFSET as usize..data_end].copy_from_slice(data);
+        }
+
+        running.rdma.send_raw(working_mr).await?;
         Ok(())
     }
 }
