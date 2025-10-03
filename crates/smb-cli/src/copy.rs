@@ -110,7 +110,7 @@ impl CopyFile {
         // Remote to/from local file copy
         // Initialize multi-channel if possible
         const R2L_L2R_WORKERS_NO_MC: usize = 16;
-        if !client.config().connection.multichannel.enabled {
+        if !client.config().connection.multichannel.is_enabled() {
             return Ok(HashMap::from([(None, R2L_L2R_WORKERS_NO_MC)]));
         }
 

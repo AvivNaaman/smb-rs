@@ -68,22 +68,6 @@ impl QuicTransport {
             .expect("Failed to install rustls crypto provider");
     }
 
-    fn _connect(
-        &mut self,
-        server_addr: SocketAddr,
-        server_name: String,
-    ) -> BoxFuture<'_, Result<()>> {
-        async move {
-            let connection = self.endpoint.connect(server_addr, &server_name)?;
-            let (send, recv) = connection.await?.open_bi().await?;
-            self.send_stream = Some(send);
-            self.recv_stream = Some(recv);
-            self.remote_address = Some(server_addr);
-            Ok(())
-        }
-        .boxed()
-    }
-
     fn make_client_config(quic_config: &QuicConfig) -> Result<quinn::ClientConfig> {
         let mut quic_client_config = match &quic_config.cert_validation {
             super::config::QuicCertValidationOptions::PlatformVerifier => {
@@ -237,7 +221,7 @@ impl SmbTransportWrite for QuicTransport {
     }
     #[cfg(not(feature = "async"))]
     fn send_raw(&mut self, buf: &[u8]) -> Result<()> {
-        self.send_raw(buf)
+        unimplemented!("QUIC transport requires async feature to be enabled");
     }
 }
 
@@ -251,6 +235,6 @@ impl SmbTransportRead for QuicTransport {
     }
     #[cfg(not(feature = "async"))]
     fn receive_exact(&mut self, out_buf: &mut [u8]) -> Result<Vec<u8>> {
-        self.receive(out_buf)
+        unimplemented!("QUIC transport requires async feature to be enabled");
     }
 }

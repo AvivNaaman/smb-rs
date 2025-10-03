@@ -19,10 +19,35 @@ pub enum EncryptionMode {
 }
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub struct MultiChannelConfig {
-    /// Whether to enable multichannel support.
-    /// This is disabled by default.
-    pub enabled: bool,
+pub enum MultiChannelConfig {
+    /// Multi-channel is disabled.
+    #[default]
+    Disabled,
+    /// Multi-channel is always enabled, if supported by the server and client.
+    Always,
+    /// Multi-channel is enabled only if using RDMA transport, and if supported by the server and client.
+    #[cfg(feature = "rdma")]
+    RdmaOnly,
+}
+
+impl MultiChannelConfig {
+    /// Returns whether multichannel of any form is enabled.
+    pub fn is_enabled(&self) -> bool {
+        match self {
+            MultiChannelConfig::Always => true,
+            #[cfg(feature = "rdma")]
+            MultiChannelConfig::RdmaOnly => true,
+            MultiChannelConfig::Disabled => false,
+        }
+    }
+
+    /// Returns whether multichannel is enabled only for RDMA transport.
+    pub fn is_rdma_only(&self) -> bool {
+        #[cfg(feature = "rdma")]
+        return matches!(self, MultiChannelConfig::RdmaOnly);
+        #[cfg(not(feature = "rdma"))]
+        return false;
+    }
 }
 
 impl EncryptionMode {

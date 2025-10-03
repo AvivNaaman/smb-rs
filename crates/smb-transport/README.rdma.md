@@ -1,4 +1,5 @@
 # About RDMA & SMB
+
 Currently, the crate supports SMB over RDMA on Linux systems only, due to the reliance on the `async-rdma` crate, which is Linux-specific (via the usage of `libibverbs`).
 
 ## Building with RDMA support
@@ -11,6 +12,7 @@ To enable RDMA support, you need to build the crate with the `rdma` feature.
 The best way to quickly setup a Linux RDMA server is to use the `ksmbd` kernel module. Below are the steps to set it up:
 1. Install `ksmbd-tools` using your package manager.
 2. Add software RDMA NIC. For example, if your main NIC is `ens18`, run:
+
    ```sh
    rdma link add rxe_ens18 type rxe netdev ens18
    ```

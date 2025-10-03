@@ -1,5 +1,6 @@
 use crate::{copy::CopyCmd, info::InfoCmd, security::SecurityCmd};
 use clap::{Parser, Subcommand, ValueEnum};
+use smb::connection::MultiChannelConfig;
 use smb::transport::config::*;
 use smb::{
     ClientConfig, ConnectionConfig,
@@ -58,7 +59,7 @@ pub struct Cli {
     pub command: Commands,
 }
 
-#[derive(ValueEnum, Clone, Debug)]
+#[derive(ValueEnum, Copy, Clone, Debug)]
 pub enum CliUseTransport {
     Default,
     Netbios,
@@ -69,7 +70,7 @@ pub enum CliUseTransport {
 }
 
 /// Describes the SMB multi-channel mode to use.
-#[derive(ValueEnum, Clone, Debug, Default)]
+#[derive(ValueEnum, Copy, Clone, Debug, Default)]
 pub enum MultiChannelMode {
     /// Do not use multichannel, even if the server and client support it.
     #[default]
@@ -85,6 +86,17 @@ pub enum MultiChannelMode {
     Always,
 }
 
+impl From<MultiChannelMode> for MultiChannelConfig {
+    fn from(mode: MultiChannelMode) -> Self {
+        match mode {
+            MultiChannelMode::None => MultiChannelConfig::Disabled,
+            #[cfg(feature = "rdma")]
+            MultiChannelMode::RdmaOnly => MultiChannelConfig::RdmaOnly,
+            MultiChannelMode::Always => MultiChannelConfig::Always,
+        }
+    }
+}
+
 impl std::fmt::Display for MultiChannelMode {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
@@ -96,21 +108,7 @@ impl std::fmt::Display for MultiChannelMode {
     }
 }
 
-impl MultiChannelMode {
-    /// Returns whether multichannel should be enabled.
-    pub fn enabled(&self) -> bool {
-        #[cfg(feature = "rdma")]
-        {
-            if matches!(self, MultiChannelMode::RdmaOnly) {
-                return true;
-            }
-        }
-
-        matches!(self, MultiChannelMode::Always)
-    }
-}
-
-#[derive(ValueEnum, Clone, Debug)]
+#[derive(ValueEnum, Copy, Clone, Debug)]
 #[cfg(feature = "rdma")]
 pub enum RdmaType {
     /// InfiniBand
@@ -137,7 +135,7 @@ impl Cli {
         Ok(ClientConfig {
             dfs: !self.no_dfs,
             #[cfg(feature = "rdma")]
-            rdma_type: self.rdma_type.clone().map(|x| x.into()),
+            rdma_type: self.rdma_type.map(|x| x.into()),
             client_guid: Guid::generate(),
             connection: ConnectionConfig {
                 max_dialect: Some(Dialect::MAX),
@@ -160,7 +158,6 @@ impl Cli {
                     CliUseTransport::Rdma => TransportConfig::Rdma(RdmaConfig {
                         rdma_type: self
                             .rdma_type
-                            .clone()
                             .map(|x| x.into())
                             .ok_or("RDMA type must be specified when using RDMA transport")?,
                     }),
@@ -174,9 +171,7 @@ impl Cli {
                 },
                 allow_unsigned_guest_access: self.disable_message_signing,
                 compression_enabled: self.compress,
-                multichannel: smb::connection::MultiChannelConfig {
-                    enabled: self.multichannel.enabled() && self.command.uses_multichannel(),
-                },
+                multichannel: self.multichannel.into(),
                 ..Default::default()
             },
         })
@@ -191,12 +186,4 @@ pub enum Commands {
     Info(InfoCmd),
     /// Configures object security
     Security(SecurityCmd),
-}
-
-impl Commands {
-    /// Returns whether the command should try initializing multichannel,
-    /// if the server and client support it (and use allowed to use it)
-    fn uses_multichannel(&self) -> bool {
-        matches!(self, Commands::Copy(_))
-    }
 }

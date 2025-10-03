@@ -445,7 +445,7 @@ impl Connection {
                 .with_dfs(true)
                 .with_leasing(true)
                 .with_large_mtu(true)
-                .with_multi_channel(self.config.multichannel.enabled)
+                .with_multi_channel(self.config.multichannel.is_enabled())
                 .with_persistent_handles(false)
                 .with_directory_leasing(true);
 

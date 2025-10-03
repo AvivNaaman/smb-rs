@@ -653,7 +653,7 @@ impl Client {
             ));
         }
 
-        if !self.config.connection.multichannel.enabled {
+        if !self.config.connection.multichannel.is_enabled() {
             log::debug!("Multi-channel is not enabled in client configuration. Skipping setup.");
             return Ok(None);
         }
@@ -691,6 +691,7 @@ impl Client {
         let other_interfaces = MultiChannelUtils::get_alt_interface_addresses(
             &network_interfaces,
             primary_conn_info.server_address.ip(),
+            self.config.connection.multichannel.is_rdma_only(),
         )?;
 
         if other_interfaces.is_empty() {
@@ -884,6 +885,7 @@ impl MultiChannelUtils {
     fn get_alt_interface_addresses(
         network_interfaces: &[NetworkInterfaceInfo],
         current_server_address: IpAddr,
+        rdma_only: bool,
     ) -> crate::Result<HashMap<u32, &NetworkInterfaceInfo>> {
         let current_primary_interface = network_interfaces
             .iter()
@@ -901,6 +903,13 @@ impl MultiChannelUtils {
                 iface.sockaddr.socket_addr().is_ipv4()
                     && iface.if_index != current_primary_interface.if_index
             }) // TODO: IPv6; RDMA
+            .filter(|iface| {
+                if rdma_only {
+                    iface.capability.rdma()
+                } else {
+                    true
+                }
+            })
             .map(|iface| (iface.if_index, iface))
             .collect();
 

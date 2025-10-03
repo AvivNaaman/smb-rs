@@ -347,6 +347,12 @@ impl RdmaTransport {
 
                 // First receive only
                 let expected_total_size = message.data_length + message.remaining_data_length;
+                if expected_total_size > running.max_fragmented_recv_size {
+                    return Err(RdmaError::RequestTooLarge(
+                        expected_total_size as usize,
+                        running.max_fragmented_recv_size as usize,
+                    ));
+                }
                 result.reserve_exact(expected_total_size as usize);
             }
 
@@ -446,7 +452,8 @@ impl RdmaTransport {
         let total_data_to_send = message.total_size() as u32;
         while total_data_sent < total_data_to_send {
             let remaining = current_buf.len() as u32 - current_buf_offset;
-            let data_sending: u32 = remaining.min(running.max_rw_size - Self::IN_MR_OFFSET);
+            let data_sending: u32 = remaining
+                .min(running.max_rw_size.min(running.max_send_size as u32) - Self::IN_MR_OFFSET);
             if data_sending == 0 {
                 current_buf = buf_iterator
                     .next()
