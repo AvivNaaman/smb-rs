@@ -1,14 +1,16 @@
 [package]
 name = "smb-cli"
+description = "SMB Command Line Interface using `smb-rs`"
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
 [dependencies]
-smb = { path = "../smb", default-features = false }
+smb = { path = "../smb", default-features = false, features = ["std-fs-impls"] }
 
 maybe-async = { workspace = true }
-tokio = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true, features = ["rt-multi-thread"] }
 futures-util = { workspace = true, optional = true }
 
 # CLI & logging
@@ -18,15 +20,11 @@ env_logger = "0.11.6"
 log = { workspace = true }
 
 [features]
-default = ["async", "smb/default"]
+default = ["async"]
 
-async = ["smb/async", "dep:tokio", "dep:futures-util"]
-single_threaded = ["smb/single_threaded", "maybe-async/is_sync"]
-multi_threaded = ["smb/multi_threaded", "maybe-async/is_sync"]
-
-sign = ["smb/sign"]
-encrypt = ["smb/encrypt"]
-compress = ["smb/compress"]
+async = ["dep:tokio", "dep:futures-util"]
+single_threaded = ["maybe-async/is_sync"]
+multi_threaded = ["maybe-async/is_sync"]
 
 quic = ["smb/quic"]
 rdma = ["smb/rdma"]
