@@ -9,8 +9,11 @@ pub enum TransportConfig {
     /// Use TCP transport protocol.
     #[default]
     Tcp,
+
+    #[cfg(feature = "netbios-transport")]
     /// Use NetBIOS over TCP transport protocol.
     NetBios,
+
     #[cfg(feature = "quic")]
     /// Use SMB over QUIC transport protocol.
     /// Note that this is only supported in dialects 3.1.1 and above.

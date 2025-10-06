@@ -27,7 +27,6 @@
 //!
 //! Modified by Aviv Naaman @AvivNaaman on 2025-08-08
 //! This module is async-only, since [sspi] implements a synchronous network client.
-#![cfg(feature = "kerberos")]
 
 use url::Url;
 

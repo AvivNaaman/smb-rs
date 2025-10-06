@@ -12,8 +12,8 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-smb-dtyp = { path = "../smb-dtyp" }
-smb-fscc = { path = "../smb-fscc" }
+smb-dtyp = { path = "../smb-dtyp", version = "0.10.0" }
+smb-fscc = { path = "../smb-fscc", version = "0.10.0" }
 
 binrw = { workspace = true }
 modular-bitfield = { workspace = true }

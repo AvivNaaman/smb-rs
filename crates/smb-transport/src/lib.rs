@@ -3,9 +3,6 @@ use std::time::Duration;
 pub mod config;
 pub mod error;
 pub mod iovec;
-pub mod netbios;
-pub mod quic;
-pub mod rdma;
 pub mod tcp;
 pub mod traits;
 pub mod utils;
@@ -13,14 +10,24 @@ pub mod utils;
 pub use config::*;
 pub use error::TransportError;
 pub use iovec::*;
-#[cfg(feature = "netbios")]
-pub use netbios::*;
-#[cfg(feature = "quic")]
-pub use quic::*;
-#[cfg(feature = "rdma")]
-pub use rdma::*;
+
 pub use tcp::{SmbTcpMessageHeader, TcpTransport};
 pub use traits::*;
+
+#[cfg(feature = "netbios-transport")]
+pub mod netbios;
+#[cfg(feature = "netbios-transport")]
+pub use netbios::*;
+
+#[cfg(feature = "quic")]
+pub mod quic;
+#[cfg(feature = "quic")]
+pub use quic::*;
+
+#[cfg(feature = "rdma")]
+pub mod rdma;
+#[cfg(feature = "rdma")]
+pub use rdma::*;
 
 /// Creates [`SmbTransport`] out of [`TransportConfig`].
 ///
@@ -33,6 +40,8 @@ pub fn make_transport(
 ) -> Result<Box<dyn SmbTransport>, TransportError> {
     match transport {
         TransportConfig::Tcp => Ok(Box::new(tcp::TcpTransport::new(timeout))),
+
+        #[cfg(feature = "netbios-transport")]
         TransportConfig::NetBios => Ok(Box::new(NetBiosTransport::new(timeout))),
 
         #[cfg(feature = "quic")]

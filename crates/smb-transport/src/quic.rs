@@ -1,5 +1,3 @@
-#![cfg(feature = "quic")]
-
 //! SMB over QUIC transport for SMB.
 
 pub mod config;

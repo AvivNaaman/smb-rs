@@ -2,9 +2,10 @@ name: Build
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
+    tags: ["v*"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
   workflow_dispatch:
 
 env:
@@ -19,7 +20,7 @@ jobs:
     timeout-minutes: 10
     strategy:
       matrix:
-        compile_features: [ async, multi_threaded, single_threaded ]
+        compile_features: [async, multi_threaded, single_threaded]
 
     services:
       samba:
@@ -34,34 +35,34 @@ jobs:
         options: --name samba --privileged --cap-add NET_ADMIN
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Prepare async tests
-      if: ${{ matrix.compile_features == 'async' }}
-      run: |
-        echo "COMMON_FEATURES=${COMMON_FEATURES},quic,rdma" >> "${GITHUB_ENV}"
-        apt update
-        apt install -y libibverbs1 ibverbs-utils librdmacm1 libibumad3 ibverbs-providers rdma-core libibverbs-dev iproute2 perftest librdmacm-dev rdmacm-utils libprotobuf-dev protobuf-compiler clang
-    - name: Format/${{ matrix.compile_features }}
-      run: |
-        rustup component add rustfmt
-        cargo fmt --verbose --check
-    - name: Lint/${{ matrix.compile_features }}
-      run: |
-        rustup component add clippy
-        cargo clippy --verbose --no-default-features --features "${{ matrix.compile_features }},${COMMON_FEATURES}" -- -Dclippy::all
-    - name: Tests/${{ matrix.compile_features }}
-      run: |
-        export SMB_RUST_TESTS_SERVER=samba
-        export RUST_LOG=debug
-        cargo test --verbose --no-default-features --features "${{ matrix.compile_features }},${COMMON_FEATURES}" -- --nocapture
-        # Test without encryption and compression
-        cargo test --verbose --no-default-features --features "${{ matrix.compile_features }},sign" -- --nocapture
-        # Test signing with specific algorithms
-        cargo test --verbose --no-default-features --features "${{ matrix.compile_features }},sign_cmac" -- --nocapture
-        cargo test --verbose --no-default-features --features "${{ matrix.compile_features }},sign_gmac" -- --nocapture
-        cargo test --verbose --no-default-features --features "${{ matrix.compile_features }},sign_hmac" -- --nocapture
-    - name: Build/${{ matrix.compile_features }}
-      run: cargo build --verbose --no-default-features --features "${{ matrix.compile_features }},${COMMON_FEATURES}"
+      - uses: actions/checkout@v4
+      - name: Prepare async tests
+        if: ${{ matrix.compile_features == 'async' }}
+        run: |
+          echo "COMMON_FEATURES=${COMMON_FEATURES},quic" >> "${GITHUB_ENV}"
+          apt update
+          apt install -y libibverbs1 ibverbs-utils librdmacm1 libibumad3 ibverbs-providers rdma-core libibverbs-dev iproute2 perftest librdmacm-dev rdmacm-utils libprotobuf-dev protobuf-compiler clang
+      - name: Format/${{ matrix.compile_features }}
+        run: |
+          rustup component add rustfmt
+          cargo fmt --verbose --check
+      - name: Lint/${{ matrix.compile_features }}
+        run: |
+          rustup component add clippy
+          cargo clippy --verbose --no-default-features --features "${{ matrix.compile_features }},${COMMON_FEATURES}" -- -Dclippy::all
+      - name: Tests/${{ matrix.compile_features }}
+        run: |
+          export SMB_RUST_TESTS_SERVER=samba
+          export RUST_LOG=debug
+          cargo test --verbose --no-default-features --features "${{ matrix.compile_features }},${COMMON_FEATURES}" -- --nocapture
+          # Test without encryption and compression
+          cargo test --verbose --no-default-features --features "${{ matrix.compile_features }},sign" -- --nocapture
+          # Test signing with specific algorithms
+          cargo test --verbose --no-default-features --features "${{ matrix.compile_features }},sign_cmac" -- --nocapture
+          cargo test --verbose --no-default-features --features "${{ matrix.compile_features }},sign_gmac" -- --nocapture
+          cargo test --verbose --no-default-features --features "${{ matrix.compile_features }},sign_hmac" -- --nocapture
+      - name: Build/${{ matrix.compile_features }}
+        run: cargo build --verbose --no-default-features --features "${{ matrix.compile_features }},${COMMON_FEATURES}"
 
   build-msrv:
     runs-on: ubuntu-latest
@@ -81,4 +82,32 @@ jobs:
           for td_model in async multi_threaded single_threaded; do
             echo "Generating documentation with features: $td_model, ${COMMON_FEATURES}"
             cargo doc --verbose --no-default-features --features "$td_model,${COMMON_FEATURES}"
+          done
+
+  publish:
+    runs-on: ubuntu-latest
+    container:
+      image: rust:1.85
+    needs: [test, build-msrv]
+    environment: production
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setting up environment
+        run: apt update && apt install -y jq
+      - name: Verify tag matches Cargo.toml version
+        run: |
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          CARGO_VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          if [ "$TAG_VERSION" != "$CARGO_VERSION" ]; then
+            echo "Tag version ($TAG_VERSION) doesn't match Cargo.toml version ($CARGO_VERSION)"
+            exit 1
+          fi
+      - name: Publish to crates.io
+        # Currently, MSRV does not support the `cargo publish --workspace` command, so putting all packages explicitly is required.
+        # Also, versions are always workspace-defined, so publishing all packages together is required.
+        run: |
+          for crate_name in smb-dtyp smb-fscc smb-msg smb-transport smb-rpc smb; do
+            echo "Publishing crate: $crate_name"
+            cargo publish -p ${crate_name} --token ${{ secrets.CRATES_IO_TOKEN }}
           done

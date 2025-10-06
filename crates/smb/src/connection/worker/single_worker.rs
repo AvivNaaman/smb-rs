@@ -1,5 +1,3 @@
-#![cfg(feature = "single_threaded")]
-
 use crate::{
     connection::transformer::Transformer,
     error::*,

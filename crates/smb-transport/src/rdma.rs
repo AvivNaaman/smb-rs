@@ -1,5 +1,4 @@
 //! RDMA transport for SMB.
-#![cfg(feature = "rdma")]
 
 pub mod config;
 mod error;

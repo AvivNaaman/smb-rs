@@ -62,6 +62,7 @@ pub struct Cli {
 #[derive(ValueEnum, Copy, Clone, Debug)]
 pub enum CliUseTransport {
     Default,
+    #[cfg(feature = "netbios-transport")]
     Netbios,
     #[cfg(feature = "quic")]
     Quic,
@@ -161,8 +162,9 @@ impl Cli {
                             .map(|x| x.into())
                             .ok_or("RDMA type must be specified when using RDMA transport")?,
                     }),
-                    CliUseTransport::Default => TransportConfig::Tcp,
+                    #[cfg(feature = "netbios-transport")]
                     CliUseTransport::Netbios => TransportConfig::NetBios,
+                    CliUseTransport::Default => TransportConfig::Tcp,
                 },
                 port: self.port,
                 auth_methods: AuthMethodsConfig {

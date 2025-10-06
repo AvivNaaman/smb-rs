@@ -2,7 +2,6 @@
 //!
 //! This module uses the [quinn](https://docs.rs/quinn/latest/quinn/) crate to implement the QUIC transport protocol for SMB.
 //! Therefore, it should only be used when async features are enabled.
-#![cfg(feature = "quic")]
 
 // quic => async
 #[cfg(all(not(feature = "async"), feature = "quic"))]

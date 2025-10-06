@@ -1,5 +1,3 @@
-#![cfg(feature = "multi_threaded")]
-
 use crate::{error::*, sync_helpers::*};
 use smb_transport::{IoVec, SmbTransport, SmbTransportRead, SmbTransportWrite, TransportError};
 use std::sync::Arc;

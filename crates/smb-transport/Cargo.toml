@@ -12,15 +12,15 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-smb-dtyp = { path = "../smb-dtyp" }
-smb-msg = { path = "../smb-msg", optional = true }
+smb-dtyp = { path = "../smb-dtyp", version = "0.10.0" }
+smb-msg = { path = "../smb-msg", version = "0.10.0", optional = true }
 
 log = { workspace = true }
 tokio = { workspace = true, features = [
     "net",
     "macros",
     "io-util",
-    "time"
+    "time",
 ], optional = true }
 tokio-util = { workspace = true, optional = true }
 futures-core = { workspace = true, optional = true }
@@ -32,10 +32,10 @@ rustls = { workspace = true, default-features = false, optional = true }
 rustls-platform-verifier = { workspace = true, default-features = false, optional = true }
 
 # RDMA
-async-rdma = { git = "https://github.com/AvivNaaman/async-rdma.git", rev = "878828dd", features = [
-    "cm",
-    "raw",
-], optional = true }
+# async-rdma = { git = "https://github.com/AvivNaaman/async-rdma.git", rev = "878828dd", features = [
+#     "cm",
+#     "raw",
+# ], optional = true }
 
 binrw = { workspace = true }
 modular-bitfield = { workspace = true }
@@ -45,10 +45,10 @@ maybe-async = { workspace = true }
 thiserror = { workspace = true }
 
 [features]
-default = ["netbios"]
+default = ["async", "netbios-transport"]
 async = ["tokio", "tokio-util", "futures-core", "futures-util"]
 is_sync = ["maybe-async/is_sync"]
 
-netbios = []
+netbios-transport = []
 quic = ["dep:quinn", "dep:rustls", "dep:rustls-platform-verifier"]
-rdma = ["dep:smb-msg", "dep:async-rdma"]
+rdma = ["dep:smb-msg"] # , "dep:async-rdma"]

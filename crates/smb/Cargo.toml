@@ -12,18 +12,18 @@ categories.workspace = true
 readme.workspace = true
 
 [dependencies]
-smb-msg = { path = "../smb-msg" }
-smb-dtyp = { path = "../smb-dtyp" }
-smb-rpc = { path = "../smb-rpc" }
-smb-fscc = { path = "../smb-fscc" }
-smb-transport = { path = "../smb-transport" }
+smb-msg = { path = "../smb-msg", version = "0.10.0" }
+smb-dtyp = { path = "../smb-dtyp", version = "0.10.0" }
+smb-rpc = { path = "../smb-rpc", version = "0.10.0" }
+smb-fscc = { path = "../smb-fscc", version = "0.10.0" }
+smb-transport = { path = "../smb-transport", version = "0.10.0", default-features = false}
 
 # Encoding/Decoding
 binrw = { workspace = true }
 modular-bitfield = { workspace = true }
 
 # Async
-tokio = { workspace = true, features = ["time"], optional = true }
+tokio = { workspace = true, features = ["time", "rt"], optional = true }
 futures-core = { workspace = true, optional = true }
 futures-util = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true }
@@ -67,7 +67,7 @@ temp-env = { version = "0.3.6", features = ["async_closure"] }
 tokio = { workspace = true, features = ["rt", "macros"] }
 
 [features]
-default = ["sign", "encrypt", "compress", "async", "std-fs-impls"]
+default = ["sign", "encrypt", "compress", "async", "std-fs-impls", "netbios-transport"]
 
 # Threading models
 async = [
@@ -109,6 +109,7 @@ sign = ["sign_gmac", "sign_cmac", "sign_hmac"]
 # Transport
 quic = ["smb-transport/quic"]
 rdma = ["smb-transport/rdma"]
+netbios-transport = ["smb-transport/netbios-transport"]
 
 # Kerberos requires reqwest for HTTP transport, for kerberos
 kerberos = ["reqwest", "dep:byteorder"]

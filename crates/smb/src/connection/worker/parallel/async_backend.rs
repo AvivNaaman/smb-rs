@@ -1,5 +1,3 @@
-#![cfg(feature = "async")]
-
 use crate::msg_handler::IncomingMessage;
 use crate::{error::*, sync_helpers::*};
 use smb_transport::{IoVec, SmbTransport, SmbTransportRead, SmbTransportWrite, TransportError};

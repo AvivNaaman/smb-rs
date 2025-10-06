@@ -2,6 +2,7 @@
 name = "smb-cli"
 description = "SMB Command Line Interface using `smb-rs`"
 readme = "README.md"
+publish = false
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -26,6 +27,7 @@ async = ["dep:tokio", "dep:futures-util"]
 single_threaded = ["maybe-async/is_sync"]
 multi_threaded = ["maybe-async/is_sync"]
 
+netbios-transport = ["smb/netbios-transport"]
 quic = ["smb/quic"]
 rdma = ["smb/rdma"]
 
