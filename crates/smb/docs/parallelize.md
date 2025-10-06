@@ -4,9 +4,11 @@ One of the most challenging aspects of working with SMB is achieving efficient p
 
 ## Background: The SMB protocol
 
-The SMB protocol supports (in most of the newer SMB2 dialects), the "large MTU" feature. This feature basically allows sending multiple requests to the server at once, without having to wait for each individual response between reequests. This is implemented by a credit system -- the client asks the server to grant N credits, and each message consumes some of those credits - depending on the message size and type.
-This great feature is also supported in this crate: If you are building the crate with the "async" or the "multi_threaded" features, you can share your SMB resources between threads to allow concurrent access and proper initialization of the available network bandwidth, by sending requests and processing informations even when awaiting for responses to get back.
-The credits system is implemented per-connection -- and therefore, you should only have ONE connection between your client and a certain server. In case you have multiple network adapters, that possibly allow improving your bandwidth by connecting to multiple endpoints (i.,e. esatbilishing multiple connections bwteen the same client and server, on different network adapters) - SMB has a solution for that too, which is called multi-channel.
+The SMB protocol, especially in newer SMB2 dialects, supports the "large MTU" feature. This allows clients to send multiple requests to the server simultaneously, without waiting for individual responses between requests. The mechanism is managed by a credit system: the client requests a number of credits from the server, and each message consumes credits based on its size and type.
+
+This crate fully supports this feature. When built with the "async" or "multi_threaded" options, you can share SMB resources between threads, enabling concurrent access and efficient utilization of available network bandwidth. Requests can be sent and processed even while awaiting responses.
+
+Credits are managed per connection, so you should maintain a single connection between your client and each server. If you have multiple network adapters and want to maximize bandwidth by connecting to multiple endpoints (i.e., establishing multiple connections between the same client and server on different adapters), SMB provides a solution called multi-channel.
 
 ## Practice: How should I do it?
 

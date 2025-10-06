@@ -63,7 +63,7 @@ async fn do_main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-In this case, the main function is special, since we use `tokio::main` to invoke the async main through the tokio runtime. The same goes when implementing your code, and simple elimintaion of `async` and `await` is not enough to adapt the code from async to sync.
+In this case, the main function is special, since we use `tokio::main` to invoke the async main through the tokio runtime. The same goes when implementing your code, and simple elimination of `async` and `await` is not enough to adapt the code from async to sync.
 
 ## Choosing a Threading Model
 

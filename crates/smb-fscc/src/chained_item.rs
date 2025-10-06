@@ -132,14 +132,14 @@ where
 
 /// Implements a chained item list.
 ///
-/// A Chained item list is a sequence of ChainedItem<T> entries,
-/// where each entry contains a value of type T and an offset to the next entry.
-/// The last entry in the list has a next entry offset of 0.
+/// A chained item list is a sequence of [`ChainedItem<T>`] entries,
+/// where each entry contains a value of type `T` and an offset to the next entry.
+/// The last entry in the list has a next entry offset of `0`.
 ///
 /// This is a common pattern for Microsoft fscc-query responses, and is used to
 /// represent lists of variable-length entries.
 ///
-/// This struct provides conversion to and from Vec<T> for ease of use.
+/// This struct provides conversion to and from [`Vec<T>`] for ease of use.
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct ChainedItemList<T, const OFFSET_PAD: u32 = DEFAULT_OFFSET_PAD>
