@@ -136,7 +136,7 @@ where
 /// where each entry contains a value of type T and an offset to the next entry.
 /// The last entry in the list has a next entry offset of 0.
 ///
-/// This is a common pattern for microsoft fscc-query responses, and is used to
+/// This is a common pattern for Microsoft fscc-query responses, and is used to
 /// represent lists of variable-length entries.
 ///
 /// This struct provides conversion to and from Vec<T> for ease of use.

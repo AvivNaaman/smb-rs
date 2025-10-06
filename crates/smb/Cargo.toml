@@ -23,7 +23,7 @@ binrw = { workspace = true }
 modular-bitfield = { workspace = true }
 
 # Async
-tokio = { workspace = true, optional = true }
+tokio = { workspace = true, features = ["time"], optional = true }
 futures-core = { workspace = true, optional = true }
 futures-util = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true }
@@ -64,6 +64,7 @@ lz4_flex = { version = "0.11", default-features = false, features = [
 test-log = "0.2"
 serial_test = "3.2"
 temp-env = { version = "0.3.6", features = ["async_closure"] }
+tokio = { workspace = true, features = ["rt", "macros"] }
 
 [features]
 default = ["sign", "encrypt", "compress", "async", "std-fs-impls"]

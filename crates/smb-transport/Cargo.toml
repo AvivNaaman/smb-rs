@@ -20,6 +20,7 @@ tokio = { workspace = true, features = [
     "net",
     "macros",
     "io-util",
+    "time"
 ], optional = true }
 tokio-util = { workspace = true, optional = true }
 futures-core = { workspace = true, optional = true }

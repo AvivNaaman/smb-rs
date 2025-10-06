@@ -49,11 +49,11 @@ use super::{config::ClientConfig, unc_path::UncPath};
 /// async fn main() -> Result<(), Box<dyn std::error::Error>> {
 ///     // instantiate the client
 ///     let client = Client::new(ClientConfig::default());
-///     
+///
 ///     // Connect to a share
 ///     let target_path = UncPath::from_str(r"\\server\share").unwrap();
 ///     client.share_connect(&target_path, "username", "password".to_string()).await?;
-///     
+///
 ///     // And open a file on the server
 ///     let file_to_open = target_path.with_path("file.txt");
 ///     let file_open_args = FileCreateArgs::make_open_existing(FileAccessMask::new().with_generic_read(true));
@@ -696,7 +696,7 @@ impl Client {
 
         if other_interfaces.is_empty() {
             log::warn!(
-                "Multi-channel setup failed: unable to determine the current primary network interface. 
+                "Multi-channel setup failed: unable to determine the current primary network interface.
                 This usually means the SMB server is not on the same local network as the client, and multi-channel cannot be used.
                 Available interfaces: {network_interfaces:?}",
             );

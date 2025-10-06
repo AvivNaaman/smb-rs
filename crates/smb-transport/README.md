@@ -1,6 +1,7 @@
 # SMB Transport
 
 This crate contains various smb transport implementations:
+
 - **TCP** - Standard TCP transport, used by default.
 - **NetBIOS** - NetBIOS over TCP transport, used for connecting to older SMB servers.
 - **QUIC** - SMB over QUIC transport, requires the `quic` feature.
