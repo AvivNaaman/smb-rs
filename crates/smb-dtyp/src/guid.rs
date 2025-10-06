@@ -81,7 +81,11 @@ impl Guid {
 }
 
 /// A macro to create a `Guid` from a string literal at compile time.
-///
+/// ```
+/// use smb_dtyp::guid;
+/// let guid = guid!("065eadf1-6daf-1543-b04f-10e69084c9ae");
+/// assert_eq!(guid.to_string(), "065eadf1-6daf-1543-b04f-10e69084c9ae");
+/// ```
 #[macro_export]
 macro_rules! guid {
     ($s:literal) => {{

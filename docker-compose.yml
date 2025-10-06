@@ -36,7 +36,7 @@ services:
     networks:
       - default
       - default2
-    volumes: 
+    volumes:
       - .:/smb
 
 networks:

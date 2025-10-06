@@ -28,7 +28,7 @@ rand = "0.8.5"
 log = "0.4.22"
 
 # Async
-tokio = { version = "1.43", features = ["full"] }
+tokio = { version = "1.43" }
 maybe-async = "0.2"
 futures-util = { version = "0.3" }
 futures-core = { version = "0.3" }

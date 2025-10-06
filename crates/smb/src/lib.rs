@@ -1,4 +1,4 @@
-#![doc = include_str!("docs/index.md")]
+#![doc = include_str!("../docs/index.md")]
 
 #[cfg(not(any(
     feature = "async",

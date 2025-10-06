@@ -128,6 +128,7 @@ pub trait SetLen {
     async fn set_len(&self, len: u64) -> crate::Result<()>;
 }
 
+#[cfg(feature = "std-fs-impls")]
 mod impls {
     use super::*;
 
@@ -209,6 +210,7 @@ mod impls {
     }
 }
 
+#[cfg(feature = "std-fs-impls")]
 pub use impls::*;
 
 #[cfg(not(feature = "single_threaded"))]

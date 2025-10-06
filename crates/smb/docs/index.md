@@ -1,8 +1,11 @@
 # SMB
+
 the `smb` crate is a pure rust SMB client, supports the SMB2 protocol (including SMB3).
 
 ## Basic usage
-The most basic functionality that an SMB client should provide is the ability to connect to an SMB server, authenticate, and perform simple file operations.
+
+The most basic functionality that an SMB client should provide is the ability to
+connect to an SMB server, authenticate, and perform simple file operations.
 
 The [`Client`] struct provides a simple interface for interacting with an SMB server. Let's see how we use it.
 
@@ -16,11 +19,11 @@ use std::str::FromStr;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // instantiate the client
     let client = Client::new(ClientConfig::default());
-    
+
     // Connect to a share
     let target_path = UncPath::from_str(r"\\server\share").unwrap();
     client.share_connect(&target_path, "username", "password".to_string()).await?;
-    
+
     // And open a file on the server
     let file_to_open = target_path.with_path("file.txt");
     let file_open_args = FileCreateArgs::make_open_existing(FileAccessMask::new().with_generic_read(true));
@@ -30,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-Cool! we got ourselves a live connection to an SMB server, and we also got a file open. 
+Cool! we got ourselves a live connection to an SMB server, and we also got a file open.
 
 But wait... How do we know it's actually a file? Well, we don't. The [`Client::create_file`] method returns the [`Resource`] struct, which is a union to a file, directory, or a pipe - the supported SMB resources in this crate (printers are currently not implemented specifically). What we need to do next, is to find out what type of resource we've got:
 
@@ -53,12 +56,13 @@ match &file {
         // We have a pipe
     }
 }
-// Note: we could also use `.unwrap_file()` here, 
+// Note: we could also use `.unwrap_file()` here,
 // or similar method provided by Resource to find out what kind of resource this is!
 # Ok(())}
 ```
 
 Cool! Let's assume we got ourselves a file. Then, we can do the obvious operation of reading or writing a block of data from or to the file:
+
 ```rust,no_run
 # use smb::*;
 # #[cfg(not(feature = "async"))] fn main() {}
@@ -76,6 +80,7 @@ file.write_at(&data, 0).await?;
 ```
 
 At the end, close the file.
+
 ```rust,no_run
 # use smb::*;
 # #[cfg(not(feature = "async"))] fn main() {}
@@ -90,6 +95,7 @@ file.close().await?;
 ```
 
 ## Feature flags
+
 | Type            | Algorithm           |  Async  | Multi-threaded | Single-threaded | Feature Name           |
 | --------------- | ------------------- | ---| ---| --- | ---------------------- |
 | Authentication  | Kerberos            | ✅  | ✅  | ✅   | `kerberos`             |
@@ -111,5 +117,8 @@ file.close().await?;
 * The Pattern_V1 compression algorithm currently supports in-bound decompression only.
 
 ## Advanced documentation
-- [Switching between threading models][`docs::threading_models`]
-- [Performing parallel file operations][`docs::parallelize`]
+<!-- markdownlint-disable reference-links-images -->
+* [Switching between threading models][docs::threading_models]
+
+* [Performing parallel file operations][docs::parallelize]
+<!-- markdownlint-enable reference-links-images -->

@@ -14,7 +14,7 @@ env:
 jobs:
   test:
     runs-on: ubuntu-latest
-    container: 
+    container:
       image: rustlang/rust:nightly
     timeout-minutes: 10
     strategy:
@@ -62,7 +62,7 @@ jobs:
         cargo test --verbose --no-default-features --features "${{ matrix.compile_features }},sign_hmac" -- --nocapture
     - name: Build/${{ matrix.compile_features }}
       run: cargo build --verbose --no-default-features --features "${{ matrix.compile_features }},${COMMON_FEATURES}"
-  
+
   build-msrv:
     runs-on: ubuntu-latest
     container:
