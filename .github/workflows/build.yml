@@ -34,6 +34,10 @@ jobs:
           SAMBA_GLOBAL_CONFIG_smb_SPACE_encrypt: "auto"
         options: --name samba --privileged --cap-add NET_ADMIN
 
+    env:
+      SMB_RUST_TESTS_SERVER: samba
+      RUST_LOG: debug
+
     steps:
       - uses: actions/checkout@v4
       - name: Prepare async tests
@@ -52,43 +56,49 @@ jobs:
           cargo clippy --verbose --no-default-features --features "${{ matrix.compile_features }},${COMMON_FEATURES}" -- -Dclippy::all
       - name: Tests/${{ matrix.compile_features }}
         run: |
-          export SMB_RUST_TESTS_SERVER=samba
-          export RUST_LOG=debug
-          cargo test --verbose --no-default-features --features "${{ matrix.compile_features }},${COMMON_FEATURES}" -- --nocapture
+          cargo test --no-default-features --features "${{ matrix.compile_features }},${COMMON_FEATURES}" -- --nocapture
           # Test without encryption and compression
-          cargo test --verbose --no-default-features --features "${{ matrix.compile_features }},sign" -- --nocapture
+          cargo test --no-default-features --features "${{ matrix.compile_features }},sign" -- --nocapture
           # Test signing with specific algorithms
-          cargo test --verbose --no-default-features --features "${{ matrix.compile_features }},sign_cmac" -- --nocapture
-          cargo test --verbose --no-default-features --features "${{ matrix.compile_features }},sign_gmac" -- --nocapture
-          cargo test --verbose --no-default-features --features "${{ matrix.compile_features }},sign_hmac" -- --nocapture
+          cargo test --no-default-features --features "${{ matrix.compile_features }},sign_cmac" -- --nocapture
+          cargo test --no-default-features --features "${{ matrix.compile_features }},sign_gmac" -- --nocapture
+          cargo test --no-default-features --features "${{ matrix.compile_features }},sign_hmac" -- --nocapture
       - name: Build/${{ matrix.compile_features }}
-        run: cargo build --verbose --no-default-features --features "${{ matrix.compile_features }},${COMMON_FEATURES}"
+        run: |
+          cargo build --no-default-features --features "${{ matrix.compile_features }},${COMMON_FEATURES}"
+          cargo doc --no-default-features --features "${{ matrix.compile_features }},${COMMON_FEATURES}"
 
-  build-msrv:
-    runs-on: ubuntu-latest
-    container:
-      image: rust:1.85
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        rust: [1.85, stable]
 
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: Build
+      - name: Setting up Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          override: true
+      - name: Build and Doc (Async)
         run: |
-          for td_model in async multi_threaded single_threaded; do
-            echo "Compiling with features: $td_model, ${COMMON_FEATURES}"
-            cargo build --verbose --no-default-features --features "$td_model,${COMMON_FEATURES}"
-          done
-      - name: Doc
+            cargo build --no-default-features --features "async,${COMMON_FEATURES}"
+
+      - name: Build and Doc (Multi-threaded)
         run: |
-          for td_model in async multi_threaded single_threaded; do
-            echo "Generating documentation with features: $td_model, ${COMMON_FEATURES}"
-            cargo doc --verbose --no-default-features --features "$td_model,${COMMON_FEATURES}"
-          done
+            cargo build --no-default-features --features "multi_threaded,${COMMON_FEATURES}"
+
+      - name: Build and Doc (Single-threaded)
+        run: |
+            cargo build --no-default-features --features "single_threaded,${COMMON_FEATURES}"
 
   publish:
     runs-on: ubuntu-latest
     container:
       image: rust:1.85
-    needs: [test, build-msrv]
+    needs: [test, build]
     environment: production
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
