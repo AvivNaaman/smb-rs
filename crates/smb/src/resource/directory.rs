@@ -272,7 +272,13 @@ impl Directory {
         Ok(response.message.content.to_changenotify()?.buffer)
     }
 
-    pub async fn query_quota_info(&self, info: QueryQuotaInfo) -> crate::Result<QueryQuotaInfo> {
+    /// Queries the quota information for the current file.
+    /// # Arguments
+    /// * `info` - The information to query - a [`QueryQuotaInfo`].
+    pub async fn query_quota_info(
+        &self,
+        info: QueryQuotaInfo,
+    ) -> crate::Result<Vec<FileQuotaInformation>> {
         Ok(self
             .handle
             .query_common(QueryInfoRequest {
@@ -281,19 +287,21 @@ impl Directory {
                 output_buffer_length: 1024,
                 additional_info: AdditionalInfo::new(),
                 flags: QueryInfoFlags::new()
-                    .with_restart_scan(true)
-                    .with_return_single_entry(true),
+                    .with_restart_scan(info.restart_scan.into())
+                    .with_return_single_entry(info.return_single.into()),
                 file_id: self.handle.file_id()?,
                 data: GetInfoRequestData::Quota(info),
             })
             .await?
-            .unwrap_quota())
+            .as_quota()?
+            .into())
     }
 
     /// Sets the quota information for the current file.
     /// # Arguments
-    /// * `info` - The information to set - a [QueryQuotaInfo].
-    pub async fn set_quota_info(&self, info: QueryQuotaInfo) -> crate::Result<()> {
+    /// * `info` - The information to set - a vector of [`FileQuotaInformation`].
+    pub async fn set_quota_info(&self, info: Vec<FileQuotaInformation>) -> crate::Result<()> {
+        let info = ChainedItemList::from(info);
         self.handle
             .set_info_common(
                 info,

@@ -2,7 +2,7 @@
 
 use crate::{FileId, query_info_data};
 
-use super::{NullByte, QueryQuotaInfo, common::*};
+use super::{NullByte, common::*};
 use binrw::io::TakeSeekExt;
 use binrw::prelude::*;
 use smb_dtyp::{SecurityDescriptor, binrw_util::prelude::*};
@@ -36,7 +36,7 @@ query_info_data! {
     File: RawSetInfoData<SetFileInfo>,
     FileSystem: RawSetInfoData<SetFileSystemInfo>,
     Security: SecurityDescriptor,
-    Quota: QueryQuotaInfo,
+    Quota: ChainedItemList<FileQuotaInformation>,
 }
 
 /// A helper class for [SetInfoRequest] to contain the information

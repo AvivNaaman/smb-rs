@@ -223,27 +223,28 @@ impl Resource {
     }
 }
 
-impl TryInto<File> for Resource {
-    type Error = crate::Error;
+/// Generates TryInto implementations for Resource enum variants.
+macro_rules! make_resource_try_into {
+    (
+        $($t:ident,)+
+    ) => {
+        $(
 
-    fn try_into(self) -> Result<File, Self::Error> {
+impl TryInto<$t> for Resource {
+    type Error = (crate::Error, Self);
+
+    fn try_into(self) -> Result<$t, Self::Error> {
         match self {
-            Resource::File(f) => Ok(f),
-            _ => Err(Error::InvalidArgument("Not a file".into())),
+            Resource::$t(f) => Ok(f),
+            x => Err((Error::InvalidArgument(format!("Not a {}", stringify!($t))), x)),
         }
     }
 }
-
-impl TryInto<Directory> for Resource {
-    type Error = crate::Error;
-
-    fn try_into(self) -> Result<Directory, Self::Error> {
-        match self {
-            Resource::Directory(d) => Ok(d),
-            _ => Err(Error::InvalidArgument("Not a directory".into())),
-        }
-    }
+        )+
+    };
 }
+
+make_resource_try_into!(File, Directory, Pipe,);
 
 /// Holds the common information for an opened SMB resource.
 pub struct ResourceHandle {
@@ -445,7 +446,7 @@ impl ResourceHandle {
                 data: GetInfoRequestData::None(()),
             })
             .await?
-            .unwrap_security())
+            .as_security()?)
     }
 
     /// Sends an FSCTL message for the current resource (file).
@@ -572,7 +573,7 @@ impl ResourceHandle {
                 data: GetInfoRequestData::None(()),
             })
             .await?
-            .unwrap_filesystem()
+            .as_filesystem()?
             .parse(T::CLASS_ID)?
             .try_into()?;
         Ok(query_result)

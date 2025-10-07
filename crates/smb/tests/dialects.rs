@@ -118,19 +118,6 @@ async fn test_smb_integration_dialect_encrpytion_mode(
             return Err("File not found in directory".into());
         }
 
-        // TODO: Complete Query quota info -- model + fix request encoding.
-        // directory
-        //     .query_quota_info(QueryQuotaInfo {
-        //         return_single: false.into(),
-        //         restart_scan: false.into(),
-        //         get_quota_info_content: Some(vec![FileGetQuotaInformationInner {
-        //             sid: security.owner_sid.unwrap(),
-        //         }
-        //         .into()]),
-        //         sid: None,
-        //     })
-        //     .await?;
-
         directory.close().await?;
     }
 

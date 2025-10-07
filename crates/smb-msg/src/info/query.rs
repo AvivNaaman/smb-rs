@@ -131,7 +131,7 @@ pub struct QueryQuotaInfo {
     /// Option 1: list of FileGetQuotaInformation structs.
     #[br(if(sid_list_length.value > 0))]
     #[br(map_stream = |s| s.take_seek(sid_list_length.value as u64), parse_with = binrw::helpers::until_eof)]
-    #[bw(if(get_quota_info_content.is_some()))]
+    #[bw(if(get_quota_info_content.as_ref().is_some_and(|v| !v.is_empty())))]
     #[bw(write_with = ChainedItem::write_chained_size_opt, args(&sid_list_length))]
     pub get_quota_info_content: Option<Vec<FileGetQuotaInformation>>,
 
@@ -143,6 +143,36 @@ pub struct QueryQuotaInfo {
     #[brw(assert(get_quota_info_content.is_none() != sid.is_none()))]
     // offset is 0, the default anyway.
     pub sid: Option<SID>,
+}
+
+impl QueryQuotaInfo {
+    /// Builds a new [`QueryQuotaInfo`] with a list of [`FileGetQuotaInformation`] structs.
+    ///
+    /// Option #1 under 2.2.37.1
+    pub fn new(
+        return_single: bool,
+        restart_scan: bool,
+        content: Vec<FileGetQuotaInformation>,
+    ) -> Self {
+        Self {
+            return_single: return_single.into(),
+            restart_scan: restart_scan.into(),
+            get_quota_info_content: Some(content),
+            sid: None,
+        }
+    }
+
+    /// Builds a new [`QueryQuotaInfo`] with a single SID.
+    ///
+    /// Option #2 under 2.2.37.1
+    pub fn new_sid(return_single: bool, restart_scan: bool, sid: SID) -> Self {
+        Self {
+            return_single: return_single.into(),
+            restart_scan: restart_scan.into(),
+            get_quota_info_content: None,
+            sid: Some(sid),
+        }
+    }
 }
 
 #[binrw::binrw]
@@ -206,7 +236,7 @@ query_info_data! {
     File: RawQueryInfoData<QueryFileInfo>,
     FileSystem: RawQueryInfoData<QueryFileSystemInfo>,
     Security: SecurityDescriptor,
-    Quota: QueryQuotaInfo,
+    Quota: ChainedItemList<FileQuotaInformation>,
 }
 
 #[cfg(test)]
@@ -351,7 +381,8 @@ mod tests {
             raw_data
                 .parse(InfoType::File)
                 .unwrap()
-                .unwrap_file()
+                .as_file()
+                .unwrap()
                 .parse(QueryFileInfoClass::BasicInformation)
                 .unwrap(),
             QueryFileInfo::BasicInformation(FileBasicInformation {
@@ -383,7 +414,8 @@ mod tests {
             raw_data
                 .parse(InfoType::File)
                 .unwrap()
-                .unwrap_file()
+                .as_file()
+                .unwrap()
                 .parse(QueryFileInfoClass::StreamInformation)
                 .unwrap(),
             QueryFileInfo::StreamInformation(

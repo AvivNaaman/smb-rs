@@ -125,6 +125,12 @@ impl From<bool> for Boolean {
     }
 }
 
+impl From<Boolean> for bool {
+    fn from(val: Boolean) -> Self {
+        val.0
+    }
+}
+
 /// A MultiSz (Multiple Null-terminated Wide Strings) type that reads and writes a sequence of
 /// null-terminated wide strings, ending with an additional null string.
 ///
