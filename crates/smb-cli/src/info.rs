@@ -4,8 +4,8 @@ use clap::{Parser, ValueEnum};
 use futures_util::StreamExt;
 use maybe_async::*;
 use smb::{
-    Client, FileAccessMask, FileBasicInformation, FileIdBothDirectoryInformation, UncPath,
-    resource::*,
+    Client, FileAccessMask, FileBasicInformation, FileIdBothDirectoryInformation, QueryQuotaInfo,
+    UncPath, resource::*,
 };
 use std::collections::VecDeque;
 use std::fmt::Display;
@@ -39,6 +39,11 @@ pub struct InfoCmd {
     #[arg(short, long)]
     #[clap(default_value_t = RecursiveMode::NonRecursive)]
     pub recursive: RecursiveMode,
+
+    /// Whether to display quota information on the directory being queried.
+    #[arg(long)]
+    #[clap(default_value_t = false)]
+    pub show_quota: bool,
 }
 
 #[maybe_async]
@@ -80,14 +85,17 @@ pub async fn info(cmd: &InfoCmd, cli: &Cli) -> Result<(), Box<dyn Error>> {
         }
         Resource::Directory(dir) => {
             let dir = Arc::new(dir);
+            if cmd.show_quota {
+                try_query_and_show_quota(&dir).await;
+            }
             iterate_directory(
                 &dir,
                 &cmd.path,
                 "*",
                 &IterateParams {
-                    display_func: &display_item_info,
                     client: &client,
                     recursive: cmd.recursive,
+                    show_quota: cmd.show_quota,
                 },
             )
             .await?;
@@ -103,8 +111,6 @@ pub async fn info(cmd: &InfoCmd, cli: &Cli) -> Result<(), Box<dyn Error>> {
 
     Ok(())
 }
-
-type DisplayFunc = dyn Fn(&FileIdBothDirectoryInformation, &UncPath);
 
 fn display_item_info(info: &FileIdBothDirectoryInformation, dir_path: &UncPath) {
     if info.file_name == "." || info.file_name == ".." {
@@ -122,26 +128,40 @@ fn display_item_info(info: &FileIdBothDirectoryInformation, dir_path: &UncPath) 
     }
 }
 
+fn display_quota_info(info: &Vec<smb::FileQuotaInformation>) {
+    for quota in info {
+        if quota.quota_limit == u64::MAX && quota.quota_threshold == u64::MAX {
+            log::trace!("Skipping quota for SID {} with no limit", quota.sid);
+            continue; // No quota set
+        }
+        log::info!(
+            "Quota for SID {}: used {}, threshold {}, limit {}",
+            quota.sid,
+            get_size_string(quota.quota_used),
+            get_size_string(quota.quota_threshold),
+            get_size_string(quota.quota_limit)
+        );
+    }
+}
+
 fn get_size_string(size_bytes: u64) -> String {
     const KB: u64 = 1024;
     const MB: u64 = 1024 * KB;
     const GB: u64 = 1024 * MB;
 
-    if size_bytes >= GB {
-        format!("{:.2} GB", size_bytes as f64 / GB as f64)
-    } else if size_bytes >= MB {
-        format!("{:.2} MB", size_bytes as f64 / MB as f64)
-    } else if size_bytes >= KB {
-        format!("{:.2} kB", size_bytes as f64 / KB as f64)
-    } else {
-        format!("{} bytes", size_bytes)
+    match size_bytes {
+        x if x == u64::MAX => "∞".to_string(),
+        x if x >= GB => format!("{:.2} GB", x as f64 / GB as f64),
+        x if x >= MB => format!("{:.2} MB", x as f64 / MB as f64),
+        x if x >= KB => format!("{:.2} kB", x as f64 / KB as f64),
+        x => format!("{} B", x),
     }
 }
 
 struct IterateParams<'a> {
-    display_func: &'a DisplayFunc,
     client: &'a Client,
     recursive: RecursiveMode,
+    show_quota: bool,
 }
 struct IteratedItem {
     dir: Arc<Directory>,
@@ -207,9 +227,9 @@ async fn handle_iteration_item(
     dir_path: &UncPath,
     params: &IterateParams<'_>,
 ) -> Option<IteratedItem> {
-    (params.display_func)(info, dir_path);
+    display_item_info(info, dir_path);
 
-    if params.recursive < RecursiveMode::List {
+    if params.recursive < RecursiveMode::List && !params.show_quota {
         return None;
     }
 
@@ -231,18 +251,44 @@ async fn handle_iteration_item(
         return None;
     }
 
-    let dir: Result<Directory, _> = dir_result.unwrap().try_into();
-    match dir {
-        Ok(dir) => Some(IteratedItem {
+    let dir = dir_result.unwrap();
+
+    let dir: Directory = match dir.try_into() {
+        Ok(dir) => dir,
+        Err(e) => {
+            log::warn!(
+                "Failed to convert resource to directory {}: {}",
+                path_of_subdir,
+                e.0
+            );
+            return None;
+        }
+    };
+
+    // Quota information
+    if params.show_quota {
+        try_query_and_show_quota(&dir).await;
+    }
+
+    // Recursion
+    if params.recursive >= RecursiveMode::List {
+        Some(IteratedItem {
             dir: Arc::new(dir),
             path: path_of_subdir,
-        }),
-        _ => {
-            log::warn!(
-                "Failed to convert resource to directory for {}",
-                path_of_subdir,
-            );
-            None
-        }
+        })
+    } else {
+        dir.close().await.ok()?;
+        None
+    }
+}
+
+#[maybe_async]
+async fn try_query_and_show_quota(dir: &Directory) {
+    match dir
+        .query_quota_info(QueryQuotaInfo::new(false, true, vec![]))
+        .await
+    {
+        Ok(qi) => display_quota_info(&qi),
+        Err(e) => log::warn!("Failed to query quota info: {}", e),
     }
 }

@@ -15,11 +15,10 @@
 
 #![allow(unused_parens)]
 
-use binrw::{io::TakeSeekExt, meta::ReadEndian, prelude::*};
+use binrw::{meta::ReadEndian, prelude::*};
 use modular_bitfield::prelude::*;
 use smb_dtyp::access_mask;
 
-use smb_dtyp::SID;
 use smb_dtyp::binrw_util::prelude::*;
 pub mod chained_item;
 pub mod common_info;
@@ -27,6 +26,7 @@ pub mod directory_info;
 pub mod error;
 pub mod filesystem_info;
 pub mod query_file_info;
+pub mod quota;
 pub mod set_file_info;
 
 pub use chained_item::{ChainedItem, ChainedItemList};
@@ -35,6 +35,7 @@ pub use directory_info::*;
 pub use error::SmbFsccError;
 pub use filesystem_info::*;
 pub use query_file_info::*;
+pub use quota::*;
 pub use set_file_info::*;
 
 /// MS-FSCC 2.6
@@ -261,31 +262,3 @@ macro_rules! file_info_classes {
         }
     }
 }
-
-#[binrw::binrw]
-#[derive(Debug)]
-pub struct FileQuotaInformationInner {
-    #[bw(calc = PosMarker::default())]
-    sid_length: PosMarker<u32>,
-    pub change_time: FileTime,
-    pub quota_used: u64,
-    pub quota_threshold: u64,
-    pub quota_limit: u64,
-    #[br(map_stream = |s| s.take_seek(sid_length.value as u64))]
-    #[bw(write_with = PosMarker::write_size, args(&sid_length))]
-    pub sid: SID,
-}
-
-pub type FileQuotaInformation = ChainedItem<FileQuotaInformationInner>;
-
-#[binrw::binrw]
-#[derive(Debug)]
-pub struct FileGetQuotaInformationInner {
-    #[bw(calc = PosMarker::default())]
-    sid_length: PosMarker<u32>,
-    #[br(map_stream = |s| s.take_seek(sid_length.value as u64))]
-    #[bw(write_with = PosMarker::write_size, args(&sid_length))]
-    pub sid: SID,
-}
-
-pub type FileGetQuotaInformation = ChainedItem<FileGetQuotaInformationInner>;

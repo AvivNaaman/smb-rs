@@ -37,7 +37,11 @@ pub struct AdditionalInfo {
 /// Internal helper macro to easily generate fields & methods for [QueryInfoData](super::query::QueryInfoData).
 ///
 /// Builds:
-/// 1. The enum with the specified name, with variants for each info type specified.
+/// 1. The enum with the specified name, with variants for each info type specified. This includes:
+///   - A method to get the info type of the enum variant - `info_type()`.
+///   - A method to get the name of the enum variant - `name()`.
+///   - implementations of `From<ContentType>` for each content type.
+///   - Methods to unwrap the content type, named `as_<variant_name_in_snake_case>()`.
 /// 2. A generic struct names `Raw<name>` to hold the raw data, with a method to convert it to the actual data.
 #[macro_export]
 macro_rules! query_info_data {
@@ -47,9 +51,9 @@ macro_rules! query_info_data {
             use binrw::prelude::*;
             #[allow(unused_imports)]
             use binrw::meta::WriteEndian;
-            /// Represents information passed in get/set info requests.
-            /// This is the information matching [InfoType], and should be used
-            /// in the get info response and in the set info request.
+
+            #[doc = concat!("Enum to hold the different info types for ", stringify!($name),
+            ", that are used within SMB requests for querying or setting information.")]
             #[binrw::binrw]
             #[derive(Debug)]
             #[brw(little)]
@@ -62,14 +66,9 @@ macro_rules! query_info_data {
             }
 
             impl $name {
-                // unwrap_ methods to easily get the inner content.
+                // as_ methods to easily get the inner content.
                 $(
-                    pub fn [<unwrap_ $info_type:lower>](self) -> $content {
-                        match self {
-                            $name::$info_type(data) => data,
-                            _ => panic!("Expected $info_type, got {:?}", self),
-                        }
-                    }
+                    #[doc = concat!("Get the inner content as [`", stringify!($content), "`].")]
                     pub fn [<as_ $info_type:lower>](self) -> Result<$content, $crate::SmbMsgError> {
                         match self {
                             $name::$info_type(data) => Ok(data),
