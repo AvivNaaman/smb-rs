@@ -2423,7 +2423,7 @@ checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 
 [[package]]
 name = "smb"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "aead",
  "aes",
@@ -2463,7 +2463,7 @@ dependencies = [
 
 [[package]]
 name = "smb-cli"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "clap",
  "env_logger",
@@ -2477,7 +2477,7 @@ dependencies = [
 
 [[package]]
 name = "smb-dtyp"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "binrw",
  "modular-bitfield",
@@ -2488,7 +2488,7 @@ dependencies = [
 
 [[package]]
 name = "smb-fscc"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "binrw",
  "modular-bitfield",
@@ -2500,7 +2500,7 @@ dependencies = [
 
 [[package]]
 name = "smb-msg"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "binrw",
  "modular-bitfield",
@@ -2513,7 +2513,7 @@ dependencies = [
 
 [[package]]
 name = "smb-rpc"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "binrw",
  "maybe-async",
@@ -2526,7 +2526,7 @@ dependencies = [
 
 [[package]]
 name = "smb-transport"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "binrw",
  "futures-core",
