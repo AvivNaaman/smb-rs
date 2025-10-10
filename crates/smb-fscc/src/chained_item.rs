@@ -4,18 +4,30 @@
 //! This struct wraps the value, and the offset, and provides a way to iterate over them.
 //! See [`ChainedItemList<T>`] to see how to write this type when in a list.
 //!
-use std::ops::{Deref, DerefMut};
+use std::{
+    io::SeekFrom,
+    ops::{Deref, DerefMut},
+};
 
 use binrw::prelude::*;
 use smb_dtyp::binrw_util::prelude::*;
 
-const DEFAULT_OFFSET_PAD: u32 = 4;
+const CHAINED_ITEM_DEFAULT_OFFSET_PAD: u32 = 4;
+
+/// The size of added fields to the size of T,
+/// when bin-writing the data, before the actual T data.
+///
+/// A possible additional padding of `OFFSET_PAD` bytes may be added after T,
+/// to align the next entry offset field.
+pub const CHAINED_ITEM_PREFIX_SIZE: usize = size_of::<NextEntryOffsetType>();
+
+type NextEntryOffsetType = u32;
 
 #[binrw::binrw]
 #[derive(Debug)]
 #[bw(import(last: bool))]
 #[allow(clippy::manual_non_exhaustive)]
-pub struct ChainedItem<T, const OFFSET_PAD: u32 = DEFAULT_OFFSET_PAD>
+pub struct ChainedItem<T, const OFFSET_PAD: u32 = CHAINED_ITEM_DEFAULT_OFFSET_PAD>
 where
     T: BinRead + BinWrite,
     for<'a> <T as BinRead>::Args<'a>: Default,
@@ -23,7 +35,7 @@ where
 {
     #[br(assert(next_entry_offset.value % OFFSET_PAD == 0))]
     #[bw(calc = PosMarker::default())]
-    next_entry_offset: PosMarker<u32>,
+    next_entry_offset: PosMarker<NextEntryOffsetType>,
     pub value: T,
 
     #[br(seek_before = next_entry_offset.seek_relative(false))] // If 0, make seek_relative go to position before parsing `next_entry_offset`.
@@ -104,9 +116,11 @@ where
 /// represent lists of variable-length entries.
 ///
 /// This struct provides conversion to and from [`Vec<T>`] for ease of use.
+///
+/// The struct supports data of length 0, and puts an empty vector in that case.
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
-pub struct ChainedItemList<T, const OFFSET_PAD: u32 = DEFAULT_OFFSET_PAD>
+pub struct ChainedItemList<T, const OFFSET_PAD: u32 = CHAINED_ITEM_DEFAULT_OFFSET_PAD>
 where
     T: BinRead + BinWrite,
     for<'a> <T as BinRead>::Args<'a>: Default,
@@ -125,6 +139,19 @@ where
 {
     #[binrw::parser(reader, endian)]
     pub fn read_chained() -> BinResult<Vec<Self>> {
+        let stream_end = {
+            let current = reader.stream_position()?;
+            // Determine the end of the stream.
+            let end = reader.seek(SeekFrom::End(0))?;
+            // Revert to original position.
+            reader.seek(SeekFrom::Start(current))?;
+            end
+        };
+        if reader.stream_position()? == stream_end {
+            // No data to read, return empty vector.
+            return Ok(Vec::new());
+        }
+
         let mut items = Vec::new();
         loop {
             let position_before = reader.stream_position()?;

@@ -3,7 +3,9 @@ use binrw::prelude::*;
 use crate::file_info_classes;
 use smb_dtyp::binrw_util::prelude::*;
 
-use super::{ChainedItem, FileAttributes, ReparseTag};
+use super::{FileAttributes, ReparseTag};
+
+// Note: here, the information types should be wrapped around ChainedItem<T> or ChainedItemList<T>.
 
 file_info_classes! {
     pub QueryDirectoryInfo {
@@ -34,7 +36,8 @@ macro_rules! query_dir_type {
         paste::paste! {
             #[binrw::binrw]
             #[derive(Debug, PartialEq, Eq)]
-            $svis struct [<$name Inner>] {
+            #[doc = "Note: This should be used inside a [`ChainedItem<T>`] or [`ChainedItemList<T>`]."]
+            $svis struct $name {
                 pub file_index: u32,
                 pub creation_time: FileTime,
                 pub last_access_time: FileTime,
@@ -63,15 +66,13 @@ macro_rules! query_dir_type {
                 #[br(args(_file_name_length as u64))]
                 pub file_name: SizedWideString,
             }
-
-            $svis type $name = ChainedItem<[<$name Inner>]>;
         }
     };
 }
 
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
-pub struct FileDirectoryInformationInner {
+pub struct FileDirectoryInformation {
     pub file_index: u32,
     pub creation_time: FileTime,
     pub last_access_time: FileTime,
@@ -85,7 +86,6 @@ pub struct FileDirectoryInformationInner {
     #[br(args(_file_name_length as u64))]
     pub file_name: SizedWideString,
 }
-pub type FileDirectoryInformation = ChainedItem<FileDirectoryInformationInner>;
 
 query_dir_type! {
     pub struct FileFullDirectoryInformation {}
@@ -160,7 +160,7 @@ query_dir_type! {
 
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
-pub struct FileNamesInformationInner {
+pub struct FileNamesInformation {
     pub file_index: u32,
     #[bw(try_calc = file_name.size().try_into())]
     pub file_name_length: u32,
@@ -176,5 +176,3 @@ query_dir_type! {
         pub short_name: [u16; 24], // 8.3
     }
 }
-
-pub type FileNamesInformation = ChainedItem<FileNamesInformationInner>;

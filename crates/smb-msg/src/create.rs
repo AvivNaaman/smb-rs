@@ -100,7 +100,7 @@ pub struct CreateRequest {
     #[brw(align_before = 8)]
     #[br(map_stream = |s| s.take_seek(_create_contexts_length.value.into()))]
     #[bw(write_with = PosMarker::write_roff_size, args(&_create_contexts_offset, &_create_contexts_length))]
-    pub contexts: ChainedItemList<ReqCreateContext>,
+    pub contexts: ChainedItemList<ReqCreateContext, 8>,
 }
 
 #[binrw::binrw]
@@ -210,7 +210,7 @@ pub struct CreateResponse {
     #[br(seek_before = SeekFrom::Start(create_contexts_offset.value as u64))]
     #[br(map_stream = |s| s.take_seek(create_contexts_length.value.into()))]
     #[bw(write_with = PosMarker::write_roff_size, args(&create_contexts_offset, &create_contexts_length))]
-    pub create_contexts: ChainedItemList<RespCreateContext>,
+    pub create_contexts: ChainedItemList<RespCreateContext, 8>,
 }
 
 #[bitfield]
@@ -234,6 +234,7 @@ pub enum CreateAction {
     Overwritten = 0x3,
 }
 
+/// This is meant to be used within a [`ChainedItemList`] or [`ChainedItem<T>`]!
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[bw(import(is_last: bool))]
@@ -242,9 +243,6 @@ pub struct CreateContext<T>
 where
     for<'a> T: BinRead<Args<'a> = (&'a Vec<u8>,)> + BinWrite<Args<'static> = ()>,
 {
-    #[bw(calc = PosMarker::default())]
-    _start: PosMarker<()>,
-
     #[bw(calc = PosMarker::default())]
     _name_offset: PosMarker<u16>,
     #[bw(calc = u16::try_from(name.len()).unwrap())]
@@ -259,11 +257,11 @@ where
 
     #[brw(align_before = 8)]
     #[br(count = name_length)]
-    #[bw(write_with = PosMarker::write_roff_b, args(&_name_offset, &_start))]
+    #[bw(write_with = PosMarker::write_roff_plus, args(&_name_offset, CHAINED_ITEM_PREFIX_SIZE as u64))]
     pub name: Vec<u8>,
 
     #[brw(align_before = 8)]
-    #[bw(write_with = PosMarker::write_roff_size_b, args(&_data_offset, &_data_length, &_start))]
+    #[bw(write_with = PosMarker::write_roff_size_b_plus, args(&_data_offset, &_data_length, &_name_offset, CHAINED_ITEM_PREFIX_SIZE as u64))]
     #[br(map_stream = |s| s.take_seek(_data_length.value.into()), args(&name))]
     pub data: T,
 }

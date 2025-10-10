@@ -222,7 +222,7 @@ where
             notify_messages_channel: Default::default(),
             sender: tx,
             stopped: AtomicBool::new(false),
-            timeout: AtomicU64::new(timeout.as_millis() as u64),
+            timeout: AtomicU64::new(u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX)),
         });
 
         worker
@@ -304,7 +304,7 @@ where
 
         let timeout = options
             .timeout
-            .unwrap_or_else(|| Duration::from_millis(self.timeout.load(Ordering::SeqCst)));
+            .unwrap_or_else(|| Duration::from_millis(self.timeout.load(Ordering::Relaxed)));
         let result = T::wait_on_waiter(wait_for_receive, timeout).await?;
 
         log::trace!("Received message {result:?}");

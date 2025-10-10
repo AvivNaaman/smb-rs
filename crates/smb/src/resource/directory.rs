@@ -49,7 +49,7 @@ impl Directory {
         buffer_size: u32,
     ) -> crate::Result<Vec<T>>
     where
-        T: QueryDirectoryInfoValue,
+        T: QueryDirectoryInfoValue + for<'a> binrw::prelude::BinWrite<Args<'a> = ()>,
     {
         if !self.access.list_directory() {
             return Err(Error::MissingPermissions("file_list_directory".to_string()));
@@ -127,7 +127,7 @@ impl Directory {
         pattern: &str,
     ) -> impl Future<Output = crate::Result<iter_stream::QueryDirectoryStream<'a, T>>>
     where
-        T: QueryDirectoryInfoValue,
+        T: QueryDirectoryInfoValue + for<'b> binrw::prelude::BinWrite<Args<'b> = ()> + Send,
     {
         Self::query_with_options(this, pattern, Self::QUERY_DIRECTORY_DEFAULT_BUFFER_SIZE)
     }
@@ -157,7 +157,7 @@ impl Directory {
         buffer_size: u32,
     ) -> crate::Result<iter_stream::QueryDirectoryStream<'a, T>>
     where
-        T: QueryDirectoryInfoValue,
+        T: QueryDirectoryInfoValue + for<'b> binrw::prelude::BinWrite<Args<'b> = ()> + Send,
     {
         let max_allowed_buffer_size = this.conn_info.negotiation.max_transact_size;
         if buffer_size > max_allowed_buffer_size {
@@ -383,7 +383,7 @@ pub mod iter_stream {
 
     impl<'a, T> QueryDirectoryStream<'a, T>
     where
-        T: QueryDirectoryInfoValue,
+        T: QueryDirectoryInfoValue + for<'b> binrw::prelude::BinWrite<Args<'b> = ()> + Send,
     {
         pub async fn new(
             directory: &'a Arc<Directory>,

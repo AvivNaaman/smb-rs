@@ -29,7 +29,7 @@ pub mod query_file_info;
 pub mod quota;
 pub mod set_file_info;
 
-pub use chained_item::{ChainedItem, ChainedItemList};
+pub use chained_item::{CHAINED_ITEM_PREFIX_SIZE, ChainedItem, ChainedItemList};
 pub use common_info::*;
 pub use directory_info::*;
 pub use error::SmbFsccError;

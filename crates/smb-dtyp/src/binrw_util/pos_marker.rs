@@ -101,6 +101,7 @@ where
     T::Error: binrw::error::CustomError + 'static,
 {
     const NO_EXTRA_SIZE: u64 = 0;
+    const NO_EXTRA_OFFSET: u64 = 0;
 
     /// Move back the writer, update the written value and return to the end of the file.
     ///
@@ -150,6 +151,7 @@ where
         offset_relative_to: Option<&PosMarker<B>>,
         value_args: V::Args<'_>,
         size_plus: u64,
+        offset_plus: u64,
     ) -> BinResult<()>
     where
         V: BinWrite,
@@ -164,7 +166,7 @@ where
                 Some(offset_base) => offset_base.get_pos()?,
                 None => 0,
             };
-            let offset_to_write = start_offset - base_offset_val;
+            let offset_to_write = start_offset - base_offset_val + offset_plus;
             write_offset_at.write_back(offset_to_write, writer, endian)?;
         };
 
@@ -197,6 +199,32 @@ where
                 Some(write_offset_to),
                 (),
                 Self::NO_EXTRA_SIZE,
+                Self::NO_EXTRA_OFFSET,
+            ),
+        )
+    }
+
+    /// Writer for value
+    /// * fill relative offset to offset location.
+    /// * add extra size to the written offset.
+    ///     useful for writing the offset of a structure that includes the size of the structure itself.
+    #[binrw::writer(writer, endian)]
+    pub fn write_roff_plus<U>(value: &U, write_offset_to: &Self, plus: u64) -> BinResult<()>
+    where
+        U: BinWrite<Args<'static> = ()>,
+    {
+        let no_size: Option<&PosMarker<T>> = None;
+        Self::write_hero(
+            value,
+            writer,
+            endian,
+            (
+                no_size,
+                Some(write_offset_to),
+                Some(write_offset_to),
+                (),
+                Self::NO_EXTRA_SIZE,
+                plus,
             ),
         )
     }
@@ -233,6 +261,7 @@ where
                 Some(offset_relative_to),
                 (),
                 Self::NO_EXTRA_SIZE,
+                Self::NO_EXTRA_OFFSET,
             ),
         )
     }
@@ -262,6 +291,7 @@ where
                 Some(offset_relative_to),
                 (),
                 Self::NO_EXTRA_SIZE,
+                Self::NO_EXTRA_OFFSET,
             ),
         )
     }
@@ -293,6 +323,7 @@ where
                 Some(offset_relative_to),
                 value_args,
                 Self::NO_EXTRA_SIZE,
+                Self::NO_EXTRA_OFFSET,
             ),
         )
     }
@@ -316,6 +347,7 @@ where
                 no_base,
                 (),
                 Self::NO_EXTRA_SIZE,
+                Self::NO_EXTRA_OFFSET,
             ),
         )
     }
@@ -332,7 +364,14 @@ where
             value,
             writer,
             endian,
-            (no_size, write_offset_to, no_base, (), Self::NO_EXTRA_SIZE),
+            (
+                no_size,
+                write_offset_to,
+                no_base,
+                (),
+                Self::NO_EXTRA_SIZE,
+                Self::NO_EXTRA_OFFSET,
+            ),
         )
     }
 
@@ -360,10 +399,14 @@ where
                 no_base,
                 value_args,
                 Self::NO_EXTRA_SIZE,
+                Self::NO_EXTRA_OFFSET,
             ),
         )
     }
 
+    /// Writer for value
+    /// * fill absolute offset to offset location.
+    /// * fill written size to size location.
     #[binrw::writer(writer, endian)]
     pub fn write_roff_size<U, S>(
         value: &U,
@@ -386,10 +429,47 @@ where
                 no_base,
                 (),
                 Self::NO_EXTRA_SIZE,
+                Self::NO_EXTRA_OFFSET,
             ),
         )
     }
 
+    /// Writer for value
+    /// * fill absolute offset to offset location.
+    /// * fill written size to size location.
+    /// * add extra size to the written **offset**.
+    #[binrw::writer(writer, endian)]
+    pub fn write_roff_size_b_plus<U, S, B>(
+        value: &U,
+        write_offset_to: &PosMarker<S>,
+        write_size_to: &Self,
+        offset_relative_to: &PosMarker<B>,
+        offset_plus: u64,
+    ) -> BinResult<()>
+    where
+        U: BinWrite<Args<'static> = ()>,
+        S: BinWrite<Args<'static> = ()> + TryFrom<u64>,
+        S::Error: binrw::error::CustomError + 'static,
+    {
+        Self::write_hero(
+            value,
+            writer,
+            endian,
+            (
+                Some(write_size_to),
+                Some(write_offset_to),
+                Some(offset_relative_to),
+                (),
+                Self::NO_EXTRA_SIZE,
+                offset_plus,
+            ),
+        )
+    }
+
+    /// Writer for value
+    /// * fill relative offset to offset location.
+    /// * fill written size to size location.
+    /// * with value args.
     #[binrw::writer(writer, endian)]
     pub fn write_roff_size_a<U, S>(
         value: &U,
@@ -413,6 +493,7 @@ where
                 no_base,
                 value_args,
                 Self::NO_EXTRA_SIZE,
+                Self::NO_EXTRA_OFFSET,
             ),
         )
     }
@@ -444,6 +525,7 @@ where
                 no_base,
                 value_args,
                 Self::NO_EXTRA_SIZE,
+                Self::NO_EXTRA_OFFSET,
             ),
         )
     }
@@ -470,6 +552,7 @@ where
                 no_base,
                 (),
                 Self::NO_EXTRA_SIZE,
+                Self::NO_EXTRA_OFFSET,
             ),
         )
     }
@@ -492,6 +575,7 @@ where
                 no_offset,
                 (),
                 Self::NO_EXTRA_SIZE,
+                Self::NO_EXTRA_OFFSET,
             ),
         )
     }
@@ -510,7 +594,14 @@ where
             value,
             writer,
             endian,
-            (Some(write_size_to), no_offset, no_offset, (), extra_size),
+            (
+                Some(write_size_to),
+                no_offset,
+                no_offset,
+                (),
+                extra_size,
+                Self::NO_EXTRA_OFFSET,
+            ),
         )
     }
 }
