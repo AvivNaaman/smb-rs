@@ -27,6 +27,7 @@ tokio = { workspace = true, features = ["time", "rt"], optional = true }
 futures-core = { workspace = true, optional = true }
 futures-util = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true }
+tokio-stream = { workspace = true, optional = true }
 maybe-async = { workspace = true }
 
 # General utils
@@ -74,6 +75,7 @@ async = [
     "dep:tokio",
     "dep:futures-core",
     "dep:tokio-util",
+    "dep:tokio-stream",
     "dep:futures-util",
     "smb-transport/async",
 ]

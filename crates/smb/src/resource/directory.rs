@@ -256,6 +256,8 @@ impl Directory {
         recursive: bool,
         timeout: Option<std::time::Duration>,
     ) -> crate::Result<Vec<FileNotifyInformation>> {
+        let output_buffer_length = self.calc_transact_size(None);
+
         let response = self
             .handle
             .handler
@@ -264,7 +266,7 @@ impl Directory {
                     file_id: self.file_id()?,
                     flags: NotifyFlags::new().with_watch_tree(recursive),
                     completion_filter: filter,
-                    output_buffer_length: 0x1024,
+                    output_buffer_length,
                 }
                 .into(),
                 ReceiveOptions {
@@ -311,19 +313,32 @@ impl Directory {
         &self,
         info: QueryQuotaInfo,
     ) -> crate::Result<Vec<FileQuotaInformation>> {
+        self.query_quota_info_with_options(info, None).await
+    }
+    /// Queries the quota information for the current file.
+    /// # Arguments
+    /// * `info` - The information to query - a [`QueryQuotaInfo`].
+    pub async fn query_quota_info_with_options(
+        &self,
+        info: QueryQuotaInfo,
+        output_buffer_length: Option<usize>,
+    ) -> crate::Result<Vec<FileQuotaInformation>> {
         Ok(self
             .handle
-            .query_common(QueryInfoRequest {
-                info_type: InfoType::Quota,
-                info_class: Default::default(),
-                output_buffer_length: 1024,
-                additional_info: AdditionalInfo::new(),
-                flags: QueryInfoFlags::new()
-                    .with_restart_scan(info.restart_scan.into())
-                    .with_return_single_entry(info.return_single.into()),
-                file_id: self.handle.file_id()?,
-                data: GetInfoRequestData::Quota(info),
-            })
+            .query_common(
+                QueryInfoRequest {
+                    info_type: InfoType::Quota,
+                    info_class: Default::default(),
+                    output_buffer_length: 0,
+                    additional_info: AdditionalInfo::new(),
+                    flags: QueryInfoFlags::new()
+                        .with_restart_scan(info.restart_scan.into())
+                        .with_return_single_entry(info.return_single.into()),
+                    file_id: self.handle.file_id()?,
+                    data: GetInfoRequestData::Quota(info),
+                },
+                output_buffer_length,
+            )
             .await?
             .as_quota()?
             .into())
