@@ -143,6 +143,10 @@ pub struct ReceiveOptions<'a> {
     /// and will make the caller wait until the final async response is received --
     /// the async response with status other than [`Status::Pending`].
     pub allow_async: bool,
+
+    /// A timeout for the receive operation.
+    /// If not set, the default timeout of the connection is used.
+    pub timeout: Option<std::time::Duration>,
     // TODO: Add a sync primitive to cancel the receive operation.
     // consider making an abstract Notify in sync_helpers and use it everywhere.
     // pub cancel: Notify
@@ -182,6 +186,7 @@ impl<'a> Default for ReceiveOptions<'a> {
             msg_id: 0,
             allow_async: false,
             channel_id: None,
+            timeout: None,
         }
     }
 }

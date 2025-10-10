@@ -1,4 +1,4 @@
-use crate::{copy::CopyCmd, info::InfoCmd, security::SecurityCmd};
+use crate::{copy::CopyCmd, info::InfoCmd, security::SecurityCmd, watch::WatchCmd};
 use clap::{Parser, Subcommand, ValueEnum};
 use smb::connection::MultiChannelConfig;
 use smb::transport::config::*;
@@ -188,4 +188,6 @@ pub enum Commands {
     Info(InfoCmd),
     /// Configures object security
     Security(SecurityCmd),
+    /// Watches for changes in a directory.
+    Watch(WatchCmd),
 }

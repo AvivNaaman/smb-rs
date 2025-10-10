@@ -57,7 +57,23 @@ pub struct NotifyFilter {
     __: B20,
 }
 
-impl NotifyFilter {}
+impl NotifyFilter {
+    pub fn all() -> Self {
+        Self::new()
+            .with_file_name(true)
+            .with_dir_name(true)
+            .with_attributes(true)
+            .with_size(true)
+            .with_last_write(true)
+            .with_last_access(true)
+            .with_creation(true)
+            .with_ea(true)
+            .with_security(true)
+            .with_stream_name(true)
+            .with_stream_size(true)
+            .with_stream_write(true)
+    }
+}
 
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
@@ -70,8 +86,8 @@ pub struct ChangeNotifyResponse {
     #[bw(calc = PosMarker::default())]
     _output_buffer_length: PosMarker<u32>,
     #[br(seek_before = SeekFrom::Start(_output_buffer_offset.value.into()))]
-    #[br(map_stream = |s| s.take_seek(_output_buffer_length.value.into()), parse_with = binrw::helpers::until_eof)]
-    pub buffer: Vec<FileNotifyInformation>,
+    #[br(map_stream = |s| s.take_seek(_output_buffer_length.value.into()))]
+    pub buffer: ChainedItemList<FileNotifyInformation, 4>,
 }
 
 #[binrw::binrw]
@@ -156,7 +172,12 @@ mod tests {
     pub fn test_change_notify_response_pending_parse() {
         let data = [0x9, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0];
         let response = ChangeNotifyResponse::read_le(&mut Cursor::new(&data)).unwrap();
-        assert_eq!(response, ChangeNotifyResponse { buffer: vec![] });
+        assert_eq!(
+            response,
+            ChangeNotifyResponse {
+                buffer: Default::default()
+            }
+        );
     }
 
     #[test]
@@ -179,17 +200,16 @@ mod tests {
             notify_response,
             ChangeNotifyResponse {
                 buffer: vec![
-                    FileNotifyInformationInner {
+                    FileNotifyInformation {
                         action: NotifyAction::RenamedOldName,
                         file_name: "New folder".into()
-                    }
-                    .into(),
-                    FileNotifyInformationInner {
+                    },
+                    FileNotifyInformation {
                         action: NotifyAction::RenamedNewName,
                         file_name: "jdsa".into()
                     }
-                    .into()
                 ]
+                .into()
             }
         );
     }

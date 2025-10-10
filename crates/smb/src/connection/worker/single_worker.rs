@@ -64,6 +64,12 @@ impl Worker for SingleWorker {
         // Receive next message
         let mut self_mut = self.transport.lock()?;
         let transport = self_mut.get_mut().ok_or(crate::Error::ConnectionStopped)?;
+
+        if options.timeout.is_some() {
+            // TODO: implement receive with timeout in options.
+            unimplemented!("Receive with timeout is not supported in SingleWorker");
+        }
+
         let msg = transport.receive().map_err(|e| match e {
             TransportError::IoError(ioe) => {
                 if ioe.kind() == std::io::ErrorKind::WouldBlock {

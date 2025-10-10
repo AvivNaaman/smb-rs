@@ -8,6 +8,7 @@ use smb_msg::*;
 use std::ops::{Deref, DerefMut};
 #[cfg(feature = "async")]
 use std::sync::Arc;
+use std::time::Duration;
 
 /// A directory resource on the server.
 /// This is used to query the directory for its contents,
@@ -219,11 +220,41 @@ impl Directory {
     /// # Returns
     /// * A vector of [`FileNotifyInformation`] objects, containing the changes that occurred.
     /// # Notes
-    /// * This is a long-running operation, and will block until a result is received, or the operation gets cancelled.
+    /// * This is a long-running operation, and will block until a result is received. See [`watch_timeout`] for a version that supports a timeout.
     pub async fn watch(
         &self,
         filter: NotifyFilter,
         recursive: bool,
+    ) -> crate::Result<Vec<FileNotifyInformation>> {
+        self._watch_timeout(filter, recursive, Some(Duration::MAX))
+            .await
+    }
+
+    /// Watches the directory for changes, with a specified timeout.
+    /// # Arguments
+    /// * `filter` - The filter to use for the changes. This is a bitmask of the changes to watch for.
+    /// * `recursive` - Whether to watch the directory recursively or not.
+    /// # Returns
+    /// * A vector of [`FileNotifyInformation`] objects, containing the changes that occurred.
+    /// # Notes
+    /// * This is a long-running operation, and will block until a result is received or the provided timeout elapses.
+    ///  If the timeout elapses, an error of type [`Error::OperationTimeout`] is returned.
+    /// * A similar method without timeout is available as [`watch`][Self::watch].
+    pub async fn watch_timeout(
+        &self,
+        filter: NotifyFilter,
+        recursive: bool,
+        timeout: std::time::Duration,
+    ) -> crate::Result<Vec<FileNotifyInformation>> {
+        self._watch_timeout(filter, recursive, Some(timeout)).await
+    }
+
+    /// (Internal) Watches the directory for changes, with an optional timeout.
+    async fn _watch_timeout(
+        &self,
+        filter: NotifyFilter,
+        recursive: bool,
+        timeout: Option<std::time::Duration>,
     ) -> crate::Result<Vec<FileNotifyInformation>> {
         let response = self
             .handle
@@ -233,11 +264,12 @@ impl Directory {
                     file_id: self.file_id()?,
                     flags: NotifyFlags::new().with_watch_tree(recursive),
                     completion_filter: filter,
-                    output_buffer_length: 1024,
+                    output_buffer_length: 0x1024,
                 }
                 .into(),
                 ReceiveOptions {
                     allow_async: true,
+                    timeout,
                     cmd: Some(Command::ChangeNotify),
                     ..Default::default()
                 },
@@ -269,7 +301,7 @@ impl Directory {
             }
         };
 
-        Ok(response.message.content.to_changenotify()?.buffer)
+        Ok(response.message.content.to_changenotify()?.buffer.into())
     }
 
     /// Queries the quota information for the current file.

@@ -52,6 +52,10 @@ async fn _main() -> Result<(), Box<dyn Error>> {
         Commands::Security(cmd) => {
             security::security(cmd, &cli).await?;
         }
+        Commands::Watch(watch_cmd) => {
+            log::info!("Watching for changes in {:?}", watch_cmd.path);
+            watch::watch(watch_cmd, &cli).await?;
+        }
     }
 
     Ok(())

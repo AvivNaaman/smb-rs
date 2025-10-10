@@ -5,7 +5,7 @@ use crate::sync_helpers::*;
 use maybe_async::*;
 use smb_msg::ResponseContent;
 use smb_transport::{IoVec, SmbTransport, SmbTransportWrite, TransportError};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Duration;
 use std::{collections::HashMap, sync::Arc};
 
@@ -48,7 +48,7 @@ where
     /// A flag that indicates whether the worker is stopped.
     stopped: AtomicBool,
     /// The current timeout configured for the worker.
-    timeout: RwLock<Duration>,
+    timeout: AtomicU64,
 }
 
 /// Holds state for the worker, regarding messages to be received:
@@ -222,7 +222,7 @@ where
             notify_messages_channel: Default::default(),
             sender: tx,
             stopped: AtomicBool::new(false),
-            timeout: RwLock::new(timeout),
+            timeout: AtomicU64::new(timeout.as_millis() as u64),
         });
 
         worker
@@ -302,7 +302,9 @@ where
             rx
         };
 
-        let timeout = { *self.timeout.read().await? };
+        let timeout = options
+            .timeout
+            .unwrap_or_else(|| Duration::from_millis(self.timeout.load(Ordering::SeqCst)));
         let result = T::wait_on_waiter(wait_for_receive, timeout).await?;
 
         log::trace!("Received message {result:?}");
