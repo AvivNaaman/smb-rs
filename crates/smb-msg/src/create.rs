@@ -234,7 +234,7 @@ pub enum CreateAction {
     Overwritten = 0x3,
 }
 
-/// This is meant to be used within a [`ChainedItemList`] or [`ChainedItem<T>`]!
+/// This is meant to be used within a [`ChainedItemList<T>`]!
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[bw(import(is_last: bool))]
@@ -354,7 +354,7 @@ pub type [<$struct_name CreateContext>] = CreateContext<[<CreateContext $struct_
 
 macro_rules! make_create_context {
     (
-        $($context_type:ident : $class_name:literal, $req_type:ident, $res_type:ident, )+
+        $($context_type:ident : $class_name:literal, $req_type:ty, $res_type:ty, )+
     ) => {
         paste::paste!{
 
@@ -403,7 +403,7 @@ impl CreateContextType {
 }
 
 make_create_context!(
-    exta: b"ExtA", EaBuffer, EaBuffer,
+    exta: b"ExtA", ChainedItemList<FileGetEaInformation>, ChainedItemList<FileFullEaInformation>,
     secd: b"SecD", SdBuffer, SdBuffer,
     dhnq: b"DHnQ", DurableHandleRequest, DurableHandleResponse,
     dhnc: b"DHNc", DurableHandleReconnect, DurableHandleReconnect,
@@ -425,14 +425,6 @@ macro_rules! empty_req {
         #[derive(Debug, PartialEq, Eq)]
         pub struct $name;
     };
-}
-
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
-pub struct EaBuffer {
-    #[br(parse_with = binrw::helpers::until_eof)]
-    #[bw(write_with = FileFullEaInformationCommon::write_chained)]
-    info: Vec<FileFullEaInformationCommon>,
 }
 
 pub type SdBuffer = SecurityDescriptor;

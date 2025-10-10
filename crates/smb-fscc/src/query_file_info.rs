@@ -3,9 +3,8 @@ use std::ops::Deref;
 use binrw::{NullString, io::TakeSeekExt, prelude::*};
 
 use super::{
-    ChainedItem, ChainedItemList, FileAccessMask, FileAttributes, FileBasicInformation,
-    FileFullEaInformationCommon, FileModeInformation, FileNameInformation, FilePipeInformation,
-    FilePositionInformation,
+    ChainedItemList, FileAccessMask, FileAttributes, FileBasicInformation, FileFullEaInformation,
+    FileModeInformation, FileNameInformation, FilePipeInformation, FilePositionInformation,
 };
 use crate::file_info_classes;
 use smb_dtyp::binrw_util::prelude::{Boolean, FileTime, SizedWideString};
@@ -34,10 +33,6 @@ file_info_classes! {
         pub Stream = 22,
     }, Read
 }
-
-/// For internal use in-module - for file_info_classes! macro.
-/// Use [QueryFileFullEaInformation], or [super::SetFileFullEaInformation] instead.
-type FileFullEaInformation = FileFullEaInformationCommon;
 
 /// A [FileFullEaInformation](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/0eb94f48-6aac-41df-a878-79f4dcfd8989)
 /// structure to be used when querying for extended attributes. You may use [super::SetFileFullEaInformation] for setting.
@@ -251,13 +246,19 @@ pub struct FileStreamInformationInner {
 }
 
 #[binrw::binrw]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[bw(import(has_next: bool))]
-pub struct FileGetEaInformationInner {
+pub struct FileGetEaInformation {
     #[bw(try_calc = ea_name.len().try_into())]
     ea_name_length: u8,
     #[br(map_stream = |s| s.take_seek(ea_name_length as u64))]
     pub ea_name: NullString,
 }
 
-pub type FileGetEaInformation = ChainedItem<FileGetEaInformationInner>;
+impl FileGetEaInformation {
+    pub fn new<S: Into<String>>(name: S) -> Self {
+        Self {
+            ea_name: NullString::from(name.into()),
+        }
+    }
+}

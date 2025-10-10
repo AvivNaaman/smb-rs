@@ -19,10 +19,14 @@ const CHAINED_ITEM_DEFAULT_OFFSET_PAD: u32 = 4;
 ///
 /// A possible additional padding of `OFFSET_PAD` bytes may be added after T,
 /// to align the next entry offset field.
-pub const CHAINED_ITEM_PREFIX_SIZE: usize = size_of::<NextEntryOffsetType>();
+pub const CHAINED_ITEM_PREFIX_SIZE: usize = std::mem::size_of::<NextEntryOffsetType>();
 
 type NextEntryOffsetType = u32;
 
+/// A single item in a chained list.
+///
+/// Check out [`ChainedItemList<T>`] for a list of these items.
+/// This is the suggested use case for this struct - not using it directly.
 #[binrw::binrw]
 #[derive(Debug)]
 #[bw(import(last: bool))]
@@ -179,31 +183,6 @@ where
         }
         Ok(())
     }
-
-    /// Write a vector of chained items, and write the size of the vector
-    /// to the given `size_dest` position marker.
-    #[binrw::writer(writer, endian)]
-    #[allow(clippy::ptr_arg)] // writer accepts exact type.
-    pub fn write_chained_size(value: &Vec<Self>, size_dest: &PosMarker<u32>) -> BinResult<()> {
-        let pos = writer.stream_position()?;
-        for (i, item) in value.iter().enumerate() {
-            item.write_options(writer, endian, (i == value.len() - 1,))?;
-        }
-        size_dest.write_back(pos, writer, endian)?;
-        Ok(())
-    }
-
-    #[binrw::writer(writer, endian)]
-    pub fn write_chained_size_opt(
-        value: &Option<Vec<Self>>,
-        size_dest: &PosMarker<u32>,
-    ) -> BinResult<()> {
-        if let Some(value) = value {
-            Self::write_chained_size(value, writer, endian, (size_dest,))
-        } else {
-            Ok(())
-        }
-    }
 }
 
 impl<T, const OFFSET_PAD: u32> From<ChainedItemList<T, OFFSET_PAD>> for Vec<T>
@@ -262,5 +241,17 @@ where
 {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.values
+    }
+}
+
+impl<T, const OFFSET_PAD: u32> FromIterator<T> for ChainedItemList<T, OFFSET_PAD>
+where
+    T: BinRead + BinWrite,
+    for<'a> <T as BinRead>::Args<'a>: Default,
+    for<'b> <T as BinWrite>::Args<'b>: Default,
+{
+    fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let values = iter.into_iter().map(ChainedItem::from).collect();
+        Self { values }
     }
 }

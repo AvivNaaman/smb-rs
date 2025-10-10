@@ -521,7 +521,7 @@ pub mod iter_sync {
 
     impl<'a, T> Iterator for QueryDirectoryIterator<'a, T>
     where
-        T: QueryDirectoryInfoValue,
+        T: QueryDirectoryInfoValue + for<'b> binrw::prelude::BinWrite<Args<'b> = ()>,
     {
         type Item = crate::Result<T>;
 

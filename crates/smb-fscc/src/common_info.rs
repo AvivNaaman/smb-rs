@@ -3,7 +3,7 @@ use modular_bitfield::prelude::*;
 
 use smb_dtyp::binrw_util::prelude::{FileTime, SizedWideString};
 
-use crate::{ChainedItem, FileAttributes};
+use crate::{ChainedItemList, FileAttributes};
 
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
@@ -36,7 +36,7 @@ pub struct FileFullEaInformationInner {
     pub ea_value: Option<Vec<u8>>,
 }
 
-pub type FileFullEaInformationCommon = ChainedItem<FileFullEaInformationInner>;
+pub type FileFullEaInformation = ChainedItemList<FileFullEaInformationInner>;
 
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]

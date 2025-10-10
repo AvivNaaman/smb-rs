@@ -384,7 +384,7 @@ impl ResourceHandle {
                 data: GetInfoRequestData::EaInfo(GetEaInfoList {
                     values: names
                         .iter()
-                        .map(|&s| FileGetEaInformationInner { ea_name: s.into() }.into())
+                        .map(|&s| FileGetEaInformation::new(s))
                         .collect(),
                 }),
             })

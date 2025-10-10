@@ -19,7 +19,7 @@ use binrw::{meta::ReadEndian, prelude::*};
 use modular_bitfield::prelude::*;
 use smb_dtyp::access_mask;
 
-pub mod chained_item;
+pub mod chained_list;
 pub mod common_info;
 pub mod directory_info;
 pub mod error;
@@ -29,7 +29,7 @@ pub mod query_file_info;
 pub mod quota;
 pub mod set_file_info;
 
-pub use chained_item::{CHAINED_ITEM_PREFIX_SIZE, ChainedItem, ChainedItemList};
+pub use chained_list::{CHAINED_ITEM_PREFIX_SIZE, ChainedItem, ChainedItemList};
 pub use common_info::*;
 pub use directory_info::*;
 pub use error::SmbFsccError;

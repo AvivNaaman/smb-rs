@@ -5,7 +5,7 @@ use smb_dtyp::binrw_util::prelude::*;
 
 use super::{FileAttributes, ReparseTag};
 
-// Note: here, the information types should be wrapped around ChainedItem<T> or ChainedItemList<T>.
+// Note: here, the information types should be wrapped around [`ChainedItemList<T>`]`.
 
 file_info_classes! {
     pub QueryDirectoryInfo {
@@ -36,7 +36,7 @@ macro_rules! query_dir_type {
         paste::paste! {
             #[binrw::binrw]
             #[derive(Debug, PartialEq, Eq)]
-            #[doc = "Note: This should be used inside a [`ChainedItem<T>`] or [`ChainedItemList<T>`]."]
+            #[doc = "Note: This should be used inside a `ChainedItemList<T>`]."]
             $svis struct $name {
                 pub file_index: u32,
                 pub creation_time: FileTime,
