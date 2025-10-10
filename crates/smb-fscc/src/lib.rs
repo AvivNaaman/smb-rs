@@ -19,21 +19,22 @@ use binrw::{meta::ReadEndian, prelude::*};
 use modular_bitfield::prelude::*;
 use smb_dtyp::access_mask;
 
-use smb_dtyp::binrw_util::prelude::*;
-pub mod chained_item;
+pub mod chained_list;
 pub mod common_info;
 pub mod directory_info;
 pub mod error;
 pub mod filesystem_info;
+mod notify;
 pub mod query_file_info;
 pub mod quota;
 pub mod set_file_info;
 
-pub use chained_item::{ChainedItem, ChainedItemList};
+pub use chained_list::{CHAINED_ITEM_PREFIX_SIZE, ChainedItem, ChainedItemList};
 pub use common_info::*;
 pub use directory_info::*;
 pub use error::SmbFsccError;
 pub use filesystem_info::*;
+pub use notify::*;
 pub use query_file_info::*;
 pub use quota::*;
 pub use set_file_info::*;
@@ -126,36 +127,6 @@ impl From<DirAccessMask> for FileAccessMask {
         // The bits are the same, just the names are different.
         FileAccessMask::from_bytes(val.into_bytes())
     }
-}
-
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
-#[bw(import(has_next: bool))]
-pub struct FileNotifyInformationInner {
-    pub action: NotifyAction,
-    #[bw(try_calc = file_name.size().try_into())]
-    file_name_length: u32,
-    #[br(args(file_name_length.into()))]
-    pub file_name: SizedWideString,
-}
-
-pub type FileNotifyInformation = ChainedItem<FileNotifyInformationInner>;
-
-#[binrw::binrw]
-#[derive(Debug, PartialEq, Eq)]
-#[brw(repr(u32))]
-pub enum NotifyAction {
-    Added = 0x1,
-    Removed = 0x2,
-    Modified = 0x3,
-    RenamedOldName = 0x4,
-    RenamedNewName = 0x5,
-    AddedStream = 0x6,
-    RemovedStream = 0x7,
-    ModifiedStream = 0x8,
-    RemovedByDelete = 0x9,
-    IdNotTunnelled = 0xa,
-    TunnelledIdCollision = 0xb,
 }
 
 /// Trait for file information types.

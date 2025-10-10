@@ -68,15 +68,12 @@ pub struct QueryDirectoryResponse {
 impl QueryDirectoryResponse {
     pub fn read_output<T>(&self) -> BinResult<Vec<T>>
     where
-        T: QueryDirectoryInfoValue,
+        T: QueryDirectoryInfoValue + BinRead + BinWrite,
+        for<'a> <T as BinRead>::Args<'a>: Default,
+        for<'b> <T as BinWrite>::Args<'b>: Default,
     {
-        let mut reader = std::io::Cursor::new(&self.output_buffer);
-        let mut result = vec![];
-        while reader.position() < self.output_buffer.len() as u64 {
-            let item = T::read_le(&mut reader)?;
-            result.push(item);
-        }
-        Ok(result)
+        let mut cursor = std::io::Cursor::new(&self.output_buffer);
+        Ok(ChainedItemList::<T>::read_le(&mut cursor)?.into())
     }
 }
 
@@ -133,15 +130,15 @@ mod tests {
             0x0, 0x0, 0x4, 0x0, 0x64, 0x0, 0x2e, 0x0, 0x74, 0x0, 0x78, 0x0, 0x74, 0x0,
         ];
 
-        let _res: Vec<FileIdBothDirectoryInformation> = QueryDirectoryResponse {
+        let res = QueryDirectoryResponse {
             output_buffer: data.to_vec(),
         }
-        .read_output()
+        .read_output::<FileIdBothDirectoryInformation>()
         .unwrap();
 
         assert_eq!(
             vec![
-                ChainedItem::new(FileIdBothDirectoryInformationInner {
+                FileIdBothDirectoryInformation {
                     file_index: 0,
                     creation_time: FileTime::from(datetime!(2024-12-11 12:32:31.7084985)),
                     last_access_time: FileTime::from(datetime!(2025-01-03 10:18:15.6499175)),
@@ -156,8 +153,8 @@ mod tests {
                     short_name: [0; 12],
                     fild_id: 562949953454203,
                     file_name: ".".into(),
-                }),
-                ChainedItem::new(FileIdBothDirectoryInformationInner {
+                },
+                FileIdBothDirectoryInformation {
                     file_index: 0,
                     creation_time: FileTime::from(datetime!(2024-12-11 9:25:15.4208828)),
                     last_access_time: FileTime::from(datetime!(2025-01-02 19:05:31.8723088)),
@@ -172,8 +169,8 @@ mod tests {
                     short_name: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,],
                     fild_id: 1125899906967338,
                     file_name: "..".into(),
-                }),
-                ChainedItem::new(FileIdBothDirectoryInformationInner {
+                },
+                FileIdBothDirectoryInformation {
                     file_index: 0,
                     creation_time: FileTime::from(datetime!(2024-12-27 14:22:48.7929947)),
                     last_access_time: FileTime::from(datetime!(2024-12-27 14:22:48.7929947)),
@@ -188,8 +185,8 @@ mod tests {
                     short_name: [0; 12],
                     fild_id: 2814749767148784,
                     file_name: "a.txt".into(),
-                }),
-                ChainedItem::new(FileIdBothDirectoryInformationInner {
+                },
+                FileIdBothDirectoryInformation {
                     file_index: 0,
                     creation_time: FileTime::from(datetime!(2024-12-27 14:22:51.5742424)),
                     last_access_time: FileTime::from(datetime!(2024-12-27 14:23:06.9505662)),
@@ -204,8 +201,8 @@ mod tests {
                     short_name: [0; 12],
                     fild_id: 1125899906906297,
                     file_name: "b.txt".into(),
-                }),
-                ChainedItem::new(FileIdBothDirectoryInformationInner {
+                },
+                FileIdBothDirectoryInformation {
                     file_index: 0,
                     creation_time: FileTime::from(datetime!(2024-12-27 14:22:52.0116823)),
                     last_access_time: FileTime::from(datetime!(2024-12-27 14:23:14.7795682)),
@@ -220,8 +217,8 @@ mod tests {
                     short_name: [0; 12],
                     fild_id: 1125899906906299,
                     file_name: "c.txt".into(),
-                },),
-                ChainedItem::new(FileIdBothDirectoryInformationInner {
+                },
+                FileIdBothDirectoryInformation {
                     file_index: 0,
                     creation_time: FileTime::from(datetime!(2024-12-27 14:22:52.167941),),
                     last_access_time: FileTime::from(datetime!(2025-01-02 19:05:44.7804931),),
@@ -236,9 +233,9 @@ mod tests {
                     short_name: [0; 12],
                     fild_id: 1125899906906300,
                     file_name: "d.txt".into(),
-                })
+                },
             ],
-            _res
+            res
         );
     }
 }

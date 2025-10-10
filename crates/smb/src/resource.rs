@@ -132,7 +132,8 @@ impl Resource {
                 contexts: vec![
                     QueryMaximalAccessRequest::default().into(),
                     QueryOnDiskIdReq.into(),
-                ],
+                ]
+                .into(),
             }
             .into(),
         );
@@ -149,7 +150,7 @@ impl Resource {
         let is_dir = response.file_attributes.directory();
 
         // Get maximal access
-        let access = match CreateContextRespData::first_mxac(&response.create_contexts) {
+        let access = match CreateContextRespData::first_mxac(&response.create_contexts.into()) {
             Some(response) => response.maximal_access,
             _ => {
                 log::debug!(
@@ -383,7 +384,7 @@ impl ResourceHandle {
                 data: GetInfoRequestData::EaInfo(GetEaInfoList {
                     values: names
                         .iter()
-                        .map(|&s| FileGetEaInformationInner { ea_name: s.into() }.into())
+                        .map(|&s| FileGetEaInformation::new(s))
                         .collect(),
                 }),
             })

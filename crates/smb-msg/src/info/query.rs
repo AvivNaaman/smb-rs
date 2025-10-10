@@ -130,10 +130,10 @@ pub struct QueryQuotaInfo {
 
     /// Option 1: list of FileGetQuotaInformation structs.
     #[br(if(sid_list_length.value > 0))]
-    #[br(map_stream = |s| s.take_seek(sid_list_length.value as u64), parse_with = binrw::helpers::until_eof)]
+    #[br(map_stream = |s| s.take_seek(sid_list_length.value as u64))]
     #[bw(if(get_quota_info_content.as_ref().is_some_and(|v| !v.is_empty())))]
-    #[bw(write_with = ChainedItem::write_chained_size_opt, args(&sid_list_length))]
-    pub get_quota_info_content: Option<Vec<FileGetQuotaInformation>>,
+    #[bw(write_with = PosMarker::write_size, args(&sid_list_length))]
+    pub get_quota_info_content: Option<ChainedItemList<FileGetQuotaInformation>>,
 
     /// Option 2: SID (usually not used).
     #[br(if(start_sid_length.value > 0))]
@@ -157,7 +157,7 @@ impl QueryQuotaInfo {
         Self {
             return_single: return_single.into(),
             restart_scan: restart_scan.into(),
-            get_quota_info_content: Some(content),
+            get_quota_info_content: Some(content.into()),
             sid: None,
         }
     }
@@ -175,12 +175,9 @@ impl QueryQuotaInfo {
     }
 }
 
-#[binrw::binrw]
-#[derive(Debug)]
+#[derive(BinRead, BinWrite, Debug)]
 pub struct GetEaInfoList {
-    #[br(parse_with = binrw::helpers::until_eof)]
-    #[bw(write_with = FileGetEaInformation::write_chained)]
-    pub values: Vec<FileGetEaInformation>,
+    pub values: ChainedItemList<FileGetEaInformation>,
 }
 
 #[binrw::binrw]
@@ -291,12 +288,7 @@ mod tests {
             ]
             .into(),
             data: GetInfoRequestData::EaInfo(GetEaInfoList {
-                values: vec![
-                    FileGetEaInformationInner {
-                        ea_name: "$MpEa_D262AC624451295".into(),
-                    }
-                    .into(),
-                ],
+                values: vec![FileGetEaInformation::new("$MpEa_D262AC624451295")].into(),
             }),
             output_buffer_length: 554,
         };

@@ -1,4 +1,3 @@
-use crate::ChainedItem;
 use binrw::{io::TakeSeekExt, prelude::*};
 use smb_dtyp::SID;
 use smb_dtyp::binrw_util::prelude::*;
@@ -13,7 +12,7 @@ use smb_dtyp::binrw_util::prelude::*;
 /// [MS-FSCC 2.4.41](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/acdc0738-ba3c-47a1-b11a-72e22d831c57>)
 ///
 /// _Note_: This structure is partial: it does not contain the NextEntryOffset field, as it is intended to be used
-/// in a chained list, see [`ChainedItem<T>`] and [`ChainedItemList<T>`].
+/// in a chained list, see [`ChainedItemList<T>`].
 #[binrw::binrw]
 #[derive(Debug)]
 pub struct FileQuotaInformation {
@@ -28,18 +27,18 @@ pub struct FileQuotaInformation {
     pub sid: SID,
 }
 
-/// See [`FileGetQuotaInformation`]; use [`FileGetQuotaInformationInner::into`] to convert.
+/// This structure is used to provide the list of SIDs for which quota query information is requested.
+///
+/// [MS-FSCC 2.4.41.1](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/56adae21-add4-4434-97ec-e40e87739d52>)
+///
+/// _Note_: This structure is partial: it does not contain the NextEntryOffset field, as it is intended to be used
+/// in a chained list, see [`ChainedItemList<T>`].
 #[binrw::binrw]
 #[derive(Debug)]
-pub struct FileGetQuotaInformationInner {
+pub struct FileGetQuotaInformation {
     #[bw(calc = PosMarker::default())]
     sid_length: PosMarker<u32>,
     #[br(map_stream = |s| s.take_seek(sid_length.value as u64))]
     #[bw(write_with = PosMarker::write_size, args(&sid_length))]
     pub sid: SID,
 }
-
-/// This structure is used to provide the list of SIDs for which quota query information is requested.
-///
-/// [MS-FSCC 2.4.41.1](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/56adae21-add4-4434-97ec-e40e87739d52>)
-pub type FileGetQuotaInformation = ChainedItem<FileGetQuotaInformationInner>;
