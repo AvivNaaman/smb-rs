@@ -98,9 +98,9 @@ pub struct CreateRequest {
 
     /// Use the `CreateContextReqData::first_...` function family to get the first context of a specific type.
     #[brw(align_before = 8)]
-    #[br(map_stream = |s| s.take_seek(_create_contexts_length.value.into()), parse_with = binrw::helpers::until_eof)]
-    #[bw(write_with = ReqCreateContext::write_chained_roff_size, args(&_create_contexts_offset, &_create_contexts_length))]
-    pub contexts: Vec<ReqCreateContext>,
+    #[br(map_stream = |s| s.take_seek(_create_contexts_length.value.into()))]
+    #[bw(write_with = PosMarker::write_roff_size, args(&_create_contexts_offset, &_create_contexts_length))]
+    pub contexts: ChainedItemList<ReqCreateContext>,
 }
 
 #[binrw::binrw]
@@ -208,9 +208,9 @@ pub struct CreateResponse {
 
     /// Use the `CreateContextRespData::first_...` function family to get the first context of a specific type.
     #[br(seek_before = SeekFrom::Start(create_contexts_offset.value as u64))]
-    #[br(map_stream = |s| s.take_seek(create_contexts_length.value.into()), parse_with = binrw::helpers::until_eof)]
-    #[bw(write_with = RespCreateContext::write_chained_roff_size, args(&create_contexts_offset, &create_contexts_length))]
-    pub create_contexts: Vec<RespCreateContext>,
+    #[br(map_stream = |s| s.take_seek(create_contexts_length.value.into()))]
+    #[bw(write_with = PosMarker::write_roff_size, args(&create_contexts_offset, &create_contexts_length))]
+    pub create_contexts: ChainedItemList<RespCreateContext>,
 }
 
 #[bitfield]
@@ -242,9 +242,8 @@ pub struct CreateContext<T>
 where
     for<'a> T: BinRead<Args<'a> = (&'a Vec<u8>,)> + BinWrite<Args<'static> = ()>,
 {
-    #[br(assert(next_entry_offset.value % 8 == 0))]
     #[bw(calc = PosMarker::default())]
-    next_entry_offset: PosMarker<u32>,
+    _start: PosMarker<()>,
 
     #[bw(calc = PosMarker::default())]
     _name_offset: PosMarker<u16>,
@@ -260,41 +259,13 @@ where
 
     #[brw(align_before = 8)]
     #[br(count = name_length)]
-    #[bw(write_with = PosMarker::write_roff_b, args(&_name_offset, &next_entry_offset))]
+    #[bw(write_with = PosMarker::write_roff_b, args(&_name_offset, &_start))]
     pub name: Vec<u8>,
 
     #[brw(align_before = 8)]
-    #[bw(write_with = PosMarker::write_roff_size_b, args(&_data_offset, &_data_length, &next_entry_offset))]
+    #[bw(write_with = PosMarker::write_roff_size_b, args(&_data_offset, &_data_length, &_start))]
     #[br(map_stream = |s| s.take_seek(_data_length.value.into()), args(&name))]
     pub data: T,
-
-    #[br(seek_before = next_entry_offset.seek_relative(true))]
-    #[bw(if(!is_last))]
-    #[bw(align_before = 8)]
-    #[bw(write_with = PosMarker::write_roff, args(&next_entry_offset))]
-    _write_offset_placeholder: (),
-}
-
-impl<T> CreateContext<T>
-where
-    for<'a> T: BinRead<Args<'a> = (&'a Vec<u8>,)> + BinWrite<Args<'static> = ()>,
-{
-    #[binrw::writer(writer, endian)]
-    #[allow(clippy::ptr_arg)] // writer accepts exact type.
-    pub fn write_chained_roff_size(
-        value: &Vec<CreateContext<T>>,
-        offset_dest: &PosMarker<u32>,
-        size_dest: &PosMarker<u32>,
-    ) -> BinResult<()> {
-        // Offset needs the absolute position of the start of the list.
-        let start_offset = offset_dest.write_offset(writer, endian)?;
-        for (i, item) in value.iter().enumerate() {
-            item.write_options(writer, endian, (i == value.len() - 1,))?;
-        }
-        // Size is the difference between the start of the list and the current position.
-        size_dest.write_back(writer.stream_position()? - start_offset, writer, endian)?;
-        Ok(())
-    }
 }
 
 macro_rules! create_context_half {
@@ -311,6 +282,7 @@ pub trait [<CreateContextData $struct_name Value>] : Into<CreateContext<[<Create
     const CONTEXT_NAME: &'static [u8];
 }
 
+#[doc = concat!("The `", stringify!($struct_name), "` Create Context data enum. This contains all the possible context types for ", stringify!($struct_name))]
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[br(import(name: &Vec<u8>))]
@@ -359,7 +331,6 @@ $(
             CreateContext::<[<CreateContext $struct_name Data>]> {
                 name: <$req_type as [<CreateContextData $struct_name Value>]>::CONTEXT_NAME.to_vec(),
                 data: [<CreateContext $struct_name Data>]::[<$context_type:camel $struct_name>](req),
-                _write_offset_placeholder: (),
             }
         }
     }
@@ -753,7 +724,8 @@ mod tests {
                 .into(),
                 QueryMaximalAccessRequest::default().into(),
                 QueryOnDiskIdReq.into(),
-            ],
+            ]
+            .into(),
         };
         let data_without_header = encode_content(request.into());
         assert_eq!(
@@ -824,6 +796,7 @@ mod tests {
                     }
                     .into(),
                 ]
+                .into()
             }
         )
     }
