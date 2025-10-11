@@ -171,6 +171,14 @@ $(
     }
 )+
 
+impl From<cancel::CancelRequest>
+    for RequestContent
+{
+    fn from(req: cancel::CancelRequest) -> Self {
+        RequestContent::Cancel(req)
+    }
+}
+
 make_content_impl!{
     RequestContent,
     $(
@@ -268,6 +276,7 @@ macro_rules! make_plain {
         impl [<Plain $suffix>] {
             pub fn new(content: [<$suffix Content>]) -> [<Plain $suffix>] {
                 [<Plain $suffix>] {
+                    // default is a sync command, so `tree_id` must be set, and `HeaderFlags::async_command` is false
                     header: Header {
                         credit_charge: 0,
                         status: Status::Success as u32,

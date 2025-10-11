@@ -784,7 +784,14 @@ impl MessageHandler for ConnectionMessageHandler {
         };
         msg.message.header.flags = msg.message.header.flags.with_priority_mask(priority_value);
 
-        self.process_sequence_outgoing(&mut msg).await?;
+        let is_cancel = msg.message.content.as_cancel().is_ok();
+        if !is_cancel {
+            self.process_sequence_outgoing(&mut msg).await?;
+        } else if msg.message.header.message_id == 0 {
+            return Err(Error::InvalidState(
+                "Cancel message must have a valid message ID".into(),
+            ));
+        }
 
         self.worker
             .get()

@@ -1,7 +1,7 @@
 use crate::Cli;
 use clap::Parser;
 use maybe_async::*;
-use smb::{Client, DirAccessMask, NotifyFilter, UncPath, resource::*};
+use smb::{Client, DirAccessMask, NotifyFilter, UncPath, resource::*, sync_helpers::*};
 use std::error::Error;
 
 #[derive(Parser, Debug)]
@@ -34,21 +34,80 @@ pub async fn watch(cmd: &WatchCmd, cli: &Cli) -> Result<(), Box<dyn Error>> {
         )
         .await?;
 
-    let dir = dir_resource
-        .as_dir()
-        .ok_or("The specified path is not a directory")?;
+    let dir: Directory = dir_resource
+        .try_into()
+        .map_err(|_| "The specified path is not a directory")?;
+    let dir = Arc::new(dir);
 
     log::info!("Watching directory: {}", cmd.path);
-    loop {
-        let next_event = dir
-            .watch(
-                NotifyFilter::new()
-                    .with_file_name(true)
-                    .with_dir_name(true)
-                    .with_last_write(true),
-                cmd.recursive,
-            )
-            .await?;
-        println!("Change detected: {:?}", next_event);
+    watch_dir(&dir, NotifyFilter::all(), cmd.recursive).await?;
+
+    dir.close().await?;
+    client.close().await?;
+    Ok(())
+}
+
+#[cfg(feature = "async")]
+async fn watch_dir(
+    dir: &Arc<Directory>,
+    notify_filter: NotifyFilter,
+    recursive: bool,
+) -> Result<(), Box<dyn Error>> {
+    use futures::StreamExt;
+
+    let cancellation = CancellationToken::new();
+    ctrlc::set_handler({
+        let cancellation = cancellation.clone();
+        move || {
+            log::info!("Cancellation requested, stopping watch...");
+            cancellation.cancel();
+        }
+    })?;
+
+    Directory::watch_stream_cancellable(dir, notify_filter, recursive, cancellation)?
+        .for_each(|res| {
+            match res {
+                Ok(info) => {
+                    log::info!("Change detected: {:?}", info);
+                }
+                Err(e) => {
+                    log::error!("Error watching directory: {}", e);
+                }
+            }
+            futures::future::ready(())
+        })
+        .await;
+
+    Ok(())
+}
+
+#[cfg(not(feature = "async"))]
+fn watch_dir(
+    dir: &Arc<Directory>,
+    notify_filter: NotifyFilter,
+    recursive: bool,
+) -> Result<(), Box<dyn Error>> {
+    let iterator = Directory::watch_stream(dir, notify_filter, recursive)?;
+    let canceller = iterator.get_canceller();
+
+    ctrlc::set_handler({
+        let canceller = canceller.clone();
+        move || {
+            log::info!("Cancellation requested, stopping watch...");
+            canceller.cancel();
+        }
+    })?;
+
+    for res in iterator {
+        match res {
+            Ok(info) => {
+                log::info!("Change detected: {:?}", info);
+            }
+            Err(e) => {
+                log::error!("Error watching directory: {}", e);
+            }
+        }
     }
+
+    Ok(())
 }

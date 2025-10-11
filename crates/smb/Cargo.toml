@@ -24,6 +24,7 @@ modular-bitfield = { workspace = true }
 
 # Async
 tokio = { workspace = true, features = ["time", "rt"], optional = true }
+futures = { workspace = true, optional = true }
 futures-core = { workspace = true, optional = true }
 futures-util = { workspace = true, optional = true }
 tokio-util = { workspace = true, optional = true }
@@ -74,6 +75,7 @@ default = ["sign", "encrypt", "compress", "async", "std-fs-impls", "netbios-tran
 async = [
     "dep:tokio",
     "dep:futures-core",
+    "dep:futures",
     "dep:tokio-util",
     "dep:tokio-stream",
     "dep:futures-util",

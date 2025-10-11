@@ -121,6 +121,7 @@ make_status! {
     Success = 0x00000000: "Success",
     Pending = 0x00000103: "Pending",
     NotifyCleanup = 0x0000010B: "Notify Cleanup",
+    EnumDir = 0x0000010C: "Enum Dir",
     InvalidSmb = 0x00010002: "Invalid SMB",
     SmbBadTid = 0x00050002: "SMB Bad TID",
     SmbBadCommand = 0x00160002: "SMB Bad Command",
@@ -162,7 +163,6 @@ make_status! {
 }
 
 /// Sync and Async SMB2 Message header.
-///
 #[binrw::binrw]
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[brw(magic(b"\xfeSMB"), little)]
@@ -203,6 +203,15 @@ impl Header {
     /// returning it, if successful.
     pub fn status(&self) -> crate::Result<Status> {
         self.status.try_into()
+    }
+
+    /// Turns the current header into an async header,
+    /// setting the [`async_id`][Self::async_id] and clearing the [`tree_id`][Self::tree_id].
+    /// Also sets the [`HeaderFlags::async_command`] in [`flags`][Self::flags] to true.
+    pub fn to_async(&mut self, async_id: u64) {
+        self.flags.set_async_command(true);
+        self.tree_id = None;
+        self.async_id = Some(async_id);
     }
 }
 

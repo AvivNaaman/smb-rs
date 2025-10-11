@@ -312,10 +312,13 @@ impl MessageHandler for TreeMessageHandler {
         &self,
         mut msg: crate::msg_handler::OutgoingMessage,
     ) -> crate::Result<crate::msg_handler::SendMessageResult> {
-        msg.message.header.tree_id = self.tree_id.load(Ordering::SeqCst).into();
-        if self.info.share_flags.encrypt_data() {
-            msg.encrypt = true;
+        if !msg.message.header.flags.async_command() {
+            msg.message.header.tree_id = self.tree_id.load(Ordering::SeqCst).into();
+            if self.info.share_flags.encrypt_data() {
+                msg.encrypt = true;
+            }
         }
+
         self.upstream.sendo(msg).await
     }
 

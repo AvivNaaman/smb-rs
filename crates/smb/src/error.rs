@@ -30,6 +30,9 @@ pub enum Error {
     #[error("Client connection is stopped")]
     ConnectionStopped,
 
+    #[error("Operation cancelled by user: {0}")]
+    Cancelled(&'static str),
+
     #[error("Invalid state: {0}")]
     InvalidState(String),
     #[error("Unable to transform message: {0}")]
@@ -84,8 +87,6 @@ pub enum Error {
     InvalidConfiguration(String),
     #[error("Invalid argument: {0}")]
     InvalidArgument(String),
-    #[error("SMB Operation Cancelled: {0}")]
-    Cancelled(String),
     #[error("Unsupported operation: {0}")]
     UnsupportedOperation(String),
     #[error("Unable to connect to DFS referrals for: {0}")]

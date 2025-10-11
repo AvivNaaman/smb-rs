@@ -1,4 +1,7 @@
-use std::sync::{Arc, atomic::AtomicBool};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use maybe_async::*;
 use smb_dtyp::SecurityDescriptor;
@@ -10,7 +13,8 @@ use crate::{
     Error,
     connection::connection_info::ConnectionInfo,
     msg_handler::{
-        HandlerReference, IncomingMessage, MessageHandler, OutgoingMessage, ReceiveOptions,
+        AsyncMessageIds, HandlerReference, IncomingMessage, MessageHandler, OutgoingMessage,
+        ReceiveOptions, SendMessageResult,
     },
     tree::TreeMessageHandler,
 };
@@ -782,6 +786,19 @@ impl ResourceHandle {
         options: ReceiveOptions<'_>,
     ) -> crate::Result<IncomingMessage> {
         self.handler.sendo_recvo(msg, options).await
+    }
+
+    #[maybe_async]
+    #[inline]
+    pub async fn send_cancel(&self, msg_ids: &AsyncMessageIds) -> crate::Result<SendMessageResult> {
+        let mut outgoing_message = OutgoingMessage::new(CancelRequest {}.into());
+        outgoing_message.message.header.message_id = msg_ids.msg_id.load(Ordering::SeqCst);
+        outgoing_message
+            .message
+            .header
+            .to_async(msg_ids.async_id.load(Ordering::SeqCst));
+
+        self.handler.sendo(outgoing_message).await
     }
 
     /// Returns whether current resource is opened from the same tree as the other resource.
