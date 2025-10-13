@@ -81,9 +81,12 @@ impl Guid {
 }
 
 /// A macro to create a `Guid` from a string literal at compile time.
+///
+/// Prefer the [`make_guid!`] alias.
+///
 /// ```
-/// use smb_dtyp::guid;
-/// let guid = guid!("065eadf1-6daf-1543-b04f-10e69084c9ae");
+/// use smb_dtyp::make_guid;
+/// let guid = make_guid!("065eadf1-6daf-1543-b04f-10e69084c9ae");
 /// assert_eq!(guid.to_string(), "065eadf1-6daf-1543-b04f-10e69084c9ae");
 /// ```
 #[macro_export]
@@ -96,6 +99,8 @@ macro_rules! guid {
     }};
 }
 
+/// Alias for [`guid!`] following a verb–noun naming convention, used by `smb-fscc` for filesystem-info GUIDs.
+/// Prefer `make_guid!` when constructing GUIDs in SMB filesystem contexts.
 pub use guid as make_guid;
 
 impl From<[u8; 16]> for Guid {
@@ -179,11 +184,11 @@ mod tests {
     #[test]
     pub fn test_const_guid() {
         assert_eq!(
-            guid!("065eadf1-6daf-1543-b04f-10e69084c9ae"),
+            make_guid!("065eadf1-6daf-1543-b04f-10e69084c9ae"),
             PARSED_GUID_VALUE
         );
         assert_eq!(
-            guid!("{065eadf1-6daf-1543-b04f-10e69084c9ae}"),
+            make_guid!("{065eadf1-6daf-1543-b04f-10e69084c9ae}"),
             PARSED_GUID_VALUE
         );
     }

@@ -23,7 +23,7 @@ macro_rules! make_smb_notify_test {
     (
         $($watch_callback:ident,)+
     ) => {
-        paste::paste!{
+        pastey::paste!{
             $(
 #[test_log::test(maybe_async::test(
     not(feature = "async"),
@@ -137,7 +137,11 @@ async fn delete_many_files(share_path: &'static str, rng_numbers: &[u32]) -> smb
             .unwrap();
         })
     });
-    join_all(futures).await;
+
+    let results = join_all(futures).await;
+    for r in results {
+        r.expect("delete task panicked");
+    }
     Ok(())
 }
 

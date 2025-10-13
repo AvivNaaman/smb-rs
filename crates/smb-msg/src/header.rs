@@ -85,7 +85,7 @@ impl std::fmt::Display for Status {
 
 impl Status {
     // Consts for easier status code as u32 access.
-    paste::paste! {
+    pastey::paste! {
         $(
             #[doc = concat!("`", stringify!($name), "` as u32")]
             pub const [<U32_ $name:snake:upper>]: u32 = $value;

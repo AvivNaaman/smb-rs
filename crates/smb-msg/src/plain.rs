@@ -9,7 +9,7 @@ macro_rules! make_content_impl {
         $struct_name:ident,
         $({$variant:ident, $struct_type:ty},)+
     ) => {
-        paste::paste! {
+        pastey::paste! {
 
 impl $struct_name {
     /// Returns the name of the content value.
@@ -67,7 +67,7 @@ macro_rules! make_content {
     (
         $({$cmd:ident, $struct_pfx:ident},)+
     ) => {
-        paste::paste!{
+        pastey::paste!{
 
 #[derive(BinRead, BinWrite, Debug)]
 #[brw(import(command: &Command))]
@@ -260,7 +260,7 @@ impl RequestContent {
 
 macro_rules! make_plain {
     ($suffix:ident, $server_to_redir:literal, $binrw_attr:ty) => {
-        paste::paste! {
+        pastey::paste! {
 
         /// A plain, single, SMB2 message.
         #[$binrw_attr]

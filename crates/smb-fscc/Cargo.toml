@@ -17,7 +17,7 @@ smb-dtyp = { path = "../smb-dtyp", version = "0.10.1" }
 binrw = { workspace = true }
 modular-bitfield = { workspace = true }
 time = { workspace = true }
-paste = { workspace = true }
+pastey = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

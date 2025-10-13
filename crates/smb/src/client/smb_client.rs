@@ -1,7 +1,5 @@
 use crate::ConnectionConfig;
-use crate::{
-    Connection, Error, FileCreateArgs, Resource, Session, Tree, resource::Pipe, sync_helpers::*,
-};
+use crate::{Connection, Error, FileCreateArgs, Pipe, Resource, Session, Tree, sync_helpers::*};
 use maybe_async::maybe_async;
 use smb_msg::{NetworkInterfaceInfo, ReferralEntry, ReferralEntryValue, Status};
 use smb_rpc::interface::{ShareInfo1, SrvSvc};

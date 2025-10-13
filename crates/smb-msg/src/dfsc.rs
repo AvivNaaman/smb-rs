@@ -124,7 +124,7 @@ macro_rules! gen_ref_entry_val {
     (
         $($ver:literal,)+
     ) => {
-        paste::paste! {
+        pastey::paste! {
         #[binrw::binrw]
         #[derive(Debug, PartialEq, Eq)]
         #[br(import(version: u16))]

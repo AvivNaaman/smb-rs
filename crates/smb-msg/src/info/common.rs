@@ -46,7 +46,7 @@ pub struct AdditionalInfo {
 #[macro_export]
 macro_rules! query_info_data {
     ($name:ident $($info_type:ident: $content:ty, )+) => {
-        paste::paste! {
+        pastey::paste! {
             #[allow(unused_imports)]
             use binrw::prelude::*;
             #[allow(unused_imports)]

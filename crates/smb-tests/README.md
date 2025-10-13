@@ -1,3 +1,3 @@
 # SMB Tests
 
-This crate contains utilities for testsing the `smb-rs` crate.
+This crate contains utilities for testing the `smb-rs` crate.

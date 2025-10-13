@@ -115,7 +115,7 @@ mod tests {
         let cls = set_info.class();
         let req = SetInfoData::from(RawSetInfoData::<SetFileInfo>::from(set_info)).to_req(
             cls.into(),
-            guid!("00000042-000e-0000-0500-10000e000000").into(),
+            make_guid!("00000042-000e-0000-0500-10000e000000").into(),
             AdditionalInfo::new(),
         );
         let req_data = encode_content(req.into());

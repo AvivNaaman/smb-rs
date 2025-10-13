@@ -1,3 +1,9 @@
+//! File Information Classes for getting/setting file information, and common structs.
+//!
+//! See [crate::QueryFileInfo] and [crate::SetFileInfo] enums.
+//!
+//! [MS-FSCC 2.4](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/4718fc40-e539-4014-8e33-b675af74e3e1>)
+
 use binrw::{NullString, prelude::*};
 use modular_bitfield::prelude::*;
 
@@ -5,22 +11,34 @@ use smb_dtyp::binrw_util::prelude::{FileTime, SizedWideString};
 
 use crate::{ChainedItemList, FileAttributes};
 
+/// This information class is used to query or set file information.
+///
+/// [MS-FSCC 2.4.7](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/16023025-8a78-492f-8b96-c873b042ac50>)
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct FileBasicInformation {
+    /// The time when the file was created.
     pub creation_time: FileTime,
+    /// The time when the file was last accessed.
     pub last_access_time: FileTime,
+    /// The time when data was last written to the file.
     pub last_write_time: FileTime,
+    /// The time when the file was last changed.
     pub change_time: FileTime,
+    /// The file attributes.
     pub file_attributes: FileAttributes,
     #[bw(calc = 0)]
     #[br(assert(_reserved == 0))]
     _reserved: u32,
 }
 
+/// This information class is used to query or set extended attribute (EA) information for a file.
+///
+/// [MS-FSCC 2.4.15](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/e8d926d1-3a22-4654-be9c-58317a85540b>)
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct FileFullEaInformationInner {
+    /// Can contain zero or more of the following flag values. Unused bit fields should be set to 0.
     pub flags: u8,
     #[bw(try_calc = ea_name.len().try_into())]
     ea_name_length: u8,
@@ -29,8 +47,10 @@ pub struct FileFullEaInformationInner {
         None => 0
     })]
     ea_value_length: u16,
+    /// The name of the extended attribute. This field is not null-terminated.
     #[br(assert(ea_name.len() == ea_name_length as usize))]
     pub ea_name: NullString,
+    /// The value of the extended attribute. This field can be zero bytes in length.
     #[br(if(ea_value_length > 0))]
     #[br(count = ea_value_length)]
     pub ea_value: Option<Vec<u8>>,
@@ -38,6 +58,9 @@ pub struct FileFullEaInformationInner {
 
 pub type FileFullEaInformation = ChainedItemList<FileFullEaInformationInner>;
 
+/// This information class is used to query or set file mode information.
+///
+/// [MS-FSCC 2.4.31](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/52df7798-8330-474b-ac31-9afe8075640c>)
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
@@ -45,54 +68,79 @@ pub type FileFullEaInformation = ChainedItemList<FileFullEaInformationInner>;
 pub struct FileModeInformation {
     #[skip]
     __: bool,
+    /// When set, system caching is not performed on the file.
     pub write_through: bool,
+    /// When set, all access to the file is sequential.
     pub sequential_access: bool,
+    /// When set, the file cannot be cached or buffered in a driver's internal buffers.
     pub no_intermediate_buffering: bool,
 
+    /// When set, all operations on the file are performed synchronously. Waits in the system to synchronize I/O queuing and completion are alertable.
     pub syncronous_io_alert: bool,
+    /// When set, all operations on the file are performed synchronously. Waits in the system to synchronize I/O queuing and completion are not alertable.
     pub syncronous_io_non_alert: bool,
     #[skip]
     __: B6,
 
+    /// When set, the file will be deleted when the last handle to the file is closed.
     pub delete_on_close: bool,
     #[skip]
     __: B19,
 }
 
+/// This information class is used to query or set named pipe information.
+///
+/// [MS-FSCC 2.4.37](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/cd805dd2-9248-4024-ac0f-b87a702dd366>)
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct FilePipeInformation {
+    /// The named pipe read mode.
     pub read_mode: PipeReadMode,
+    /// The named pipe completion mode.
     pub completion_mode: PipeCompletionMode,
 }
 
+/// Named pipe read mode values.
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[brw(repr(u32))]
 pub enum PipeReadMode {
+    /// Data is read from the pipe as a stream of bytes.
     Stream = 0,
+    /// Data is read from the pipe as a stream of messages.
     Message = 1,
 }
 
+/// Named pipe completion mode values.
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[brw(repr(u32))]
 pub enum PipeCompletionMode {
+    /// Blocking mode is enabled. When the pipe handle is specified in a call to the ReadFile or WriteFile function, the operations are not completed until there is data to read or all data is written.
     Queue = 0,
+    /// Nonblocking mode is enabled. When the pipe handle is specified in a call to the ReadFile or WriteFile function, the operations complete immediately.
     Complete = 1,
 }
 
+/// This information class is used to query or set the current byte offset of the file pointer.
+///
+/// [MS-FSCC 2.4.40](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/e3ce4a39-327e-495c-99b6-6b61606b6f16>)
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct FilePositionInformation {
+    /// The byte offset of the file pointer from the beginning of the file.
     pub current_byte_offset: u64,
 }
 
+/// This information class is used to query the name of a file.
+///
+/// [MS-FSCC 2.4.32](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/cb30e415-54c5-4483-a346-822ea90e1e89>)
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct FileNameInformation {
     #[bw(try_calc = file_name.size().try_into())]
     file_name_length: u32,
+    /// The full path name of the file.
     #[br(args(file_name_length as u64))]
     pub file_name: SizedWideString,
 }

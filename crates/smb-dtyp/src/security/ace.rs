@@ -25,8 +25,8 @@ macro_rules! access_mask {
         )*
     }) => {
 
-    #[bitfield]
-    #[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
+    #[::modular_bitfield::bitfield]
+    #[derive(::binrw::BinWrite, ::binrw::BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
     #[bw(map = |&x| Self::into_bytes(x))]
     #[br(map = Self::from_bytes)]
         $vis struct $name {
@@ -43,12 +43,12 @@ macro_rules! access_mask {
 
             pub synchronize: bool,
             #[skip]
-            __: B3,
+            __: ::modular_bitfield::prelude::B3,
 
             pub access_system_security: bool,
             pub maximum_allowed: bool,
             #[skip]
-            __: B2,
+            __: ::modular_bitfield::prelude::B2,
 
             pub generic_all: bool,
             pub generic_execute: bool,
@@ -89,7 +89,7 @@ macro_rules! make_ace_value {
     (
         $($type:ident($val:ident),)+
     ) => {
-        paste::paste! {
+        pastey::paste! {
 
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq, Clone)]

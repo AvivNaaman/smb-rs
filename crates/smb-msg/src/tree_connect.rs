@@ -80,7 +80,7 @@ macro_rules! make_remoted_identity_connect{
     (
         $($field:ident: $value:ty),*
     ) => {
-        paste::paste! {
+        pastey::paste! {
 
 #[binwrite]
 #[derive(Debug, BinRead)]

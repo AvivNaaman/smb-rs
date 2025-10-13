@@ -274,7 +274,7 @@ macro_rules! create_context_half {
             )+
         }
     ) => {
-    paste::paste! {
+    pastey::paste! {
 
 pub trait [<CreateContextData $struct_name Value>] : Into<CreateContext<[<CreateContext $struct_name Data>]>> {
     const CONTEXT_NAME: &'static [u8];
@@ -356,7 +356,7 @@ macro_rules! make_create_context {
     (
         $($context_type:ident : $class_name:literal, $req_type:ty, $res_type:ty, )+
     ) => {
-        paste::paste!{
+        pastey::paste!{
 
 pub enum CreateContextType {
     $(

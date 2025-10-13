@@ -1,3 +1,7 @@
+//! Directory Change Notifications
+//!
+//! [MS-FSCC 2.7](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/8e8b7296-fb56-42d7-bfec-3fc1f59d5fa0>)
+
 use smb_dtyp::binrw_util::prelude::*;
 
 /// FILE_NOTIFY_INFORMATION - [MS-FSCC 2.7.1](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/634043d7-7b39-47e9-9e26-bda64685e4c9>)

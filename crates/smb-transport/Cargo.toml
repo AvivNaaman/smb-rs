@@ -40,7 +40,7 @@ rustls-platform-verifier = { workspace = true, default-features = false, optiona
 binrw = { workspace = true }
 modular-bitfield = { workspace = true }
 time = { workspace = true }
-paste = { workspace = true }
+pastey = { workspace = true }
 maybe-async = { workspace = true }
 thiserror = { workspace = true }
 

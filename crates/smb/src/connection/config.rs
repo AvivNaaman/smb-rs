@@ -193,7 +193,7 @@ impl ConnectionConfig {
     pub const DEFAULT_TRANSACTION_SIZE: u32 = 0x1024;
 
     /// Returns the effective value to be used if [`default_transaction_size`][`Self::default_transaction_size`] is not set.
-    pub fn default_transact_size(&self) -> u32 {
+    pub fn default_transaction_size(&self) -> u32 {
         self.default_transaction_size
             .unwrap_or(Self::DEFAULT_TRANSACTION_SIZE)
     }

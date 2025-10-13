@@ -15,5 +15,5 @@ categories.workspace = true
 binrw = { workspace = true }
 modular-bitfield = { workspace = true }
 time = { workspace = true }
-paste = { workspace = true }
+pastey = { workspace = true }
 rand = { workspace = true }

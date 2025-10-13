@@ -158,7 +158,7 @@ macro_rules! test_transport {
         $($transport_config:ty: $config_value:tt)+
     ) => {
             $(
-                paste::paste!{
+                pastey::paste!{
 #[test_log::test(maybe_async::test(
     not(feature = "async"),
     async(feature = "async", tokio::test(flavor = "multi_thread"))

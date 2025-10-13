@@ -318,7 +318,7 @@ mod tests {
                     .with_dacl_security_information(true)
                     .with_sacl_security_information(true),
                 flags: QueryInfoFlags::new(),
-                file_id: guid!("0000002b-000d-0000-3100-00000d000000").into(),
+                file_id: make_guid!("0000002b-000d-0000-3100-00000d000000").into(),
                 data: GetInfoRequestData::None(()),
             }
             .into(),

@@ -325,12 +325,12 @@ impl ResourceHandle {
         match requested {
             Some(requested_length) if requested_length > max_transact_size as usize => {
                 log::warn!(
-                    "Requested transaction size (0x{requested_length:x}) exceeds max transaction size, clamping to 0x({max_transact_size:x})",
+                    "Requested transaction size (0x{requested_length:x}) exceeds max transaction size, clamping to 0x{max_transact_size:x}",
                 );
                 max_transact_size
             }
             Some(len) => len as u32,
-            None => max_transact_size.min(self.conn_info.config.default_transact_size()),
+            None => max_transact_size.min(self.conn_info.config.default_transaction_size()),
         }
     }
 
@@ -496,7 +496,7 @@ impl ResourceHandle {
     /// * `flags` - The [QueryInfoFlags] for the query request.
     /// * `output_buffer_length` - An optional maximum output buffer to use. This should be less
     /// than or equal to the negotiated max transaction size. If `None`, the default transaction size
-    /// will be used (see [`ConnectionConfig::default_transact_size`][crate::ConnectionConfig::default_transact_size]).
+    /// will be used (see [`ConnectionConfig::default_transaction_size`][crate::ConnectionConfig::default_transaction_size]).
     /// # Returns
     /// A `Result` containing the requested information.
     /// # Notes
@@ -545,7 +545,7 @@ impl ResourceHandle {
     /// * `additional_info` - The information to request on the security descriptor.
     /// * `output_buffer_length` - An optional maximum output buffer to use. This should be less
     /// than or equal to the negotiated max transaction size. If `None`, the default transaction size
-    /// will be used (see [`ConnectionConfig::default_transact_size`][crate::ConnectionConfig::default_transact_size]).
+    /// will be used (see [`ConnectionConfig::default_transaction_size`][crate::ConnectionConfig::default_transaction_size]).
     /// # Returns
     /// A `Result` containing the requested information, of type [`SecurityDescriptor`].
     pub async fn query_security_info_with_options(

@@ -401,6 +401,8 @@ impl Directory {
         Ok(ReceiverStream::new(receiver))
     }
 
+    // TODO: Doc
+
     #[cfg(feature = "multi_threaded")]
     pub fn watch_stream(
         this: &Arc<Self>,
@@ -413,17 +415,29 @@ impl Directory {
         iter_sync::NotifyDirectoryIterator::new(cancel_handle, filter, recursive)
     }
 
+    /// Returns an iterator that watches the directory for changes.
     #[cfg(feature = "single_threaded")]
     pub fn watch_stream(
         this: &Arc<Self>,
         filter: NotifyFilter,
         recursive: bool,
-    ) -> crate::Result<impl Iterator<Item = crate::Result<Vec<FileNotifyInformation>>> + '_> {
+    ) -> crate::Result<impl Iterator<Item = crate::Result<FileNotifyInformation>> + '_> {
         // Simply watch in loop and chain the results.
-        std::iter::from_fn(|| match this._watch_timeout(filter, recursive, None) {
-            Ok(result) => Some(Ok(result)),
-            Err(e) => Some(Err(e)),
+        let veci = std::iter::from_fn(move || {
+            match this
+                ._watch_options(filter, recursive, ReceiveOptions::default())
+                .into()
+            {
+                Ok(result) => Some(Ok(result)),
+                Err(e) => Some(Err(e)),
+            }
         })
+        // Flatten the results into a single item iterator
+        .flat_map(|result| match result {
+            Ok(vec) => vec.into_iter().map(Ok).collect::<Vec<_>>().into_iter(),
+            Err(e) => vec![Err(e)].into_iter(),
+        });
+        Ok(veci)
     }
 
     /// (Internal) Watches the directory for changes, with an optional timeout.
@@ -746,9 +760,6 @@ pub mod iter_stream {
 
 #[cfg(not(feature = "async"))]
 pub mod iter_sync {
-    use std::sync::atomic::{AtomicBool, Ordering};
-
-    use crate::msg_handler::AsyncMessageIds;
 
     use super::*;
     pub struct QueryDirectoryIterator<'a, T>
@@ -825,7 +836,14 @@ pub mod iter_sync {
             }
         }
     }
+}
 
+#[cfg(feature = "multi_threaded")]
+mod iter_mtd {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use crate::msg_handler::AsyncMessageIds;
     /// A helper structure that allows cancelling a [`NotifyDirectoryIterator`].
     #[derive(Clone)]
     pub struct NotifyDirectoryIteratorCanceller {
@@ -870,9 +888,9 @@ pub mod iter_sync {
             std::thread::spawn(move || {
                 directory
                     .send_cancel(&async_msg_ids)
-                    .or_else(|e| {
+                    .map_err(|e| {
                         log::error!("Error sending cancel request: {e}");
-                        Err(e)
+                        e
                     })
                     .ok()
             });
@@ -960,9 +978,9 @@ pub mod iter_sync {
                                 // Cancelled by user, exit the loop.
                                 canceller
                                     .notify_cancelled()
-                                    .or_else(|e| {
+                                    .map_err(|e| {
                                         log::error!("Error notifying cancellation: {e}");
-                                        Err(e)
+                                        e
                                     })
                                     .ok();
                                 log::debug!("Watch cancelled by user");
@@ -1017,5 +1035,5 @@ pub mod iter_sync {
     }
 }
 
-#[cfg(not(feature = "async"))]
-pub use iter_sync::{NotifyDirectoryIteratorCancellable, NotifyDirectoryIteratorCanceller};
+#[cfg(feature = "multi_threaded")]
+pub use iter_mtd::{NotifyDirectoryIteratorCancellable, NotifyDirectoryIteratorCanceller};

@@ -19,7 +19,7 @@ macro_rules! test_binrw_write {
             )+
         }: [$($bytes:expr),* $(,)?]
     ) => {
-        paste::paste! {
+        pastey::paste! {
             #[test]
             fn [<test_ $name:snake _write>]() {
                 use ::binrw::{prelude::*, io::Cursor};
@@ -55,7 +55,7 @@ macro_rules! test_binrw_read {
             )+
         }: [$($bytes:expr),* $(,)?]
     ) => {
-        paste::paste! {
+        pastey::paste! {
             #[test]
             fn [<test_ $name:snake _read>]() {
                 use ::binrw::{prelude::*, io::Cursor};

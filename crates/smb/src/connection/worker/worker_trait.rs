@@ -73,7 +73,7 @@ pub trait Worker: Sized + std::fmt::Debug {
         if options
             .async_cancel
             .as_ref()
-            .map_or(false, |c| c.load(std::sync::atomic::Ordering::SeqCst))
+            .is_some_and(|c| c.load(std::sync::atomic::Ordering::SeqCst))
         {
             return Err(Error::Cancelled("receive_next"));
         }

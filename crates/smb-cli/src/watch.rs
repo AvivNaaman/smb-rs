@@ -93,7 +93,7 @@ async fn watch_dir(
     Ok(())
 }
 
-#[cfg(not(feature = "async"))]
+#[cfg(feature = "multi_threaded")]
 fn watch_dir(
     dir: &Arc<Directory>,
     notify_filter: NotifyFilter,
@@ -112,6 +112,29 @@ fn watch_dir(
     })?;
 
     for res in iterator.take(number) {
+        match res {
+            Ok(info) => {
+                log::info!("Change detected: {:?}", info);
+            }
+            Err(e) => {
+                log::error!("Error watching directory: {}", e);
+            }
+        }
+    }
+
+    Ok(())
+}
+
+#[cfg(feature = "single_threaded")]
+fn watch_dir(
+    dir: &Arc<Directory>,
+    notify_filter: NotifyFilter,
+    recursive: bool,
+    number: usize,
+) -> Result<(), Box<dyn Error>> {
+    log::warn!("Single-threaded mode does not support clean cancellation. Press Ctrl+C to exit.");
+
+    for res in Directory::watch_stream(dir, notify_filter, recursive)?.take(number) {
         match res {
             Ok(info) => {
                 log::info!("Change detected: {:?}", info);

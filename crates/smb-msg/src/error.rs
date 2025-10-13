@@ -40,12 +40,16 @@ pub struct ErrorResponseContext {
 }
 
 impl ErrorResponse {
+    /// Locates a context by its ID,
+    /// returning a reference to it if found.
     pub fn find_context(&self, id: ErrorId) -> Option<&ErrorResponseContext> {
         self.error_data.iter().find(|c| c.error_id == id)
     }
 }
 
 impl ErrorResponseContext {
+    /// Interprets the error data as a u32, if possible.
+    /// Returns an error if the data length is not 4 bytes.
     pub fn as_u32(&self) -> crate::Result<u32> {
         if self.error_data.len() == std::mem::size_of::<u32>() {
             Ok(u32::from_le_bytes(
@@ -57,6 +61,9 @@ impl ErrorResponseContext {
             ))
         }
     }
+
+    /// Interprets the error data as a u64, if possible.
+    /// Returns an error if the data length is not 8 bytes.
     pub fn as_u64(&self) -> crate::Result<u64> {
         if self.error_data.len() == std::mem::size_of::<u64>() {
             Ok(u64::from_le_bytes(

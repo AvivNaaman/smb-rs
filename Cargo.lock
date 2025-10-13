@@ -1596,10 +1596,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "paste"
-version = "1.0.15"
+name = "pastey"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
+checksum = "35fb2e5f958ec131621fdd531e9fc186ed768cbe395337403ae56c17a74c68ec"
 
 [[package]]
 name = "pbkdf2"
@@ -2470,7 +2470,7 @@ dependencies = [
  "lz4_flex",
  "maybe-async",
  "modular-bitfield",
- "paste",
+ "pastey",
  "rand 0.8.5",
  "reqwest",
  "rust-kbkdf",
@@ -2514,7 +2514,7 @@ version = "0.10.1"
 dependencies = [
  "binrw",
  "modular-bitfield",
- "paste",
+ "pastey",
  "rand 0.8.5",
  "time",
 ]
@@ -2525,7 +2525,7 @@ version = "0.10.1"
 dependencies = [
  "binrw",
  "modular-bitfield",
- "paste",
+ "pastey",
  "smb-dtyp",
  "smb-tests",
  "thiserror 2.0.17",
@@ -2538,7 +2538,7 @@ version = "0.10.1"
 dependencies = [
  "binrw",
  "modular-bitfield",
- "paste",
+ "pastey",
  "smb-dtyp",
  "smb-fscc",
  "thiserror 2.0.17",
@@ -2552,7 +2552,7 @@ dependencies = [
  "binrw",
  "maybe-async",
  "modular-bitfield",
- "paste",
+ "pastey",
  "smb-dtyp",
  "thiserror 2.0.17",
  "time",
@@ -2575,7 +2575,7 @@ dependencies = [
  "log",
  "maybe-async",
  "modular-bitfield",
- "paste",
+ "pastey",
  "quinn",
  "rustls",
  "rustls-platform-verifier",
