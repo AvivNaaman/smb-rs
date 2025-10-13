@@ -33,8 +33,8 @@ pub use client::{Client, ClientConfig, UncPath};
 pub use connection::{Connection, ConnectionConfig};
 pub use error::Error;
 pub use resource::{
-    Directory, File, FileCreateArgs, GetLen, ReadAt, ReadAtChannel, Resource, ResourceHandle,
-    WriteAt, WriteAtChannel,
+    Directory, File, FileCreateArgs, GetLen, Pipe, PipeRpcConnection, ReadAt, ReadAtChannel,
+    Resource, ResourceHandle, WriteAt, WriteAtChannel,
 };
 pub use session::Session;
 pub use tree::{DfsRootTreeRef, Tree};

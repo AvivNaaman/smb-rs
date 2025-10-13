@@ -66,8 +66,9 @@ pub enum Error {
     #[error("Sspi error: {0}")]
     SspiError(#[from] sspi::Error),
 
-    #[error("Buffer too small to perform the operation.")]
+    #[error("Provided buffer size too small to contain {data_type}")]
     BufferTooSmall {
+        data_type: &'static str,
         required: Option<usize>,
         provided: usize,
     },

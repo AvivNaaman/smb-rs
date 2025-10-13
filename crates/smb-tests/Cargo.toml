@@ -1,0 +1,15 @@
+[package]
+name = "smb-tests"
+description = "Test utilities for smb"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+binrw = { workspace = true }

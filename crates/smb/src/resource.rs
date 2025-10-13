@@ -342,6 +342,7 @@ impl ResourceHandle {
         &self,
         mut req: QueryInfoRequest,
         output_buffer_length: Option<usize>,
+        data_type: &'static str,
     ) -> crate::Result<QueryInfoData> {
         let buffer_length = self.calc_transact_size(output_buffer_length);
         req.output_buffer_length = buffer_length;
@@ -382,11 +383,13 @@ impl ResourceHandle {
                             })
                             .transpose()?;
                         Err(Error::BufferTooSmall {
+                            data_type,
                             required: required_size,
                             provided: buffer_length as usize,
                         })
                     }
                     Status::BufferTooSmall => Err(Error::BufferTooSmall {
+                        data_type,
                         required: None,
                         provided: buffer_length as usize,
                     }),
@@ -477,6 +480,7 @@ impl ResourceHandle {
                     }),
                 },
                 output_buffer_length,
+                std::any::type_name::<QueryFileFullEaInformation>(),
             )
             .await?
             .as_file()?
@@ -514,6 +518,7 @@ impl ResourceHandle {
                     data: GetInfoRequestData::None(()),
                 },
                 output_buffer_length,
+                std::any::type_name::<T>(),
             )
             .await?
             .as_file()?
@@ -560,6 +565,7 @@ impl ResourceHandle {
                     data: GetInfoRequestData::None(()),
                 },
                 output_buffer_length,
+                "SecurityDescriptor",
             )
             .await?
             .as_security()?)
@@ -704,6 +710,7 @@ impl ResourceHandle {
                     data: GetInfoRequestData::None(()),
                 },
                 output_buffer_length,
+                std::any::type_name::<T>(),
             )
             .await?
             .as_filesystem()?

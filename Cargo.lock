@@ -2527,6 +2527,7 @@ dependencies = [
  "modular-bitfield",
  "paste",
  "smb-dtyp",
+ "smb-tests",
  "thiserror 2.0.17",
  "time",
 ]
@@ -2555,6 +2556,13 @@ dependencies = [
  "smb-dtyp",
  "thiserror 2.0.17",
  "time",
+]
+
+[[package]]
+name = "smb-tests"
+version = "0.10.1"
+dependencies = [
+ "binrw",
 ]
 
 [[package]]

@@ -96,6 +96,8 @@ macro_rules! guid {
     }};
 }
 
+pub use guid as make_guid;
+
 impl From<[u8; 16]> for Guid {
     fn from(value: [u8; 16]) -> Self {
         Self::try_from(&value).unwrap()

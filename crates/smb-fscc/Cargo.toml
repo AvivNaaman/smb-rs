@@ -19,3 +19,6 @@ modular-bitfield = { workspace = true }
 time = { workspace = true }
 paste = { workspace = true }
 thiserror = { workspace = true }
+
+[dev-dependencies]
+smb-tests = { path = "../smb-tests", version = "0.10.1" }

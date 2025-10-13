@@ -529,6 +529,14 @@ impl Directory {
         info: QueryQuotaInfo,
         output_buffer_length: Option<usize>,
     ) -> crate::Result<Vec<FileQuotaInformation>> {
+        if output_buffer_length.is_some_and(|x| x < FileQuotaInformation::MIN_SIZE) {
+            return Err(Error::BufferTooSmall {
+                data_type: "FileQuotaInformation",
+                required: FileQuotaInformation::MIN_SIZE.into(),
+                provided: output_buffer_length.unwrap(),
+            });
+        }
+
         Ok(self
             .handle
             .query_common(
@@ -544,6 +552,7 @@ impl Directory {
                     data: GetInfoRequestData::Quota(info),
                 },
                 output_buffer_length,
+                std::any::type_name::<FileQuotaInformation>(),
             )
             .await?
             .as_quota()?
@@ -596,6 +605,7 @@ impl From<DirectoryWatchResult> for crate::Result<Vec<FileNotifyInformation>> {
             DirectoryWatchResult::Cleanup => Err(Error::Cancelled("watch cleaned up by server")),
             DirectoryWatchResult::Error(e) => Err(e),
             DirectoryWatchResult::NotifyEnumDir { provided_size } => Err(Error::BufferTooSmall {
+                data_type: "FileNotifyInformation",
                 required: None,
                 provided: provided_size,
             }),
