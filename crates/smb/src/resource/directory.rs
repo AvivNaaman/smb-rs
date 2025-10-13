@@ -958,9 +958,6 @@ pub mod iter_sync {
                                 log::debug!("Watch cancelled by user");
                                 break;
                             }
-                            EnumDir => {
-                                log::warn!("Watch buffer too small to contain results");
-                            }
                             Cleanup => {
                                 // Server cleaned up the watch, exit the loop.
                                 log::debug!("Watch cleaned up by server");
@@ -968,10 +965,12 @@ pub mod iter_sync {
                                     .ok();
                                 break;
                             }
-                            Error(e) => {
-                                log::error!("Error watching directory: {e}");
-                                tx.send(Err(e)).ok();
-                                break;
+                            x => {
+                                let x: crate::Result<_> = x.into();
+                                let x = x.unwrap_err();
+                                log::debug!("Error watching directory: {x}");
+                                tx.send(Err(x)).ok();
+                                break; // Exit on error
                             }
                         }
                     }
