@@ -51,7 +51,12 @@ impl ThreadingBackend {
                 }
             }
         }
-        log::debug!("Receive loop finished.");
+        log::debug!("Receive loop finished. Cleaning up.");
+        if let Ok(mut state) = self.worker.state.lock() {
+            for (_, tx) in state.awaiting.drain() {
+                let _notify_result = tx.send(Err(Error::ConnectionStopped));
+            }
+        }
     }
 
     fn loop_send(
