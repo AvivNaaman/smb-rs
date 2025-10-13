@@ -253,6 +253,19 @@ impl Directory {
     }
 
     #[cfg(feature = "async")]
+    /// Watches the directory for changes, returning a [`Stream`][`futures_core::Stream`] of notifications.
+    ///
+    /// * See [`watch_stream_cancellable`][Self::watch_stream_cancellable] for a version that supports cancellation,
+    ///  via a [`CancellationToken`][tokio_util::sync::CancellationToken].
+    ///
+    /// # Arguments
+    /// * `filter` - The filter to use for the changes. This is a bitmask of the changes to watch for.
+    /// * `recursive` - Whether to watch the directory recursively or not.
+    /// # Returns
+    /// * A stream of [`FileNotifyInformation`] objects, containing the changes that occurred.
+    ///
+    /// # Notes
+    /// Error handling in this stream is done by returning `Result<FileNotifyInformation>`.
     pub fn watch_stream(
         this: &Arc<Self>,
         filter: NotifyFilter,
@@ -275,54 +288,111 @@ impl Directory {
         use tokio::select;
         use tokio_stream::wrappers::ReceiverStream;
 
-        let (sender, receiver) = tokio::sync::mpsc::channel(1);
-        let directory = this.clone();
+        let (sender, receiver) = tokio::sync::mpsc::channel(1024);
+        let (watch_tx, mut watch_rx) = tokio::sync::mpsc::channel(1024);
+
+        let receive_options = ReceiveOptions::default()
+            .with_timeout(Duration::MAX)
+            .with_async_msg_ids(Default::default());
+
+        // Receive task is required to avoid race conditions.
+        // if the receive task is aborted, we might miss a cancellation message.
+        // so cancelling a running watch should only be by cleanup/cancel ack messages,
+        // or stream drop.
         tokio::spawn({
-            let cancel = cancel.clone();
+            let receive_options = receive_options.clone();
+
+            let directory = this.clone();
             async move {
-                let receive_options = ReceiveOptions::default()
-                    .with_timeout(Duration::MAX)
-                    .with_async_msg_ids(Default::default());
-                while !cancel.is_cancelled() {
+                loop {
                     select! {
-                        result = directory._watch_options(filter, recursive, receive_options.clone()) => {
+                        _ = watch_tx.closed() => {
+                            // Receiver dropped, exit the loop.
+                            break;
+                        }
+                        result = directory
+                            ._watch_options(filter, recursive, receive_options.clone())
+                            =>  {
+                            let should_stop = matches!(result, DirectoryWatchResult::Cancelled | DirectoryWatchResult::Cleanup);
+                            if watch_tx.send(result).await.is_err() {
+                                break; // Receiver dropped
+                            }
+                            if should_stop {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        tokio::spawn({
+            let directory = this.clone();
+            async move {
+                let mut cancel_called = false;
+                loop {
+                    select! {
+                        biased;
+                        _ = sender.closed(), if sender.is_closed() && !cancel.is_cancelled() => {
+                            // Sender close. request a cancellation. That triggers the branch above.
+                            log::debug!("Watch receiver closed, stopping watch by raising cancellation.");
+                            if !cancel_called {
+                                cancel.cancel();
+                            }
+                        }
+                        _ = cancel.cancelled(), if !cancel_called => {
+                            // Cancellation step 1: send cancel request to server.
+                            log::debug!("Watch cancelled by user");
+                            directory.send_cancel(receive_options.async_msg_ids.as_ref().unwrap()).await.ok();
+                            cancel_called = true;
+                            // Now, wait for the server to confirm cancellation.
+                        }
+                        result = watch_rx.recv() => {
                             match result {
-                                DirectoryWatchResult::Notifications(v) => {
+                                Some(DirectoryWatchResult::Notifications(v)) => {
                                     for item in v {
                                         if sender.send(Ok(item)).await.is_err() {
-                                            break; // Receiver dropped
+                                            log::debug!("Watch notifications receiver closed, stop sending, begin cancellation.");
+                                            break;
                                         }
                                     }
                                 }
-                                DirectoryWatchResult::Cancelled => {
-                                    // Cancelled by user. Cleanup by sending cancel request, and exit.
-                                    log::debug!("Watch cancelled by user");
-                                    break;
-                                }
-                                DirectoryWatchResult::Cleanup => {
-                                    // Server cleaned up the watch, exit the loop.
-                                    log::debug!("Watch cleaned up by server");
-                                    if sender.send(Err(crate::Error::Cancelled("watch cleaned up by server"))).await.is_err() {
-                                        break; // Receiver dropped
+                                Some(DirectoryWatchResult::Cancelled) => {
+                                    if sender.is_closed() {
+                                        // Already closed, ignore - cancellation should be complete anyway.
+                                        log::debug!("Watch cancelled after sender closed, ignoring.");
+                                        break;
                                     }
+
+                                    if !cancel.is_cancelled() {
+                                        sender.send(Err(Error::Cancelled("watch cancelled unexpectedly"))).await.ok();
+                                    }
+
+                                    // Cancellation step 2: exit the loop.
+                                    log::debug!("Watch cancellation complete.");
                                     break;
                                 }
-                                DirectoryWatchResult::EnumDir => {
-                                    log::warn!("Watch buffer too small to contain results");
-                                },
-                                DirectoryWatchResult::Error(e) => {
-                                    sender.send(Err(e)).await.ok();
+                                Some(DirectoryWatchResult::Cleanup) => {
+                                    // Server cleaned up the watch, exit the loop.
+                                    log::debug!("Watch cleaned up by server. Stopping stream.");
+                                    break;
+                                }
+                                Some(x) => {
+                                    let x: crate::Result<_> = x.into();
+                                    let x = x.unwrap_err();
+                                    log::debug!("Error watching directory: {x}. Stopping stream.");
+                                    sender.send(Err(x)).await.map_err(|e| {
+                                        log::debug!("Error watching directory after sender closed: {e}. Ignoring.");
+                                        e
+                                    }).ok();
                                     break; // Exit on error
+                                },
+                                None => {
+                                    log::debug!("Watch internal task ended, stopping stream.");
+                                    break; // Internal task ended
                                 }
                             }
                         }
-                        _ = cancel.cancelled() => {
-                            // Cancelled by user. Cleanup by sending cancel request, and exit.
-                            log::debug!("Watch cancelled by user");
-                            directory.send_cancel(receive_options.async_msg_ids.as_ref().unwrap()).await.ok();
-                            break;
-                        }
-                        _ = sender.closed() => break, // Receiver dropped
                     }
                 }
             }
@@ -369,6 +439,11 @@ impl Directory {
         recursive: bool,
         options: ReceiveOptions<'_>,
     ) -> DirectoryWatchResult {
+        if !self.access.list_directory() {
+            return DirectoryWatchResult::Error(Error::MissingPermissions(
+                "list_directory".to_string(),
+            ));
+        }
         let output_buffer_length = self.calc_transact_size(None);
 
         let file_id = match self.file_id() {
@@ -398,7 +473,7 @@ impl Directory {
                         Status::Success,
                         Status::Cancelled,
                         Status::NotifyCleanup,
-                        Status::EnumDir,
+                        Status::NotifyEnumDir,
                     ],
                     ..Default::default()
                 },
@@ -411,7 +486,11 @@ impl Directory {
                 // Cancellation from CancelRequest
                 Status::U32_CANCELLED => return DirectoryWatchResult::Cancelled,
                 Status::U32_NOTIFY_CLEANUP => return DirectoryWatchResult::Cleanup,
-                Status::U32_ENUM_DIR => return DirectoryWatchResult::EnumDir,
+                Status::U32_NOTIFY_ENUM_DIR => {
+                    return DirectoryWatchResult::NotifyEnumDir {
+                        provided_size: output_buffer_length as usize,
+                    };
+                }
                 s => {
                     log::debug!("Unexpected status while watching directory: {s:?}");
                     return DirectoryWatchResult::Error(Error::UnexpectedMessageStatus(s));
@@ -486,12 +565,16 @@ impl Directory {
     }
 }
 
+/// Single result from a directory watch operation.
+///
+/// Implements `From<DirectoryWatchResult>` to convert into `Result<Vec<FileNotifyInformation>>`.
+/// Note that all states except `Notifications` are converted into errors.
 pub enum DirectoryWatchResult {
     /// A vector of file change notifications.
     Notifications(Vec<FileNotifyInformation>),
 
     /// The specified buffer size cannot contain the results.
-    EnumDir,
+    NotifyEnumDir { provided_size: usize },
 
     /// The watch was cleaned up by the server.
     ///
@@ -512,10 +595,10 @@ impl From<DirectoryWatchResult> for crate::Result<Vec<FileNotifyInformation>> {
             DirectoryWatchResult::Cancelled => Err(Error::Cancelled("watch cancelled")),
             DirectoryWatchResult::Cleanup => Err(Error::Cancelled("watch cleaned up by server")),
             DirectoryWatchResult::Error(e) => Err(e),
-            DirectoryWatchResult::EnumDir => Err(Error::InvalidArgument(
-                "Provided watch buffer size is too small to contain directory information"
-                    .to_string(),
-            )),
+            DirectoryWatchResult::NotifyEnumDir { provided_size } => Err(Error::BufferTooSmall {
+                required: None,
+                provided: provided_size,
+            }),
         }
     }
 }

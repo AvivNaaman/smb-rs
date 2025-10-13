@@ -789,7 +789,7 @@ impl<'a> DfsResolver<'a> {
             log::info!("Successfully created file on DFS referral: {ref_unc_path}",);
             return Ok(resource);
         }
-        Err(Error::DfsReferralConnectionFail(dfs_path.clone()))
+        Err(Error::DfsError(dfs_path.clone()))
     }
 
     /// Returns a list of DFS referral paths for the given input UNC path.

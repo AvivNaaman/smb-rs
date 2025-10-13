@@ -12,6 +12,10 @@ pub struct WatchCmd {
     /// Whether to watch recursively in all subdirectories.
     #[arg(short, long, default_value_t = false)]
     pub recursive: bool,
+
+    /// The number of changes to watch for before exiting. If not specified, will watch indefinitely.
+    #[arg(short)]
+    pub number: Option<usize>,
 }
 
 #[maybe_async]
@@ -40,7 +44,13 @@ pub async fn watch(cmd: &WatchCmd, cli: &Cli) -> Result<(), Box<dyn Error>> {
     let dir = Arc::new(dir);
 
     log::info!("Watching directory: {}", cmd.path);
-    watch_dir(&dir, NotifyFilter::all(), cmd.recursive).await?;
+    watch_dir(
+        &dir,
+        NotifyFilter::all(),
+        cmd.recursive,
+        cmd.number.unwrap_or(usize::MAX),
+    )
+    .await?;
 
     dir.close().await?;
     client.close().await?;
@@ -52,6 +62,7 @@ async fn watch_dir(
     dir: &Arc<Directory>,
     notify_filter: NotifyFilter,
     recursive: bool,
+    number: usize,
 ) -> Result<(), Box<dyn Error>> {
     use futures::StreamExt;
 
@@ -65,6 +76,7 @@ async fn watch_dir(
     })?;
 
     Directory::watch_stream_cancellable(dir, notify_filter, recursive, cancellation)?
+        .take(number)
         .for_each(|res| {
             match res {
                 Ok(info) => {
@@ -86,6 +98,7 @@ fn watch_dir(
     dir: &Arc<Directory>,
     notify_filter: NotifyFilter,
     recursive: bool,
+    number: usize,
 ) -> Result<(), Box<dyn Error>> {
     let iterator = Directory::watch_stream(dir, notify_filter, recursive)?;
     let canceller = iterator.get_canceller();
@@ -98,7 +111,7 @@ fn watch_dir(
         }
     })?;
 
-    for res in iterator {
+    for res in iterator.take(number) {
         match res {
             Ok(info) => {
                 log::info!("Change detected: {:?}", info);

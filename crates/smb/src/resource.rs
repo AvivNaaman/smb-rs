@@ -343,16 +343,58 @@ impl ResourceHandle {
         mut req: QueryInfoRequest,
         output_buffer_length: Option<usize>,
     ) -> crate::Result<QueryInfoData> {
-        req.output_buffer_length = self.calc_transact_size(output_buffer_length);
+        let buffer_length = self.calc_transact_size(output_buffer_length);
+        req.output_buffer_length = buffer_length;
 
         let info_type = req.info_type;
-        Ok(self
-            .send_receive(req.into())
-            .await?
-            .message
-            .content
-            .to_queryinfo()?
-            .parse(info_type)?)
+        let result = self
+            .send_recvo(
+                req.into(),
+                ReceiveOptions::new().with_status(&[
+                    Status::Success,
+                    Status::BufferOverflow,
+                    Status::BufferTooSmall,
+                    Status::InfoLengthMismatch,
+                ]),
+            )
+            .await;
+
+        match result {
+            Ok(response) => {
+                let status = response.message.header.status.try_into().unwrap();
+                match status {
+                    Status::Success => {
+                        Ok(response.message.content.to_queryinfo()?.parse(info_type)?)
+                    }
+                    Status::BufferOverflow | Status::InfoLengthMismatch => {
+                        let required_size = response
+                            .message
+                            .content
+                            .as_error()
+                            .ok()
+                            .and_then(|e| e.find_context(ErrorId::Default))
+                            .map(|ctx| match status {
+                                Status::BufferOverflow => crate::Result::Ok(ctx.as_u32()? as usize),
+                                Status::InfoLengthMismatch => {
+                                    crate::Result::Ok(ctx.as_u64()? as usize)
+                                }
+                                _ => unreachable!(),
+                            })
+                            .transpose()?;
+                        Err(Error::BufferTooSmall {
+                            required: required_size,
+                            provided: buffer_length as usize,
+                        })
+                    }
+                    Status::BufferTooSmall => Err(Error::BufferTooSmall {
+                        required: None,
+                        provided: buffer_length as usize,
+                    }),
+                    _ => unreachable!(), // already filtered by send_recvo
+                }
+            }
+            Err(e) => Err(e),
+        }
     }
 
     /// (Internal)

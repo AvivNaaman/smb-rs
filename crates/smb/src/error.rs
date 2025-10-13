@@ -4,7 +4,7 @@ use smb_transport::TransportError;
 use thiserror::Error;
 
 use crate::{UncPath, connection::TransformError, sync_helpers::AcquireError};
-use smb_msg::{Command, ErrorResponse, NegotiateDialect, Status};
+use smb_msg::{Command, ErrorResponse, Status};
 
 #[derive(Debug)]
 pub enum TimedOutTask {
@@ -13,8 +13,6 @@ pub enum TimedOutTask {
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("Unsupported dialect revision")]
-    UnsupportedDialect(NegotiateDialect),
     #[error("Unexpected Message, {0}")]
     InvalidMessage(String),
     #[error("IO Error: {0}")]
@@ -30,7 +28,7 @@ pub enum Error {
     #[error("Client connection is stopped")]
     ConnectionStopped,
 
-    #[error("Operation cancelled by user: {0}")]
+    #[error("Operation cancelled: {0}")]
     Cancelled(&'static str),
 
     #[error("Invalid state: {0}")]
@@ -39,8 +37,14 @@ pub enum Error {
     TranformFailed(TransformError),
     #[error("Crypto error: {0}")]
     CryptoError(#[from] crate::crypto::CryptoError),
+
+    /// Indicates that the negotiation phase of the SMB protocol failed.
+    ///
+    /// This might be due to incompatible protocol versions, unsupported features,
+    /// or configuration issues between the client and server.
     #[error("Negotiation error: {0}")]
     NegotiationError(String),
+
     #[error("Signature verification failed!")]
     SignatureVerificationFailed,
     #[error("Unexpected message status: {}.", Status::try_display_as_status(*.0))]
@@ -52,8 +56,22 @@ pub enum Error {
     UnexpectedMessageCommand(Command),
     #[error("Missing permissions to perform {0}")]
     MissingPermissions(String),
+
+    /// Indicates an error sourced from the underlying authentication SSPI
+    /// (Security Support Provider Interface) library.
+    ///
+    /// SSPI is used for handling authentication mechanisms like NTLM and Kerberos.
+    ///
+    /// For more references, see the [`sspi` crate documentation][sspi]
     #[error("Sspi error: {0}")]
     SspiError(#[from] sspi::Error),
+
+    #[error("Buffer too small to perform the operation.")]
+    BufferTooSmall {
+        required: Option<usize>,
+        provided: usize,
+    },
+
     #[error("Url parse error: {0}")]
     UrlParseError(#[from] url::ParseError),
     #[error("Unsupported authentication mechanism: {0}")]
@@ -79,18 +97,14 @@ pub enum Error {
     ChannelRecvError(#[from] std::sync::mpsc::RecvError),
     #[error("Unexpected message with ID {0} (exp {1}).")]
     UnexpectedMessageId(u64, u64),
-    #[error("Expected info of type {0} but got {1}")]
-    UnexpectedInformationType(u8, u8),
-    #[error("Invalid endpoint {0}")]
-    InvalidAddress(String),
     #[error("Invalid configuration: {0}")]
     InvalidConfiguration(String),
     #[error("Invalid argument: {0}")]
     InvalidArgument(String),
     #[error("Unsupported operation: {0}")]
     UnsupportedOperation(String),
-    #[error("Unable to connect to DFS referrals for: {0}")]
-    DfsReferralConnectionFail(UncPath),
+    #[error("Unable to perform DFS resolution: {0}")]
+    DfsError(UncPath),
     #[error("Not found: {0}")]
     NotFound(String),
 

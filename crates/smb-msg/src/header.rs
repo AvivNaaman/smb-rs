@@ -121,7 +121,7 @@ make_status! {
     Success = 0x00000000: "Success",
     Pending = 0x00000103: "Pending",
     NotifyCleanup = 0x0000010B: "Notify Cleanup",
-    EnumDir = 0x0000010C: "Enum Dir",
+    NotifyEnumDir = 0x0000010C: "Notify Enum Dir",
     InvalidSmb = 0x00010002: "Invalid SMB",
     SmbBadTid = 0x00050002: "SMB Bad TID",
     SmbBadCommand = 0x00160002: "SMB Bad Command",

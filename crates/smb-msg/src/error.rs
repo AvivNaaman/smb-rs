@@ -39,6 +39,37 @@ pub struct ErrorResponseContext {
     pub error_data: Vec<u8>,
 }
 
+impl ErrorResponse {
+    pub fn find_context(&self, id: ErrorId) -> Option<&ErrorResponseContext> {
+        self.error_data.iter().find(|c| c.error_id == id)
+    }
+}
+
+impl ErrorResponseContext {
+    pub fn as_u32(&self) -> crate::Result<u32> {
+        if self.error_data.len() == std::mem::size_of::<u32>() {
+            Ok(u32::from_le_bytes(
+                self.error_data.as_slice().try_into().unwrap(),
+            ))
+        } else {
+            Err(crate::SmbMsgError::InvalidData(
+                "Invalid error data length for u32".into(),
+            ))
+        }
+    }
+    pub fn as_u64(&self) -> crate::Result<u64> {
+        if self.error_data.len() == std::mem::size_of::<u64>() {
+            Ok(u64::from_le_bytes(
+                self.error_data.as_slice().try_into().unwrap(),
+            ))
+        } else {
+            Err(crate::SmbMsgError::InvalidData(
+                "Invalid error data length for u64".into(),
+            ))
+        }
+    }
+}
+
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[brw(repr(u32))]
