@@ -412,7 +412,7 @@ impl Directory {
         impl Iterator<Item = crate::Result<FileNotifyInformation>> + NotifyDirectoryIteratorCancellable,
     > {
         let cancel_handle = NotifyDirectoryIteratorCanceller::new(this);
-        iter_sync::NotifyDirectoryIterator::new(cancel_handle, filter, recursive)
+        iter_mtd::NotifyDirectoryIterator::new(cancel_handle, filter, recursive)
     }
 
     /// Returns an iterator that watches the directory for changes.
