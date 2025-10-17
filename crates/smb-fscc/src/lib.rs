@@ -16,7 +16,7 @@
 
 #![allow(unused_parens)]
 
-mod acces_masks;
+mod access_masks;
 mod chained_list;
 mod common_info;
 mod directory_info;
@@ -29,7 +29,7 @@ mod query_file_info;
 mod quota;
 mod set_file_info;
 
-pub use acces_masks::*;
+pub use access_masks::*;
 pub use chained_list::{CHAINED_ITEM_PREFIX_SIZE, ChainedItem, ChainedItemList};
 pub use common_info::*;
 pub use directory_info::*;

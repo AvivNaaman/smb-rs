@@ -7,7 +7,7 @@
 use binrw::{NullString, prelude::*};
 use modular_bitfield::prelude::*;
 
-use smb_dtyp::binrw_util::prelude::{FileTime, SizedWideString};
+use smb_dtyp::binrw_util::prelude::*;
 
 use crate::{ChainedItemList, FileAttributes};
 
@@ -76,9 +76,9 @@ pub struct FileModeInformation {
     pub no_intermediate_buffering: bool,
 
     /// When set, all operations on the file are performed synchronously. Waits in the system to synchronize I/O queuing and completion are alertable.
-    pub syncronous_io_alert: bool,
+    pub synchronous_io_alert: bool,
     /// When set, all operations on the file are performed synchronously. Waits in the system to synchronize I/O queuing and completion are not alertable.
-    pub syncronous_io_non_alert: bool,
+    pub synchronous_io_non_alert: bool,
     #[skip]
     __: B6,
 
@@ -141,14 +141,15 @@ pub struct FileNameInformation {
     #[bw(try_calc = file_name.size().try_into())]
     file_name_length: u32,
     /// The full path name of the file.
-    #[br(args(file_name_length as u64))]
+    #[br(args { size: SizedStringSize::bytes(file_name_length)})]
     pub file_name: SizedWideString,
 }
 
-/// [MS-FSCC 2.1.2.1](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/c8e77b37-3909-4fe6-a4ea-2b9d423b1ee4>):
 /// Each reparse point has a reparse tag.
 /// The reparse tag uniquely identifies the owner of that reparse point.
 /// The owner is the implementer of the file system filter driver associated with a reparse tag.
+///
+/// [MS-FSCC 2.1.2.1](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/c8e77b37-3909-4fe6-a4ea-2b9d423b1ee4>):
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[repr(u32)]

@@ -182,6 +182,14 @@ impl ConnectionConfig {
                 ));
             }
         }
+
+        if let Some(default_transaction_size) = self.default_transaction_size {
+            if default_transaction_size == 0 {
+                return Err(crate::Error::InvalidConfiguration(
+                    "Default transaction size cannot be zero".to_string(),
+                ));
+            }
+        }
         Ok(())
     }
 
@@ -190,7 +198,7 @@ impl ConnectionConfig {
         self.timeout.unwrap_or(Self::DEFAULT_TIMEOUT)
     }
 
-    pub const DEFAULT_TRANSACTION_SIZE: u32 = 0x1024;
+    pub const DEFAULT_TRANSACTION_SIZE: u32 = 0x10_000;
 
     /// Returns the effective value to be used if [`default_transaction_size`][`Self::default_transaction_size`] is not set.
     pub fn default_transaction_size(&self) -> u32 {

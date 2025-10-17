@@ -1,5 +1,7 @@
+#![allow(unused_assignments)]
+
 use binrw::io::Write;
-use binrw::{Endian, prelude::*};
+use binrw::{Endian, NamedArgs, prelude::*};
 use core::fmt::{self, Write as _};
 use std::{io::prelude::*, string::FromUtf16Error};
 
@@ -14,9 +16,68 @@ impl<T> BaseSizedString<T> {
     const CHAR_WIDTH: u64 = std::mem::size_of::<T>() as u64;
 
     /// Size of the string's data, in bytes.
+    ///
+    /// When using this struct, it is important to note how the size
+    /// of this string is calculated.
     pub fn size(&self) -> u64 {
         self.data.len() as u64 * Self::CHAR_WIDTH
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum SizedStringSize {
+    Bytes(u64),
+    Chars(u64),
+}
+
+impl SizedStringSize {
+    /// [SizedStringSize::Bytes] factory for u32 size.
+    #[inline]
+    pub fn bytes(n: u32) -> Self {
+        SizedStringSize::Bytes(n as u64)
+    }
+
+    /// [SizedStringSize::Bytes] factory for u16 size.
+    #[inline]
+    pub fn bytes16(n: u16) -> Self {
+        SizedStringSize::Bytes(n as u64)
+    }
+
+    /// [SizedStringSize::Chars] factory for u32 size.
+    #[inline]
+    pub fn chars(n: u32) -> Self {
+        SizedStringSize::Chars(n as u64)
+    }
+
+    /// [SizedStringSize::Chars] factory for u16 size.
+    #[inline]
+    pub fn chars16(n: u16) -> Self {
+        SizedStringSize::Chars(n as u64)
+    }
+
+    #[inline]
+    fn get_size_bytes<T: Sized>(&self) -> binrw::BinResult<u64> {
+        let size = match self {
+            SizedStringSize::Bytes(b) => *b,
+            SizedStringSize::Chars(c) => *c * std::mem::size_of::<T>() as u64,
+        };
+        if size % std::mem::size_of::<T>() as u64 != 0 {
+            return Err(binrw::Error::Custom {
+                pos: 0,
+                err: Box::new(format!(
+                    "SizedStringSize {:?} is not a multiple of char width {}",
+                    self,
+                    std::mem::size_of::<T>()
+                )),
+            });
+        }
+        Ok(size)
+    }
+}
+
+#[derive(NamedArgs, Debug)]
+pub struct BaseSizedStringReadArgs {
+    pub size: SizedStringSize,
 }
 
 impl<T> BinRead for BaseSizedString<T>
@@ -24,19 +85,26 @@ where
     T: BinRead,
     T::Args<'static>: Default,
 {
-    type Args<'a> = (u64,);
+    type Args<'a> = BaseSizedStringReadArgs;
 
     fn read_options<R: Read + Seek>(
         reader: &mut R,
         endian: Endian,
-        size_bytes: Self::Args<'_>,
+        args: Self::Args<'_>,
     ) -> BinResult<Self> {
-        // Size is in bytes, but we need to read in chars.
-        assert!(
-            size_bytes.0 % Self::CHAR_WIDTH == 0,
-            "Size must be a multiple of char width"
-        );
-        let size_chars = size_bytes.0 / Self::CHAR_WIDTH;
+        let size_to_use = args.size.get_size_bytes::<T>()?;
+        if size_to_use == 0 {
+            return Err(binrw::Error::Custom {
+                pos: reader.stream_position()?,
+                err: Box::new(format!(
+                    "BaseSizedString<{}> had invalid read arguments {:?} - all None or zero",
+                    std::any::type_name::<T>(),
+                    args
+                )),
+            });
+        }
+
+        let size_chars = size_to_use / Self::CHAR_WIDTH;
 
         let mut values = Vec::with_capacity(size_chars as usize);
 

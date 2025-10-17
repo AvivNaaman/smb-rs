@@ -43,11 +43,11 @@ pub struct FileFsAttributeInformation {
     /// The maximum file name component length, in characters, supported by the specified file system.
     /// The value of this field MUST be greater than zero and MUST be no more than 255.
     pub maximum_component_name_length: u32,
-    #[bw(calc = file_system_name.len() as u32)]
+    #[bw(calc = file_system_name.size() as u32)]
     pub file_system_name_length: u32,
     /// the name of the file system. This field is not null-terminated and MUST be handled as a sequence of FileSystemNameLength bytes.
     /// This field is intended to be informative only. A client SHOULD NOT infer file system type specific behavior from this field.
-    #[br(args(file_system_name_length as u64))]
+    #[br(args { size: SizedStringSize::bytes(file_system_name_length) })]
     pub file_system_name: SizedWideString,
 }
 
@@ -346,7 +346,7 @@ pub struct FileFsVolumeInformation {
     /// No specific format or content of this field is required for protocol interoperation.
     /// This value is not required to be unique.
     pub volume_serial_number: u32,
-    #[bw(calc = volume_label.len() as u32)]
+    #[bw(calc = volume_label.size() as u32)]
     pub volume_label_length: u32,
     ///  Set to TRUE if the file system supports object-oriented file system objects; set to FALSE otherwise.
     pub supports_objects: Boolean,
@@ -354,7 +354,7 @@ pub struct FileFsVolumeInformation {
     #[br(assert(reserved == 0))]
     reserved: u8,
     /// The content of this field can be a null-terminated string or can be a string padded with the space character to be VolumeLabelLength bytes long.
-    #[br(args(volume_label_length as u64))]
+    #[br(args { size: SizedStringSize::bytes(volume_label_length) })]
     pub volume_label: SizedWideString,
 }
 

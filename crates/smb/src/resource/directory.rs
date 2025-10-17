@@ -39,7 +39,6 @@ impl Directory {
     /// # Returns
     /// * A vector of [`QueryDirectoryInfoValue`] objects, containing the results of the query.
     /// * If the query returned [`Status::NoMoreFiles`], an empty vector is returned.
-    #[maybe_async]
     async fn send_query<T>(
         &self,
         pattern: &str,

@@ -31,7 +31,7 @@ pub struct QueryDirectoryRequest {
     pub output_buffer_length: u32,
     #[br(seek_before = SeekFrom::Start(file_name_offset.value as u64))]
     // map stream take until eof:
-    #[br(args(file_name_length as u64))]
+    #[br(args {size: SizedStringSize::bytes16(file_name_length)})]
     #[bw(write_with = PosMarker::write_aoff, args(&file_name_offset))]
     pub file_name: SizedWideString,
 }
@@ -151,7 +151,7 @@ mod tests {
                     reparse_tag: None,
                     short_name_length: 0,
                     short_name: [0; 12],
-                    fild_id: 562949953454203,
+                    file_id: 562949953454203,
                     file_name: ".".into(),
                 },
                 FileIdBothDirectoryInformation {
@@ -167,7 +167,7 @@ mod tests {
                     reparse_tag: None,
                     short_name_length: 0,
                     short_name: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,],
-                    fild_id: 1125899906967338,
+                    file_id: 1125899906967338,
                     file_name: "..".into(),
                 },
                 FileIdBothDirectoryInformation {
@@ -183,7 +183,7 @@ mod tests {
                     reparse_tag: None,
                     short_name_length: 0,
                     short_name: [0; 12],
-                    fild_id: 2814749767148784,
+                    file_id: 2814749767148784,
                     file_name: "a.txt".into(),
                 },
                 FileIdBothDirectoryInformation {
@@ -199,7 +199,7 @@ mod tests {
                     reparse_tag: None,
                     short_name_length: 0,
                     short_name: [0; 12],
-                    fild_id: 1125899906906297,
+                    file_id: 1125899906906297,
                     file_name: "b.txt".into(),
                 },
                 FileIdBothDirectoryInformation {
@@ -215,7 +215,7 @@ mod tests {
                     reparse_tag: None,
                     short_name_length: 0,
                     short_name: [0; 12],
-                    fild_id: 1125899906906299,
+                    file_id: 1125899906906299,
                     file_name: "c.txt".into(),
                 },
                 FileIdBothDirectoryInformation {
@@ -231,7 +231,7 @@ mod tests {
                     reparse_tag: None,
                     short_name_length: 0,
                     short_name: [0; 12],
-                    fild_id: 1125899906906300,
+                    file_id: 1125899906906300,
                     file_name: "d.txt".into(),
                 },
             ],

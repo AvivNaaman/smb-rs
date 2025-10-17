@@ -399,7 +399,7 @@ pub struct PipeWaitRequest {
     /// specifies the maximum amount of time, in units of 100 milliseconds,
     /// that the function can wait for an instance of the named pipe to be available.
     pub timeout: u64,
-    #[bw(calc = name.len() as u32)]
+    #[bw(calc = name.size() as u32)]
     name_length: u32,
     /// Whether the Timeout parameter will be ignored.
     /// FALSE Indicates that the server MUST wait forever. Any value in `timeout` must be ignored.
@@ -408,7 +408,7 @@ pub struct PipeWaitRequest {
     _padding: u8,
     /// A Unicode string that contains the name of the named pipe. Name MUST not include the "\pipe\",
     /// so if the operation was on \\server\pipe\pipename, the name would be "pipename".
-    #[br(args(name_length as u64))]
+    #[br(args {size: SizedStringSize::bytes(name_length)})]
     pub name: SizedWideString,
 }
 

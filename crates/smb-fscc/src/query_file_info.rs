@@ -12,8 +12,8 @@ use super::{
     ChainedItemList, FileAccessMask, FileAttributes, FileBasicInformation, FileFullEaInformation,
     FileModeInformation, FileNameInformation, FilePipeInformation, FilePositionInformation,
 };
-use crate::file_info_classes;
-use smb_dtyp::binrw_util::prelude::{Boolean, FileTime, SizedWideString};
+use crate::{ReparseTag, file_info_classes};
+use smb_dtyp::binrw_util::prelude::*;
 
 file_info_classes! {
     pub QueryFileInfo {
@@ -136,9 +136,9 @@ impl Deref for FileAlternateNameInformation {
 #[derive(Debug, PartialEq, Eq)]
 pub struct FileAttributeTagInformation {
     /// File attributes as a bitmask of flags.
-    pub file_attributes: u32,
+    pub file_attributes: FileAttributes,
     /// The reparse point tag value. If the file is not a reparse point, this value is undefined and should not be used.
-    pub reparse_tag: u32,
+    pub reparse_tag: ReparseTag,
 }
 
 /// This information class is used to query compression information for a file.
@@ -371,7 +371,7 @@ pub struct FileStreamInformationInner {
     /// The number of bytes that are allocated for the stream.
     pub stream_allocation_size: u64,
     /// The name of the stream in Unicode.
-    #[br(args(stream_name_length as u64))]
+    #[br(args { size: SizedStringSize::bytes(stream_name_length)})]
     pub stream_name: SizedWideString,
 }
 

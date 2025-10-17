@@ -86,7 +86,7 @@ macro_rules! query_dir_type {
                 )*
 
                 /// The name of the file.
-                #[br(args(_file_name_length as u64))]
+                 #[br(args { size: SizedStringSize::bytes(_file_name_length)})]
                 pub file_name: SizedWideString,
             }
         }
@@ -120,7 +120,7 @@ pub struct FileDirectoryInformation {
     #[bw(try_calc = file_name.size().try_into())]
     _file_name_length: u32,
     /// The name of the file.
-    #[br(args(_file_name_length as u64))]
+    #[br(args { size: SizedStringSize::bytes(_file_name_length)})]
     pub file_name: SizedWideString,
 }
 
@@ -211,7 +211,7 @@ query_dir_type! {
         #[bw(calc = 0)]
         _reserved2: u16,
         /// The file ID.
-        pub fild_id: u64,
+        pub file_id: u64,
     }
 }
 
@@ -252,7 +252,7 @@ pub struct FileNamesInformation {
     #[bw(try_calc = file_name.size().try_into())]
     pub file_name_length: u32,
     /// The name of the file.
-    #[br(args(file_name_length as u64))]
+    #[br(args { size: SizedStringSize::bytes(file_name_length) })]
     pub file_name: SizedWideString,
 }
 

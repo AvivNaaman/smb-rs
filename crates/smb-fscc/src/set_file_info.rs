@@ -8,7 +8,7 @@ use std::ops::Deref;
 
 use crate::file_info_classes;
 
-use smb_dtyp::binrw_util::prelude::{Boolean, SizedWideString};
+use smb_dtyp::binrw_util::prelude::*;
 
 use super::{
     FileBasicInformation, FileFullEaInformation, FileModeInformation, FileNameInformation,
@@ -69,7 +69,7 @@ impl Default for FileDispositionInformation {
 /// [MS-FSCC 2.4.42.2](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/52aa0b70-8094-4971-862d-79793f41e6a8>) - FileRenameInformation for SMB2 protocol
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
-pub struct FileRenameInformation2 {
+pub struct FileRenameInformation {
     /// Set to TRUE to indicate that if a file with the given name already exists, it should be replaced with the given file. Set to FALSE if the rename operation should fail if a file with the given name already exists.
     pub replace_if_exists: Boolean,
     #[bw(calc = 0)]
@@ -83,10 +83,9 @@ pub struct FileRenameInformation2 {
     #[bw(try_calc = file_name.size().try_into())]
     _file_name_length: u32,
     /// The new name for the file, including the full path.
-    #[br(args(_file_name_length as u64))]
+    #[br(args { size: SizedStringSize::bytes(_file_name_length) })]
     pub file_name: SizedWideString,
 }
-type FileRenameInformation = FileRenameInformation2;
 
 /// This information class is used to set but not to query the allocation size for a file.
 /// The file system is passed a 64-bit signed integer containing the file allocation size, in bytes.
@@ -123,7 +122,7 @@ pub struct FileLinkInformation {
     #[bw(try_calc = file_name.size().try_into())]
     _file_name_length: u32,
     /// The name to be assigned to the newly created link.
-    #[br(args(_file_name_length as u64))]
+    #[br(args {size: SizedStringSize::bytes(_file_name_length)})]
     pub file_name: SizedWideString,
 }
 

@@ -93,7 +93,7 @@ pub struct CreateRequest {
 
     #[brw(align_before = 8)]
     #[bw(write_with = PosMarker::write_aoff, args(&_name_offset))]
-    #[br(args(name_length as u64))]
+    #[br(args { size: SizedStringSize::bytes16(name_length) })]
     pub name: SizedWideString,
 
     /// Use the `CreateContextReqData::first_...` function family to get the first context of a specific type.

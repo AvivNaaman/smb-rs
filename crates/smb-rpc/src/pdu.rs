@@ -258,7 +258,7 @@ pub struct DcRpcCoPktBindAck {
 
     #[bw(calc = port_spec.size() as u16)]
     port_spec_len: u16,
-    #[br(args(port_spec_len as u64))]
+    #[br(args { size: SizedStringSize::bytes16(port_spec_len) })]
     pub port_spec: SizedAnsiString,
 
     #[br(align_before = 4)]

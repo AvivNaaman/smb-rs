@@ -14,7 +14,7 @@ pub struct FileNotifyInformation {
     pub action: NotifyAction,
     #[bw(try_calc = file_name.size().try_into())]
     file_name_length: u32,
-    #[br(args(file_name_length.into()))]
+    #[br(args { size: SizedStringSize::Bytes(file_name_length.into())})]
     pub file_name: SizedWideString,
 }
 

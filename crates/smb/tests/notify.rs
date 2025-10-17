@@ -107,7 +107,7 @@ async fn do_test_smb_notify(
 
 #[maybe_async::async_impl]
 async fn delete_many_files(share_path: &'static str, rng_numbers: &[u32]) -> smb::Result<()> {
-    // for eachg number, iterate and call delete_from_another_connection. Wait for all at the end.
+    // for each number, iterate and call delete_from_another_connection. Wait for all at the end.
     use futures_util::future::join_all;
 
     // Connect the client:
@@ -148,7 +148,7 @@ async fn delete_many_files(share_path: &'static str, rng_numbers: &[u32]) -> smb
 // The same as above, but with threads:
 #[maybe_async::sync_impl]
 fn delete_many_files(share_path: &'static str, rng_numbers: &[u32]) -> smb::Result<()> {
-    // for eachg number, iterate and call delete_from_another_connection. Wait for all at the end.
+    // for each number, iterate and call delete_from_another_connection. Wait for all at the end.
     use std::sync::mpsc;
     use std::thread;
     let (tx, rx) = mpsc::channel();

@@ -106,7 +106,7 @@ mod tests {
 
     #[test]
     fn test_set_info_request_write() {
-        let set_info = SetFileInfo::RenameInformation(FileRenameInformation2 {
+        let set_info = SetFileInfo::RenameInformation(FileRenameInformation {
             replace_if_exists: false.into(),
             root_directory: 0,
             file_name: "hello\\myNewFile.txt".into(),
