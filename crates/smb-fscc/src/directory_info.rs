@@ -333,18 +333,6 @@ mod tests {
     use smb_tests::test_binrw;
     use time::macros::datetime;
 
-    // A test for `FileIdBothDirectoryInformation` exists in `smv-msg` crate (for `QueryDirectoryRequest`).
-    // pub Directory = 0x01,
-    //     pub FullDirectory = 0x02,
-    //     pub IdFullDirectory = 0x26,
-    //     pub BothDirectory = 0x03,
-    //     pub Names = 0x0c,
-    //     pub IdExtdDirectory = 0x3c,
-
-    //     pub Id64ExtdDirectory = 0x4e,
-    //     pub Id64ExtdBothDirectory = 0x4f,
-    //     pub IdAllExtdDirectory = 0x50,
-
     macro_rules! make_id_all_extd_both_directory {
         ($file_index:expr, $created:expr, $access_write_time:expr, $change_time:expr, $file_name:expr, $file_id:literal) => {{
             let mut result = FileIdAllExtdBothDirectoryInformation::make_common_test_dir(
@@ -363,6 +351,41 @@ mod tests {
         }};
         ($file_index:expr, $created:expr, $access_time:expr, $write_time:expr, $change_time:expr, $file_name:expr, $file_id:literal, $size:literal, $alloc_size:literal, $ea_size:literal) => {{
             let mut result = make_id_all_extd_both_directory!(
+                $file_index,
+                $created,
+                $access_time,
+                $change_time,
+                $file_name,
+                $file_id
+            );
+            result.last_access_time = $access_time.into();
+            result.last_write_time = $write_time.into();
+            result.end_of_file = $size;
+            result.allocation_size = $alloc_size;
+            result.ea_size = Some($ea_size);
+            result.file_attributes = FileAttributes::new().with_archive(true);
+            result
+        }};
+    }
+
+    macro_rules! make_id_all_extd_directory {
+        ($file_index:expr, $created:expr, $access_write_time:expr, $change_time:expr, $file_name:expr, $file_id:literal) => {{
+            let mut result = FileIdAllExtdDirectoryInformation::make_common_test_dir(
+                $file_index,
+                $created,
+                $access_write_time,
+                $access_write_time,
+                $change_time,
+                $file_name,
+            );
+
+            result.file_id = $file_id;
+            result.file_id_128 = $file_id;
+
+            result
+        }};
+        ($file_index:expr, $created:expr, $access_time:expr, $write_time:expr, $change_time:expr, $file_name:expr, $file_id:literal, $size:literal, $alloc_size:literal, $ea_size:literal) => {{
+            let mut result = make_id_all_extd_directory!(
                 $file_index,
                 $created,
                 $access_time,
@@ -414,6 +437,252 @@ mod tests {
         }};
     }
 
+    macro_rules! make_names {
+        ($file_index:expr, $created:expr, $access_write_time:expr, $change_time:expr, $file_name:expr, $file_id:literal) => {{
+            FileNamesInformation {
+                file_index: $file_index,
+                file_name: SizedWideString::from($file_name),
+            }
+        }};
+        ($file_index:expr, $created:expr, $access_time:expr, $write_time:expr, $change_time:expr, $file_name:expr, $file_id:literal, $size:literal, $alloc_size:literal, $ea_size:literal) => {{
+            make_names!(
+                $file_index,
+                $created,
+                $access_time,
+                $change_time,
+                $file_name,
+                $file_id
+            )
+        }};
+    }
+    macro_rules! make_directory {
+        ($file_index:expr, $created:expr, $access_write_time:expr, $change_time:expr, $file_name:expr, $file_id:literal) => {{
+            FileDirectoryInformation {
+                file_index: $file_index,
+                creation_time: $created.into(),
+                last_access_time: $access_write_time.into(),
+                last_write_time: $access_write_time.into(),
+                change_time: $change_time.into(),
+                end_of_file: 0,
+                allocation_size: 0,
+                file_attributes: FileAttributes::new().with_directory(true),
+                file_name: SizedWideString::from($file_name),
+            }
+        }};
+        ($file_index:expr, $created:expr, $access_time:expr, $write_time:expr, $change_time:expr, $file_name:expr, $file_id:literal, $size:literal, $alloc_size:literal, $ea_size:literal) => {{
+            let mut result = make_directory!(
+                $file_index,
+                $created,
+                $access_time,
+                $change_time,
+                $file_name,
+                $file_id
+            );
+            result.last_access_time = $access_time.into();
+            result.last_write_time = $write_time.into();
+            result.end_of_file = $size;
+            result.allocation_size = $alloc_size;
+            result.file_attributes = FileAttributes::new().with_archive(true);
+            result
+        }};
+    }
+
+    macro_rules! make_id64_extd_both_directory {
+        ($file_index:expr, $created:expr, $access_write_time:expr, $change_time:expr, $file_name:expr, $file_id:literal) => {{
+            let mut result = FileId64ExtdBothDirectoryInformation::make_common_test_dir(
+                $file_index,
+                $created,
+                $access_write_time,
+                $access_write_time,
+                $change_time,
+                $file_name,
+            );
+
+            result.file_id = $file_id;
+
+            result
+        }};
+        ($file_index:expr, $created:expr, $access_time:expr, $write_time:expr, $change_time:expr, $file_name:expr, $file_id:literal, $size:literal, $alloc_size:literal, $ea_size:literal) => {{
+            let mut result = make_id64_extd_both_directory!(
+                $file_index,
+                $created,
+                $access_time,
+                $change_time,
+                $file_name,
+                $file_id
+            );
+            result.last_access_time = $access_time.into();
+            result.last_write_time = $write_time.into();
+            result.end_of_file = $size;
+            result.allocation_size = $alloc_size;
+            result.ea_size = Some($ea_size);
+            result.file_attributes = FileAttributes::new().with_archive(true);
+            result
+        }};
+    }
+
+    macro_rules! make_id_extd_directory {
+        ($file_index:expr, $created:expr, $access_write_time:expr, $change_time:expr, $file_name:expr, $file_id:literal) => {{
+            let mut result = FileIdExtdDirectoryInformation::make_common_test_dir(
+                $file_index,
+                $created,
+                $access_write_time,
+                $access_write_time,
+                $change_time,
+                $file_name,
+            );
+
+            result.file_id = $file_id;
+
+            result
+        }};
+        ($file_index:expr, $created:expr, $access_time:expr, $write_time:expr, $change_time:expr, $file_name:expr, $file_id:literal, $size:literal, $alloc_size:literal, $ea_size:literal) => {{
+            let mut result = make_id_extd_directory!(
+                $file_index,
+                $created,
+                $access_time,
+                $change_time,
+                $file_name,
+                $file_id
+            );
+            result.last_access_time = $access_time.into();
+            result.last_write_time = $write_time.into();
+            result.end_of_file = $size;
+            result.allocation_size = $alloc_size;
+            result.ea_size = Some($ea_size);
+            result.file_attributes = FileAttributes::new().with_archive(true);
+            result
+        }};
+    }
+
+    macro_rules! make_id64_extd_directory {
+        ($file_index:expr, $created:expr, $access_write_time:expr, $change_time:expr, $file_name:expr, $file_id:literal) => {{
+            let mut result = FileId64ExtdDirectoryInformation::make_common_test_dir(
+                $file_index,
+                $created,
+                $access_write_time,
+                $access_write_time,
+                $change_time,
+                $file_name,
+            );
+
+            result.file_id = $file_id;
+
+            result
+        }};
+        ($file_index:expr, $created:expr, $access_time:expr, $write_time:expr, $change_time:expr, $file_name:expr, $file_id:literal, $size:literal, $alloc_size:literal, $ea_size:literal) => {{
+            let mut result = make_id64_extd_directory!(
+                $file_index,
+                $created,
+                $access_time,
+                $change_time,
+                $file_name,
+                $file_id
+            );
+            result.last_access_time = $access_time.into();
+            result.last_write_time = $write_time.into();
+            result.end_of_file = $size;
+            result.allocation_size = $alloc_size;
+            result.ea_size = Some($ea_size);
+            result.file_attributes = FileAttributes::new().with_archive(true);
+            result
+        }};
+    }
+
+    macro_rules! make_id_full_directory {
+        ($file_index:expr, $created:expr, $access_write_time:expr, $change_time:expr, $file_name:expr, $file_id:literal) => {{
+            let mut result = FileIdFullDirectoryInformation::make_common_test_dir(
+                $file_index,
+                $created,
+                $access_write_time,
+                $access_write_time,
+                $change_time,
+                $file_name,
+            );
+
+            result.file_id = $file_id;
+
+            result
+        }};
+        ($file_index:expr, $created:expr, $access_time:expr, $write_time:expr, $change_time:expr, $file_name:expr, $file_id:literal, $size:literal, $alloc_size:literal, $ea_size:literal) => {{
+            let mut result = make_id_full_directory!(
+                $file_index,
+                $created,
+                $access_time,
+                $change_time,
+                $file_name,
+                $file_id
+            );
+            result.last_access_time = $access_time.into();
+            result.last_write_time = $write_time.into();
+            result.end_of_file = $size;
+            result.allocation_size = $alloc_size;
+            result.ea_size = Some($ea_size);
+            result.file_attributes = FileAttributes::new().with_archive(true);
+            result
+        }};
+    }
+
+    macro_rules! make_full_directory {
+        ($file_index:expr, $created:expr, $access_write_time:expr, $change_time:expr, $file_name:expr, $file_id:literal) => {{
+            FileFullDirectoryInformation::make_common_test_dir(
+                $file_index,
+                $created,
+                $access_write_time,
+                $access_write_time,
+                $change_time,
+                $file_name,
+            )
+        }};
+        ($file_index:expr, $created:expr, $access_time:expr, $write_time:expr, $change_time:expr, $file_name:expr, $file_id:literal, $size:literal, $alloc_size:literal, $ea_size:literal) => {{
+            let mut result = make_full_directory!(
+                $file_index,
+                $created,
+                $access_time,
+                $change_time,
+                $file_name,
+                $file_id
+            );
+            result.last_access_time = $access_time.into();
+            result.last_write_time = $write_time.into();
+            result.end_of_file = $size;
+            result.allocation_size = $alloc_size;
+            result.ea_size = Some($ea_size);
+            result.file_attributes = FileAttributes::new().with_archive(true);
+            result
+        }};
+    }
+
+    macro_rules! make_both_directory {
+        ($file_index:expr, $created:expr, $access_write_time:expr, $change_time:expr, $file_name:expr, $file_id:literal) => {{
+            FileBothDirectoryInformation::make_common_test_dir(
+                $file_index,
+                $created,
+                $access_write_time,
+                $access_write_time,
+                $change_time,
+                $file_name,
+            )
+        }};
+        ($file_index:expr, $created:expr, $access_time:expr, $write_time:expr, $change_time:expr, $file_name:expr, $file_id:literal, $size:literal, $alloc_size:literal, $ea_size:literal) => {{
+            let mut result = make_both_directory!(
+                $file_index,
+                $created,
+                $access_time,
+                $change_time,
+                $file_name,
+                $file_id
+            );
+            result.last_access_time = $access_time.into();
+            result.last_write_time = $write_time.into();
+            result.end_of_file = $size;
+            result.allocation_size = $alloc_size;
+            result.ea_size = Some($ea_size);
+            result.file_attributes = FileAttributes::new().with_archive(true);
+            result
+        }};
+    }
+
     // Some might think I'm more of a POSIX guy, since I use macOS,
     // but tbh, I actually love windows, especially legacy edge DLLs,
     // which are the content of this test directory listing dump!
@@ -431,8 +700,8 @@ mod tests {
             [<$struct_name TestList>]: [<$struct_name TestList>]::from(vec![
                 [<make_ $struct_name:snake>]!(0, datetime!(2025-06-19 10:22:45.5282237), datetime!(2025-06-19 10:23:34.0915427), datetime!(2025-06-19 10:23:34.3246503), ".", 2814749767159075),
                 [<make_ $struct_name:snake>]!(0, datetime!(2025-04-04 22:18:11.7121314), datetime!(2025-10-13 17:58:05.9388514), datetime!(2025-10-13 17:58:05.9388514), "..", 1970324836975477),
-                [<make_ $struct_name:snake>]!(0,datetime!(2025-06-19 10:22:45.6273816),datetime!(2025-06-19 10:22:50.4411921),datetime!(2025-04-04 23:07:27.4722084),datetime!(2025-06-19 10:22:50.4411921),"BingMaps.dll",0x6900000000cd5a,16_757_760,16760832,128),
-                [<make_ $struct_name:snake>]!(0, datetime!(2025-06-19 10:22:50.8778222), datetime!(2025-06-19 10:22:54.6758575), datetime!(2025-04-13 23:00:30.4054831), datetime!(2025-06-19 10:22:54.6758575), "edgehtml.dll", 0x3300000000cd68, 51_103_232, 51105792, 120 ),
+                [<make_ $struct_name:snake>]!(0, datetime!(2025-06-19 10:22:45.6273816), datetime!(2025-06-19 10:22:50.4411921), datetime!(2025-04-04 23:07:27.4722084), datetime!(2025-06-19 10:22:50.4411921),"BingMaps.dll",0x6900000000cd5a,16_757_760,16760832,128),
+                [<make_ $struct_name:snake>]!(0, datetime!(2025-06-19 10:22:50.8778222), datetime!(2025-06-19 10:22:54.6758575), datetime!(2025-04-13 23:00:30.4054831), datetime!(2025-10-17 16:01:03.3860342), "edgehtml.dll", 0x3300000000cd68, 51_103_232, 51105792, 120 ),
                 [<make_ $struct_name:snake>]!(0, datetime!(2025-06-19 10:23:09.8691232), datetime!(2025-06-19 10:23:14.1817596), datetime!(2025-04-13 23:00:31.9102213), datetime!(2025-06-19 10:23:14.1817596), "mshtml.dll", 0x1000000000ce21, 42_358_272, 42360832, 120),
             ]) => $data
         }
@@ -447,7 +716,18 @@ mod tests {
     }
 
     make_dir_test!(
-        IdAllExtdBothDirectory: "80000000000000003d22211904e1db01e34e133604e1db01e34e133604e1db01a7e0363604e1db01000000000000000000000000000000001000000002000000000000000000000023cd000000000a0023cd000000000a00000000000000000000000000000000000000000000000000000000000000000000002e0000000000800000000000000022fdbb73afa5db0162f647ed6a3cdc0162f647ed6a3cdc0162f647ed6a3cdc01000000000000000000000000000000001000000004000000000000000000000075030000000007007503000000000700000000000000000000000000000000000000000000000000000000000000000000002e002e00000098000000000000009843301904e1db0111cb0e1c04e1db01242f8155b6a5db0111cb0e1c04e1db0100b4ff000000000000c0ff0000000000200000001800000080000000000000005acd0000000069005acd00000000690000000000000000000000000000000000000000000000000000000000000000000000420069006e0067004d006100700073002e0064006c006c000000000000009800000000000000ee6a511c04e1db01aff3941e04e1db012f9aa1dac7acdb01aff3941e04e1db0100c60b030000000000d00b03000000002000000018000000780000000000000068cd00000000330068cd000000003300000000000000000000000000000000000000000000000000000000000000000000006500640067006500680074006d006c002e0064006c006c000000000000000000000000000000a042a32704e1db01fc50352a04e1db01053587dbc7acdb01fc50352a04e1db01005686020000000000608602000000002000000014000000780000000000000021ce00000000100021ce000000001000000000000000000000000000000000000000000000000000000000000000000000006d007300680074006d006c002e0064006c006c00",
-        IdBothDirectory: "70000000000000003d22211904e1db01e34e133604e1db01e34e133604e1db01a7e0363604e1db01000000000000000000000000000000001000000002000000000000000000000000000000000000000000000000000000000000000000000023cd000000000a002e00000000000000700000000000000022fdbb73afa5db0162f647ed6a3cdc0162f647ed6a3cdc0162f647ed6a3cdc01000000000000000000000000000000001000000004000000000000000000000000000000000000000000000000000000000000000000000075030000000007002e002e000000000080000000000000009843301904e1db0111cb0e1c04e1db01242f8155b6a5db0111cb0e1c04e1db0100b4ff000000000000c0ff0000000000200000001800000080000000000000000000000000000000000000000000000000000000000000005acd000000006900420069006e0067004d006100700073002e0064006c006c008000000000000000ee6a511c04e1db01aff3941e04e1db012f9aa1dac7acdb01f6702a3d7f3fdc0100c60b030000000000d00b03000000002000000018000000780000000000000000000000000000000000000000000000000000000000000068cd0000000033006500640067006500680074006d006c002e0064006c006c000000000000000000a042a32704e1db01fc50352a04e1db01053587dbc7acdb01fc50352a04e1db01005686020000000000608602000000002000000014000000780000000000000000000000000000000000000000000000000000000000000021ce0000000010006d007300680074006d006c002e0064006c006c00"
+        IdAllExtdBothDirectory: "80000000000000003d22211904e1db01e34e133604e1db01e34e133604e1db01a7e0363604e1db01000000000000000000000000000000001000000002000000000000000000000023cd000000000a0023cd000000000a00000000000000000000000000000000000000000000000000000000000000000000002e0000000000800000000000000022fdbb73afa5db0162f647ed6a3cdc0162f647ed6a3cdc0162f647ed6a3cdc01000000000000000000000000000000001000000004000000000000000000000075030000000007007503000000000700000000000000000000000000000000000000000000000000000000000000000000002e002e00000098000000000000009843301904e1db0111cb0e1c04e1db01242f8155b6a5db0111cb0e1c04e1db0100b4ff000000000000c0ff0000000000200000001800000080000000000000005acd0000000069005acd00000000690000000000000000000000000000000000000000000000000000000000000000000000420069006e0067004d006100700073002e0064006c006c000000000000009800000000000000ee6a511c04e1db01aff3941e04e1db012f9aa1dac7acdb01f6702a3d7f3fdc0100c60b030000000000d00b03000000002000000018000000780000000000000068cd00000000330068cd000000003300000000000000000000000000000000000000000000000000000000000000000000006500640067006500680074006d006c002e0064006c006c000000000000000000000000000000a042a32704e1db01fc50352a04e1db01053587dbc7acdb01fc50352a04e1db01005686020000000000608602000000002000000014000000780000000000000021ce00000000100021ce000000001000000000000000000000000000000000000000000000000000000000000000000000006d007300680074006d006c002e0064006c006c00",
+        IdBothDirectory: "70000000000000003d22211904e1db01e34e133604e1db01e34e133604e1db01a7e0363604e1db01000000000000000000000000000000001000000002000000000000000000000000000000000000000000000000000000000000000000000023cd000000000a002e00000000000000700000000000000022fdbb73afa5db0162f647ed6a3cdc0162f647ed6a3cdc0162f647ed6a3cdc01000000000000000000000000000000001000000004000000000000000000000000000000000000000000000000000000000000000000000075030000000007002e002e000000000080000000000000009843301904e1db0111cb0e1c04e1db01242f8155b6a5db0111cb0e1c04e1db0100b4ff000000000000c0ff0000000000200000001800000080000000000000000000000000000000000000000000000000000000000000005acd000000006900420069006e0067004d006100700073002e0064006c006c008000000000000000ee6a511c04e1db01aff3941e04e1db012f9aa1dac7acdb01f6702a3d7f3fdc0100c60b030000000000d00b03000000002000000018000000780000000000000000000000000000000000000000000000000000000000000068cd0000000033006500640067006500680074006d006c002e0064006c006c000000000000000000a042a32704e1db01fc50352a04e1db01053587dbc7acdb01fc50352a04e1db01005686020000000000608602000000002000000014000000780000000000000000000000000000000000000000000000000000000000000021ce0000000010006d007300680074006d006c002e0064006c006c00",
+        IdAllExtdDirectory: "68000000000000003d22211904e1db01e34e133604e1db01e34e133604e1db01a7e0363604e1db01000000000000000000000000000000001000000002000000000000000000000023cd000000000a0023cd000000000a0000000000000000002e00000000000000680000000000000022fdbb73afa5db0162f647ed6a3cdc0162f647ed6a3cdc0162f647ed6a3cdc0100000000000000000000000000000000100000000400000000000000000000007503000000000700750300000000070000000000000000002e002e000000000078000000000000009843301904e1db0111cb0e1c04e1db01242f8155b6a5db0111cb0e1c04e1db0100b4ff000000000000c0ff0000000000200000001800000080000000000000005acd0000000069005acd0000000069000000000000000000420069006e0067004d006100700073002e0064006c006c007800000000000000ee6a511c04e1db01aff3941e04e1db012f9aa1dac7acdb01f6702a3d7f3fdc0100c60b030000000000d00b03000000002000000018000000780000000000000068cd00000000330068cd00000000330000000000000000006500640067006500680074006d006c002e0064006c006c000000000000000000a042a32704e1db01fc50352a04e1db01053587dbc7acdb01fc50352a04e1db01005686020000000000608602000000002000000014000000780000000000000021ce00000000100021ce00000000100000000000000000006d007300680074006d006c002e0064006c006c00",
+        Names: "1000000000000000020000002e0000001000000000000000040000002e002e00280000000000000018000000420069006e0067004d006100700073002e0064006c006c00000000002800000000000000180000006500640067006500680074006d006c002e0064006c006c00000000000000000000000000140000006d007300680074006d006c002e0064006c006c00",
+        Id64ExtdBothDirectory: "70000000000000003d22211904e1db01e34e133604e1db01e34e133604e1db01a7e0363604e1db01000000000000000000000000000000001000000002000000000000000000000023cd000000000a0000000000000000000000000000000000000000000000000000002e0000000000700000000000000022fdbb73afa5db0162f647ed6a3cdc0162f647ed6a3cdc0162f647ed6a3cdc010000000000000000000000000000000010000000040000000000000000000000750300000000070000000000000000000000000000000000000000000000000000002e002e00000088000000000000009843301904e1db0111cb0e1c04e1db01242f8155b6a5db0111cb0e1c04e1db0100b4ff000000000000c0ff0000000000200000001800000080000000000000005acd0000000069000000000000000000000000000000000000000000000000000000420069006e0067004d006100700073002e0064006c006c000000000000008800000000000000ee6a511c04e1db01aff3941e04e1db012f9aa1dac7acdb01f6702a3d7f3fdc0100c60b030000000000d00b03000000002000000018000000780000000000000068cd00000000330000000000000000000000000000000000000000000000000000006500640067006500680074006d006c002e0064006c006c000000000000000000000000000000a042a32704e1db01fc50352a04e1db01053587dbc7acdb01fc50352a04e1db01005686020000000000608602000000002000000014000000780000000000000021ce00000000100000000000000000000000000000000000000000000000000000006d007300680074006d006c002e0064006c006c00",
+        Id64ExtdDirectory: "58000000000000003d22211904e1db01e34e133604e1db01e34e133604e1db01a7e0363604e1db01000000000000000000000000000000001000000002000000000000000000000023cd000000000a002e00000000000000580000000000000022fdbb73afa5db0162f647ed6a3cdc0162f647ed6a3cdc0162f647ed6a3cdc01000000000000000000000000000000001000000004000000000000000000000075030000000007002e002e000000000068000000000000009843301904e1db0111cb0e1c04e1db01242f8155b6a5db0111cb0e1c04e1db0100b4ff000000000000c0ff0000000000200000001800000080000000000000005acd000000006900420069006e0067004d006100700073002e0064006c006c006800000000000000ee6a511c04e1db01aff3941e04e1db012f9aa1dac7acdb01f6702a3d7f3fdc0100c60b030000000000d00b03000000002000000018000000780000000000000068cd0000000033006500640067006500680074006d006c002e0064006c006c000000000000000000a042a32704e1db01fc50352a04e1db01053587dbc7acdb01fc50352a04e1db01005686020000000000608602000000002000000014000000780000000000000021ce0000000010006d007300680074006d006c002e0064006c006c00",
+        IdExtdDirectory: "60000000000000003d22211904e1db01e34e133604e1db01e34e133604e1db01a7e0363604e1db01000000000000000000000000000000001000000002000000000000000000000023cd000000000a0000000000000000002e00000000000000600000000000000022fdbb73afa5db0162f647ed6a3cdc0162f647ed6a3cdc0162f647ed6a3cdc010000000000000000000000000000000010000000040000000000000000000000750300000000070000000000000000002e002e000000000070000000000000009843301904e1db0111cb0e1c04e1db01242f8155b6a5db0111cb0e1c04e1db0100b4ff000000000000c0ff0000000000200000001800000080000000000000005acd0000000069000000000000000000420069006e0067004d006100700073002e0064006c006c007000000000000000ee6a511c04e1db01aff3941e04e1db012f9aa1dac7acdb01f6702a3d7f3fdc0100c60b030000000000d00b03000000002000000018000000780000000000000068cd00000000330000000000000000006500640067006500680074006d006c002e0064006c006c000000000000000000a042a32704e1db01fc50352a04e1db01053587dbc7acdb01fc50352a04e1db01005686020000000000608602000000002000000014000000780000000000000021ce00000000100000000000000000006d007300680074006d006c002e0064006c006c00",
+        BothDirectory: "60000000000000003d22211904e1db01e34e133604e1db01e34e133604e1db01a7e0363604e1db010000000000000000000000000000000010000000020000000000000000000000000000000000000000000000000000000000000000002e00680000000000000022fdbb73afa5db0162f647ed6a3cdc0162f647ed6a3cdc0162f647ed6a3cdc010000000000000000000000000000000010000000040000000000000000000000000000000000000000000000000000000000000000002e002e0000000000000078000000000000009843301904e1db0111cb0e1c04e1db01242f8155b6a5db0111cb0e1c04e1db0100b4ff000000000000c0ff00000000002000000018000000800000000000000000000000000000000000000000000000000000000000420069006e0067004d006100700073002e0064006c006c0000007800000000000000ee6a511c04e1db01aff3941e04e1db012f9aa1dac7acdb01f6702a3d7f3fdc0100c60b030000000000d00b030000000020000000180000007800000000000000000000000000000000000000000000000000000000006500640067006500680074006d006c002e0064006c006c0000000000000000000000a042a32704e1db01fc50352a04e1db01053587dbc7acdb01fc50352a04e1db010056860200000000006086020000000020000000140000007800000000000000000000000000000000000000000000000000000000006d007300680074006d006c002e0064006c006c00",
+        IdFullDirectory: "58000000000000003d22211904e1db01e34e133604e1db01e34e133604e1db01a7e0363604e1db01000000000000000000000000000000001000000002000000000000000000000023cd000000000a002e00000000000000580000000000000022fdbb73afa5db0162f647ed6a3cdc0162f647ed6a3cdc0162f647ed6a3cdc01000000000000000000000000000000001000000004000000000000000000000075030000000007002e002e000000000068000000000000009843301904e1db0111cb0e1c04e1db01242f8155b6a5db0111cb0e1c04e1db0100b4ff000000000000c0ff0000000000200000001800000080000000000000005acd000000006900420069006e0067004d006100700073002e0064006c006c006800000000000000ee6a511c04e1db01aff3941e04e1db012f9aa1dac7acdb01f6702a3d7f3fdc0100c60b030000000000d00b03000000002000000018000000780000000000000068cd0000000033006500640067006500680074006d006c002e0064006c006c000000000000000000a042a32704e1db01fc50352a04e1db01053587dbc7acdb01fc50352a04e1db01005686020000000000608602000000002000000014000000780000000000000021ce0000000010006d007300680074006d006c002e0064006c006c00",
+        FullDirectory: "48000000000000003d22211904e1db01e34e133604e1db01e34e133604e1db01a7e0363604e1db01000000000000000000000000000000001000000002000000000000002e000000480000000000000022fdbb73afa5db0162f647ed6a3cdc0162f647ed6a3cdc0162f647ed6a3cdc01000000000000000000000000000000001000000004000000000000002e002e0060000000000000009843301904e1db0111cb0e1c04e1db01242f8155b6a5db0111cb0e1c04e1db0100b4ff000000000000c0ff0000000000200000001800000080000000420069006e0067004d006100700073002e0064006c006c00000000006000000000000000ee6a511c04e1db01aff3941e04e1db012f9aa1dac7acdb01f6702a3d7f3fdc0100c60b030000000000d00b03000000002000000018000000780000006500640067006500680074006d006c002e0064006c006c00000000000000000000000000a042a32704e1db01fc50352a04e1db01053587dbc7acdb01fc50352a04e1db01005686020000000000608602000000002000000014000000780000006d007300680074006d006c002e0064006c006c00",
+        Directory: "48000000000000003d22211904e1db01e34e133604e1db01e34e133604e1db01a7e0363604e1db010000000000000000000000000000000010000000020000002e00000000000000480000000000000022fdbb73afa5db0162f647ed6a3cdc0162f647ed6a3cdc0162f647ed6a3cdc010000000000000000000000000000000010000000040000002e002e000000000058000000000000009843301904e1db0111cb0e1c04e1db01242f8155b6a5db0111cb0e1c04e1db0100b4ff000000000000c0ff00000000002000000018000000420069006e0067004d006100700073002e0064006c006c005800000000000000ee6a511c04e1db01aff3941e04e1db012f9aa1dac7acdb01f6702a3d7f3fdc0100c60b030000000000d00b030000000020000000180000006500640067006500680074006d006c002e0064006c006c000000000000000000a042a32704e1db01fc50352a04e1db01053587dbc7acdb01fc50352a04e1db010056860200000000006086020000000020000000140000006d007300680074006d006c002e0064006c006c00"
     );
+
+    // pub  = 0x01,
 }
