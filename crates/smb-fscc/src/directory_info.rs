@@ -46,7 +46,7 @@ macro_rules! query_dir_type {
                 $(#[$field_meta:meta])*
                 $vis:vis $field_name:ident : $field_ty:ty,
             )*
-        }
+        }; $($actual_field:ident)*
     ) => {
         pastey::paste! {
             #[binrw::binrw]
@@ -94,6 +94,54 @@ macro_rules! query_dir_type {
                  #[br(args { size: SizedStringSize::bytes(_file_name_length)})]
                 pub file_name: SizedWideString,
             }
+
+            impl $name {
+                #[cfg(test)]
+                /// This is a test helper function to quickly initialize common fields for test cases.
+                #[allow(dead_code)]
+                fn make_common_test_dir(file_index: u32, created: time::PrimitiveDateTime, access_time: time::PrimitiveDateTime, write_time: time::PrimitiveDateTime,
+                    change_time: time::PrimitiveDateTime, file_name: &str) -> Self {
+                    Self {
+                        file_index,
+                        creation_time: created.into(),
+                        last_access_time: access_time.into(),
+                        last_write_time: write_time.into(),
+                        change_time: change_time.into(),
+                        end_of_file: 0,
+                        allocation_size: 0,
+                        file_attributes: FileAttributes::new().with_directory(true),
+                        ea_size: Some(0),
+                        reparse_tag: None,
+                        $(
+                            $actual_field: Default::default(),
+                        )*
+                        file_name: SizedWideString::from(file_name),
+                    }
+                }
+
+                #[cfg(test)]
+                /// This is a test helper function to quickly initialize common fields for test cases.
+                #[allow(dead_code)]
+                fn make_common_test_file(file_index: u32, created: time::PrimitiveDateTime, access_time: time::PrimitiveDateTime, write_time: time::PrimitiveDateTime,
+                    change_time: time::PrimitiveDateTime, file_name: &str, eof: u64, alloc_size: u64, ea_size: u32) -> Self {
+                    Self {
+                        file_index,
+                        creation_time: created.into(),
+                        last_access_time: access_time.into(),
+                        last_write_time: write_time.into(),
+                        change_time: change_time.into(),
+                        end_of_file: eof,
+                        allocation_size: alloc_size,
+                        file_attributes: FileAttributes::new().with_directory(true),
+                        ea_size: Some(ea_size),
+                        reparse_tag: None,
+                        $(
+                            $actual_field: Default::default(),
+                        )*
+                        file_name: SizedWideString::from(file_name),
+                    }
+                }
+            }
         }
     };
 }
@@ -136,7 +184,7 @@ query_dir_type! {
     /// Query detailed information for the files in a directory.
     ///
     /// [MS-FSCC 2.4.17](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/46021e52-29b1-475c-b6d3-fe5497d23277>)
-    pub struct FileFullDirectoryInformation {}
+    pub struct FileFullDirectoryInformation {};
 }
 
 query_dir_type! {
@@ -156,7 +204,7 @@ query_dir_type! {
         pub short_name: FileName83, // 8.3
         #[bw(calc = 0)]
         _reserved2: u16,
-    }
+    }; reparse_point_tag file_id short_name_length short_name
 }
 
 query_dir_type! {
@@ -168,7 +216,7 @@ query_dir_type! {
         pub reparse_point_tag: u32,
         /// The file ID.
         pub file_id: u64,
-    }
+    }; reparse_point_tag file_id
 }
 
 query_dir_type! {
@@ -188,7 +236,7 @@ query_dir_type! {
         _reserved1: u8,
         /// The short (8.3) name of the file.
         pub short_name: FileName83, // 8.3
-    }
+    }; reparse_point_tag file_id file_id_128 short_name_length short_name
 }
 
 query_dir_type! {
@@ -202,7 +250,7 @@ query_dir_type! {
         pub file_id: u64,
         /// The 128-bit file identifier for the file.
         pub file_id_128: u128,
-    }
+    }; reparse_point_tag file_id file_id_128
 }
 
 query_dir_type! {
@@ -220,7 +268,7 @@ query_dir_type! {
         _reserved2: u16,
         /// The file ID.
         pub file_id: u64,
-    }
+    }; short_name_length short_name file_id
 }
 
 query_dir_type! {
@@ -232,7 +280,7 @@ query_dir_type! {
         pub reparse_point_tag: u32,
         /// The 128-bit file identifier for the file.
         pub file_id: u128,
-    }
+    }; reparse_point_tag file_id
 }
 
 query_dir_type! {
@@ -244,7 +292,7 @@ query_dir_type! {
         _reserved: u32,
         /// The file ID.
         pub file_id: u64,
-    }
+    }; file_id
 }
 
 /// Query the names of the files in a directory.
@@ -275,7 +323,7 @@ query_dir_type! {
         _reserved1: u8,
         /// The short (8.3) name of the file.
         pub short_name: FileName83, // 8.3
-    }
+    }; short_name_length short_name
 }
 
 #[cfg(test)]
@@ -297,107 +345,109 @@ mod tests {
     //     pub Id64ExtdBothDirectory = 0x4f,
     //     pub IdAllExtdDirectory = 0x50,
 
-    type DirectoryIdAllExtdBothList = ChainedItemList<
-        FileIdAllExtdBothDirectoryInformation,
-        { QueryDirectoryInfo::CHAINED_ALIGNMENT },
-    >;
+    macro_rules! make_id_all_extd_both_directory {
+        ($file_index:expr, $created:expr, $access_write_time:expr, $change_time:expr, $file_name:expr, $file_id:literal) => {{
+            let mut result = FileIdAllExtdBothDirectoryInformation::make_common_test_dir(
+                $file_index,
+                $created,
+                $access_write_time,
+                $access_write_time,
+                $change_time,
+                $file_name,
+            );
 
-    // Some might think I'm more of a POSIX guy, since I use mac,
+            result.file_id = $file_id;
+            result.file_id_128 = $file_id;
+
+            result
+        }};
+        ($file_index:expr, $created:expr, $access_time:expr, $write_time:expr, $change_time:expr, $file_name:expr, $file_id:literal, $size:literal, $alloc_size:literal, $ea_size:literal) => {{
+            let mut result = make_id_all_extd_both_directory!(
+                $file_index,
+                $created,
+                $access_time,
+                $change_time,
+                $file_name,
+                $file_id
+            );
+            result.last_access_time = $access_time.into();
+            result.last_write_time = $write_time.into();
+            result.end_of_file = $size;
+            result.allocation_size = $alloc_size;
+            result.ea_size = Some($ea_size);
+            result.file_attributes = FileAttributes::new().with_archive(true);
+            result
+        }};
+    }
+
+    macro_rules! make_id_both_directory {
+        ($file_index:expr, $created:expr, $access_write_time:expr, $change_time:expr, $file_name:expr, $file_id:literal) => {{
+            let mut result = FileIdBothDirectoryInformation::make_common_test_dir(
+                $file_index,
+                $created,
+                $access_write_time,
+                $access_write_time,
+                $change_time,
+                $file_name,
+            );
+
+            result.file_id = $file_id;
+
+            result
+        }};
+        ($file_index:expr, $created:expr, $access_time:expr, $write_time:expr, $change_time:expr, $file_name:expr, $file_id:literal, $size:literal, $alloc_size:literal, $ea_size:literal) => {{
+            let mut result = make_id_both_directory!(
+                $file_index,
+                $created,
+                $access_time,
+                $change_time,
+                $file_name,
+                $file_id
+            );
+            result.last_access_time = $access_time.into();
+            result.last_write_time = $write_time.into();
+            result.end_of_file = $size;
+            result.allocation_size = $alloc_size;
+            result.ea_size = Some($ea_size);
+            result.file_attributes = FileAttributes::new().with_archive(true);
+            result
+        }};
+    }
+
+    // Some might think I'm more of a POSIX guy, since I use macOS,
     // but tbh, I actually love windows, especially legacy edge DLLs,
     // which are the content of this test directory listing dump!
-    test_binrw! {
-        DirectoryIdAllExtdBothList: DirectoryIdAllExtdBothList::from(vec![
-            FileIdAllExtdBothDirectoryInformation {
-                file_index: 0,
-                 creation_time: datetime!(2025-06-19 10:22:45.5282237).into(),
-                 last_access_time: datetime!(2025-06-19 10:23:34.0915427).into(),
-                 last_write_time: datetime!(2025-06-19 10:23:34.0915427).into(),
-                 change_time: datetime!(2025-06-19 10:23:34.3246503).into(),
-                 end_of_file: 0,
-                 allocation_size: 0,
-                 file_attributes: FileAttributes::new().with_directory(true),
-                 ea_size: Some(0),
-                 reparse_tag: None,
-                 reparse_point_tag: 0,
-                 file_id: 2814749767159075,
-                 file_id_128: 2814749767159075,
-                 short_name_length: 0,
-                 short_name: FileName83::default(),
-                 file_name: ".".into() },
+    // anyway, anybody who reads this code - I'm sorry.
 
-            FileIdAllExtdBothDirectoryInformation {
-                file_index: 0,
-                 creation_time: datetime!(2025-04-04 22:18:11.7121314).into(),
-                 last_access_time: datetime!(2025-10-13 17:58:05.9388514).into(),
-                 last_write_time: datetime!(2025-10-13 17:58:05.9388514).into(),
-                 change_time: datetime!(2025-10-13 17:58:05.9388514).into(),
-                 end_of_file: 0,
-                 allocation_size: 0,
-                 file_attributes: FileAttributes::new().with_directory(true),
-                 ea_size: Some(0),
-                 reparse_tag: None,
-                 reparse_point_tag: 0,
-                 file_id: 1970324836975477,
-                 file_id_128: 1970324836975477,
-                 short_name_length: 0,
-                 short_name: FileName83::default(),
-                 file_name: "..".into() },
+    macro_rules! make_dir_test {
+        ($struct_name:ident: $data:literal) => {
 
-            FileIdAllExtdBothDirectoryInformation {
-                file_index: 0,
-                creation_time: datetime!(2025-06-19 10:22:45.6273816).into(),
-                last_access_time: datetime!(2025-06-19 10:22:50.4411921).into(),
-                last_write_time: datetime!(2025-04-04 23:07:27.4722084).into(),
-                change_time: datetime!(2025-06-19 10:22:50.4411921).into(),
-                 end_of_file: 16_757_760,
-                 allocation_size: 16760832,
-                 file_attributes: FileAttributes::new().with_archive(true),
-                 ea_size: Some(128),
-                 reparse_tag: None,
-                 reparse_point_tag: 0,
-                 file_id: 0x6900000000cd5a,
-                 file_id_128: 0x6900000000cd5a,
-                 short_name_length: 0,
-                 short_name: FileName83::default(),
-                 file_name: "BingMaps.dll".into() },
-
-            FileIdAllExtdBothDirectoryInformation {
-                file_index: 0,
-
-                creation_time: datetime!(2025-06-19 10:22:50.8778222).into() ,
-                last_access_time: datetime!(2025-06-19 10:22:54.6758575).into(),
-                last_write_time: datetime!(2025-04-13 23:00:30.4054831).into(),
-                change_time: datetime!(2025-06-19 10:22:54.6758575).into(),
-
-                 end_of_file: 51_103_232,
-                 allocation_size: 51105792,
-                 file_attributes: FileAttributes::new().with_archive(true),
-                 ea_size: Some(120),
-                 reparse_tag: None,
-                 reparse_point_tag: 0,
-                 file_id: 0x3300000000cd68,
-                 file_id_128: 0x3300000000cd68,
-                 short_name_length: 0,
-                 short_name: FileName83::default(),
-                 file_name: "edgehtml.dll".into() },
-
-            FileIdAllExtdBothDirectoryInformation {
-                file_index: 0,
-                creation_time: datetime!(2025-06-19 10:23:09.8691232).into(),
-                last_access_time: datetime!(2025-06-19 10:23:14.1817596).into(),
-                last_write_time: datetime!(2025-04-13 23:00:31.9102213).into(),
-                change_time: datetime!(2025-06-19 10:23:14.1817596).into(),
-                 end_of_file: 42_358_272,
-                 allocation_size: 42360832,
-                 file_attributes: FileAttributes::new().with_archive(true),
-                 ea_size: Some(120),
-                 reparse_tag: None,
-                 reparse_point_tag: 0,
-                 file_id: 0x1000000000ce21,
-                 file_id_128: 0x1000000000ce21,
-                 short_name_length: 0,
-                 short_name: FileName83::default(),
-                 file_name: "mshtml.dll".into() }
-        ]) => "80000000000000003d22211904e1db01e34e133604e1db01e34e133604e1db01a7e0363604e1db01000000000000000000000000000000001000000002000000000000000000000023cd000000000a0023cd000000000a00000000000000000000000000000000000000000000000000000000000000000000002e0000000000800000000000000022fdbb73afa5db0162f647ed6a3cdc0162f647ed6a3cdc0162f647ed6a3cdc01000000000000000000000000000000001000000004000000000000000000000075030000000007007503000000000700000000000000000000000000000000000000000000000000000000000000000000002e002e00000098000000000000009843301904e1db0111cb0e1c04e1db01242f8155b6a5db0111cb0e1c04e1db0100b4ff000000000000c0ff0000000000200000001800000080000000000000005acd0000000069005acd00000000690000000000000000000000000000000000000000000000000000000000000000000000420069006e0067004d006100700073002e0064006c006c000000000000009800000000000000ee6a511c04e1db01aff3941e04e1db012f9aa1dac7acdb01aff3941e04e1db0100c60b030000000000d00b03000000002000000018000000780000000000000068cd00000000330068cd000000003300000000000000000000000000000000000000000000000000000000000000000000006500640067006500680074006d006c002e0064006c006c000000000000000000000000000000a042a32704e1db01fc50352a04e1db01053587dbc7acdb01fc50352a04e1db01005686020000000000608602000000002000000014000000780000000000000021ce00000000100021ce000000001000000000000000000000000000000000000000000000000000000000000000000000006d007300680074006d006c002e0064006c006c00"
+    pastey::paste! {
+        type [<$struct_name TestList>] = ChainedItemList<
+            [<File $struct_name Information>],
+            { QueryDirectoryInfo::CHAINED_ALIGNMENT },
+        >;
+        test_binrw! {
+            [<$struct_name TestList>]: [<$struct_name TestList>]::from(vec![
+                [<make_ $struct_name:snake>]!(0, datetime!(2025-06-19 10:22:45.5282237), datetime!(2025-06-19 10:23:34.0915427), datetime!(2025-06-19 10:23:34.3246503), ".", 2814749767159075),
+                [<make_ $struct_name:snake>]!(0, datetime!(2025-04-04 22:18:11.7121314), datetime!(2025-10-13 17:58:05.9388514), datetime!(2025-10-13 17:58:05.9388514), "..", 1970324836975477),
+                [<make_ $struct_name:snake>]!(0,datetime!(2025-06-19 10:22:45.6273816),datetime!(2025-06-19 10:22:50.4411921),datetime!(2025-04-04 23:07:27.4722084),datetime!(2025-06-19 10:22:50.4411921),"BingMaps.dll",0x6900000000cd5a,16_757_760,16760832,128),
+                [<make_ $struct_name:snake>]!(0, datetime!(2025-06-19 10:22:50.8778222), datetime!(2025-06-19 10:22:54.6758575), datetime!(2025-04-13 23:00:30.4054831), datetime!(2025-06-19 10:22:54.6758575), "edgehtml.dll", 0x3300000000cd68, 51_103_232, 51105792, 120 ),
+                [<make_ $struct_name:snake>]!(0, datetime!(2025-06-19 10:23:09.8691232), datetime!(2025-06-19 10:23:14.1817596), datetime!(2025-04-13 23:00:31.9102213), datetime!(2025-06-19 10:23:14.1817596), "mshtml.dll", 0x1000000000ce21, 42_358_272, 42360832, 120),
+            ]) => $data
+        }
     }
+
+        };
+        ($($struct_name:ident: $data:literal),+) => {
+            $(
+                make_dir_test!($struct_name: $data);
+            )+
+        };
+    }
+
+    make_dir_test!(
+        IdAllExtdBothDirectory: "80000000000000003d22211904e1db01e34e133604e1db01e34e133604e1db01a7e0363604e1db01000000000000000000000000000000001000000002000000000000000000000023cd000000000a0023cd000000000a00000000000000000000000000000000000000000000000000000000000000000000002e0000000000800000000000000022fdbb73afa5db0162f647ed6a3cdc0162f647ed6a3cdc0162f647ed6a3cdc01000000000000000000000000000000001000000004000000000000000000000075030000000007007503000000000700000000000000000000000000000000000000000000000000000000000000000000002e002e00000098000000000000009843301904e1db0111cb0e1c04e1db01242f8155b6a5db0111cb0e1c04e1db0100b4ff000000000000c0ff0000000000200000001800000080000000000000005acd0000000069005acd00000000690000000000000000000000000000000000000000000000000000000000000000000000420069006e0067004d006100700073002e0064006c006c000000000000009800000000000000ee6a511c04e1db01aff3941e04e1db012f9aa1dac7acdb01aff3941e04e1db0100c60b030000000000d00b03000000002000000018000000780000000000000068cd00000000330068cd000000003300000000000000000000000000000000000000000000000000000000000000000000006500640067006500680074006d006c002e0064006c006c000000000000000000000000000000a042a32704e1db01fc50352a04e1db01053587dbc7acdb01fc50352a04e1db01005686020000000000608602000000002000000014000000780000000000000021ce00000000100021ce000000001000000000000000000000000000000000000000000000000000000000000000000000006d007300680074006d006c002e0064006c006c00",
+        IdBothDirectory: "70000000000000003d22211904e1db01e34e133604e1db01e34e133604e1db01a7e0363604e1db01000000000000000000000000000000001000000002000000000000000000000000000000000000000000000000000000000000000000000023cd000000000a002e00000000000000700000000000000022fdbb73afa5db0162f647ed6a3cdc0162f647ed6a3cdc0162f647ed6a3cdc01000000000000000000000000000000001000000004000000000000000000000000000000000000000000000000000000000000000000000075030000000007002e002e000000000080000000000000009843301904e1db0111cb0e1c04e1db01242f8155b6a5db0111cb0e1c04e1db0100b4ff000000000000c0ff0000000000200000001800000080000000000000000000000000000000000000000000000000000000000000005acd000000006900420069006e0067004d006100700073002e0064006c006c008000000000000000ee6a511c04e1db01aff3941e04e1db012f9aa1dac7acdb01f6702a3d7f3fdc0100c60b030000000000d00b03000000002000000018000000780000000000000000000000000000000000000000000000000000000000000068cd0000000033006500640067006500680074006d006c002e0064006c006c000000000000000000a042a32704e1db01fc50352a04e1db01053587dbc7acdb01fc50352a04e1db01005686020000000000608602000000002000000014000000780000000000000000000000000000000000000000000000000000000000000021ce0000000010006d007300680074006d006c002e0064006c006c00"
+    );
 }
