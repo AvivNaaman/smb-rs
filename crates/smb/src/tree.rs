@@ -4,8 +4,8 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use maybe_async::*;
 use smb_msg::{FileId, FsctlRequest, IoctlRequest, IoctlRequestFlags};
 
+use crate::FileCreateArgs;
 use crate::connection::connection_info::ConnectionInfo;
-use crate::resource::FileCreateArgs;
 use smb_fscc::{FileAccessMask, FileAttributes};
 use smb_msg::{
     CreateOptions, RequestContent, ShareFlags, ShareType,
@@ -14,9 +14,8 @@ use smb_msg::{
 };
 
 use crate::{
-    Error,
+    Error, Resource,
     msg_handler::{HandlerReference, MessageHandler},
-    resource::Resource,
     session::SessionMessageHandler,
 };
 mod dfs_tree;
@@ -312,10 +311,13 @@ impl MessageHandler for TreeMessageHandler {
         &self,
         mut msg: crate::msg_handler::OutgoingMessage,
     ) -> crate::Result<crate::msg_handler::SendMessageResult> {
-        msg.message.header.tree_id = self.tree_id.load(Ordering::SeqCst).into();
-        if self.info.share_flags.encrypt_data() {
-            msg.encrypt = true;
+        if !msg.message.header.flags.async_command() {
+            msg.message.header.tree_id = self.tree_id.load(Ordering::SeqCst).into();
+            if self.info.share_flags.encrypt_data() {
+                msg.encrypt = true;
+            }
         }
+
         self.upstream.sendo(msg).await
     }
 

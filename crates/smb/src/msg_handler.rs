@@ -1,7 +1,11 @@
 use maybe_async::*;
 use smb_msg::{Command, PlainRequest, PlainResponse, RequestContent, Status};
 use smb_transport::IoVec;
-use std::sync::Arc;
+#[cfg(not(feature = "async"))]
+use std::sync::atomic::AtomicBool;
+use std::sync::{Arc, atomic::AtomicU64};
+#[cfg(feature = "async")]
+use tokio_util::sync::CancellationToken;
 
 #[derive(Debug)]
 pub struct OutgoingMessage {
@@ -109,6 +113,33 @@ impl MessageForm {
     }
 }
 
+#[derive(Debug)]
+pub struct AsyncMessageIds {
+    pub msg_id: AtomicU64,
+    pub async_id: AtomicU64,
+}
+
+impl AsyncMessageIds {
+    pub fn reset(&self) {
+        self.set(u64::MAX, u64::MAX);
+    }
+    pub fn set(&self, msg_id: u64, async_id: u64) {
+        self.msg_id
+            .store(msg_id, std::sync::atomic::Ordering::SeqCst);
+        self.async_id
+            .store(async_id, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+impl Default for AsyncMessageIds {
+    fn default() -> Self {
+        Self {
+            msg_id: AtomicU64::new(u64::MAX),
+            async_id: AtomicU64::new(u64::MAX),
+        }
+    }
+}
+
 /// Options for receiving a message.
 ///
 /// Use a builder pattern to set the options:
@@ -120,7 +151,7 @@ impl MessageForm {
 ///    .with_status(&[Status::Success])
 ///    .with_cmd(Some(Command::Negotiate));
 /// ```
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ReceiveOptions<'a> {
     /// The expected status(es) of the received message.
     /// If the received message has a different status, an error will be returned.
@@ -142,14 +173,28 @@ pub struct ReceiveOptions<'a> {
     /// If set to true, the handler will allow async messages to be received,
     /// and will make the caller wait until the final async response is received --
     /// the async response with status other than [`Status::Pending`].
+    ///
+    /// When using crate feature `async`, see [`async_cancel`][Self::async_cancel].
     pub allow_async: bool,
+
+    #[cfg(feature = "async")]
+    /// An optional cancellation token to cancel the receive operation,
+    /// if it's an async operation.
+    pub async_cancel: Option<CancellationToken>,
+
+    #[cfg(not(feature = "async"))]
+    /// An atomic boolean flag to cancel the receive operation,
+    /// if it's an async operation.
+    pub async_cancel: Option<Arc<AtomicBool>>,
+
+    /// An optional atomic u64 to update with a message ID + async ID that is being
+    /// waited for. This is useful for tracking the async message ID
+    /// across multiple threads.
+    pub async_msg_ids: Option<Arc<AsyncMessageIds>>,
 
     /// A timeout for the receive operation.
     /// If not set, the default timeout of the connection is used.
     pub timeout: Option<std::time::Duration>,
-    // TODO: Add a sync primitive to cancel the receive operation.
-    // consider making an abstract Notify in sync_helpers and use it everywhere.
-    // pub cancel: Notify
 }
 
 impl<'a> ReceiveOptions<'a> {
@@ -176,6 +221,28 @@ impl<'a> ReceiveOptions<'a> {
         self.allow_async = allow_async;
         self
     }
+
+    #[cfg(feature = "async")]
+    pub fn with_cancellation_token(mut self, token: CancellationToken) -> Self {
+        self.async_cancel = Some(token);
+        self
+    }
+
+    #[cfg(not(feature = "async"))]
+    pub fn with_cancellation_flag(mut self, flag: Arc<AtomicBool>) -> Self {
+        self.async_cancel = Some(flag);
+        self
+    }
+
+    pub fn with_async_msg_ids(mut self, async_msg_ids: Arc<AsyncMessageIds>) -> Self {
+        self.async_msg_ids = Some(async_msg_ids);
+        self
+    }
+
+    pub fn with_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
 }
 
 impl<'a> Default for ReceiveOptions<'a> {
@@ -186,6 +253,8 @@ impl<'a> Default for ReceiveOptions<'a> {
             msg_id: 0,
             allow_async: false,
             channel_id: None,
+            async_cancel: None,
+            async_msg_ids: None,
             timeout: None,
         }
     }

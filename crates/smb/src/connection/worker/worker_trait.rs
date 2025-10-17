@@ -42,6 +42,45 @@ pub trait Worker: Sized + std::fmt::Debug {
     /// * The message received from the server, matching the filters.
     async fn receive_next(&self, options: &ReceiveOptions<'_>) -> crate::Result<IncomingMessage>;
 
+    #[cfg(feature = "async")]
+    async fn receive_next_cancellable(
+        &self,
+        options: &ReceiveOptions<'_>,
+    ) -> crate::Result<IncomingMessage> {
+        if options.async_cancel.is_none() {
+            return self.receive_next(options).await;
+        }
+        let recv_fut = self.receive_next(options);
+        tokio::select! {
+            biased;
+            _ = options.async_cancel.as_ref().unwrap().cancelled() => {
+                Err(Error::Cancelled("receive_next"))
+            }
+            res = recv_fut => {
+                res
+            }
+        }
+    }
+
+    #[cfg(not(feature = "async"))]
+    async fn receive_next_cancellable(
+        &self,
+        options: &ReceiveOptions<'_>,
+    ) -> crate::Result<IncomingMessage> {
+        // There's no actual async cancellation, so we do our best effort.
+        // If the request is already running, cancellation must be performed by sending a
+        // cancel message to the server.
+        if options
+            .async_cancel
+            .as_ref()
+            .is_some_and(|c| c.load(std::sync::atomic::Ordering::SeqCst))
+        {
+            return Err(Error::Cancelled("receive_next"));
+        }
+
+        self.receive_next(options).await
+    }
+
     /// Receive a message from the server.
     /// This is a user function that will wait for the message to be received.
     async fn receive(&self, options: &ReceiveOptions<'_>) -> crate::Result<IncomingMessage> {
@@ -85,8 +124,13 @@ pub trait Worker: Sized + std::fmt::Debug {
             return Ok(curr);
         }
 
+        if let Some(async_msg_ids) = &options.async_msg_ids {
+            async_msg_ids.set(options.msg_id, async_id);
+        }
+
         loop {
-            let msg = self.receive_next(options).await?;
+            let msg = self.receive_next_cancellable(options).await?;
+
             // Check if the message is async and has the same ID.
             if !msg.message.header.flags.async_command()
                 || msg.message.header.async_id != Some(async_id)

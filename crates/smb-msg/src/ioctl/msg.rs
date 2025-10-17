@@ -55,7 +55,7 @@ pub trait FsctlRequest: for<'a> BinWrite<Args<'a> = ()> + Into<IoctlReqData> {
 
 macro_rules! ioctl_req_data {
     ($($fsctl:ident: $model:ty, $response:ty, )+) => {
-        paste::paste! {
+        pastey::paste! {
 
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]

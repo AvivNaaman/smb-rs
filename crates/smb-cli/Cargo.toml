@@ -13,17 +13,19 @@ smb = { path = "../smb", default-features = false, features = ["std-fs-impls"] }
 maybe-async = { workspace = true }
 tokio = { workspace = true, optional = true, features = ["rt-multi-thread"] }
 futures-util = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
 
 # CLI & logging
 indicatif = "0.18.0"
 clap = { version = "4.5.27", features = ["derive"] }
+ctrlc = { version = "3.5" }
 env_logger = "0.11.6"
 log = { workspace = true }
 
 [features]
 default = ["async"]
 
-async = ["dep:tokio", "dep:futures-util"]
+async = ["dep:tokio", "dep:futures-util", "dep:futures"]
 single_threaded = ["maybe-async/is_sync"]
 multi_threaded = ["maybe-async/is_sync"]
 

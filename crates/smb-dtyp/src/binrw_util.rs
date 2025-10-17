@@ -12,5 +12,8 @@ pub mod prelude {
     pub use super::file_time::FileTime;
     pub use super::helpers::*;
     pub use super::pos_marker::PosMarker;
-    pub use super::sized_wide_string::{SizedAnsiString, SizedWideString};
+    pub use super::sized_wide_string::{
+        BaseSizedString, BaseSizedStringReadArgs, BaseSizedStringReadArgsBuilder, SizedAnsiString,
+        SizedStringSize, SizedWideString,
+    };
 }

@@ -1,6 +1,6 @@
 [package]
-name = "smb-dtyp"
-description = "Common data types for `smb-rs`"
+name = "smb-tests"
+description = "Test utilities for smb"
 readme = "README.md"
 version.workspace = true
 edition.workspace = true
@@ -13,7 +13,3 @@ categories.workspace = true
 
 [dependencies]
 binrw = { workspace = true }
-modular-bitfield = { workspace = true }
-time = { workspace = true }
-pastey = { workspace = true }
-rand = { workspace = true }

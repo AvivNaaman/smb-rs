@@ -93,7 +93,7 @@ pub struct CreateRequest {
 
     #[brw(align_before = 8)]
     #[bw(write_with = PosMarker::write_aoff, args(&_name_offset))]
-    #[br(args(name_length as u64))]
+    #[br(args { size: SizedStringSize::bytes16(name_length) })]
     pub name: SizedWideString,
 
     /// Use the `CreateContextReqData::first_...` function family to get the first context of a specific type.
@@ -274,7 +274,7 @@ macro_rules! create_context_half {
             )+
         }
     ) => {
-    paste::paste! {
+    pastey::paste! {
 
 pub trait [<CreateContextData $struct_name Value>] : Into<CreateContext<[<CreateContext $struct_name Data>]>> {
     const CONTEXT_NAME: &'static [u8];
@@ -356,7 +356,7 @@ macro_rules! make_create_context {
     (
         $($context_type:ident : $class_name:literal, $req_type:ty, $res_type:ty, )+
     ) => {
-        paste::paste!{
+        pastey::paste!{
 
 pub enum CreateContextType {
     $(

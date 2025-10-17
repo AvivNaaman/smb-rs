@@ -1,7 +1,7 @@
 #![allow(unused_parens)]
 
 use crate::{interface::*, pdu::DceRpcSyntaxId};
-use smb_dtyp::guid;
+use smb_dtyp::make_guid;
 
 use crate::ndr64::*;
 use binrw::prelude::*;
@@ -228,7 +228,7 @@ where
     T: BoundRpcConnection,
 {
     const SYNTAX_ID: DceRpcSyntaxId = DceRpcSyntaxId {
-        uuid: guid!("4b324fc8-1670-01d3-1278-5a47bf6ee188"),
+        uuid: make_guid!("4b324fc8-1670-01d3-1278-5a47bf6ee188"),
         version: 3,
     };
 

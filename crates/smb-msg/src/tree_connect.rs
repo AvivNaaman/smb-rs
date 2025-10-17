@@ -51,7 +51,7 @@ pub struct TreeConnectRequest {
     // ------------------------------------------------
     // -- Base --
     #[brw(little)]
-    #[br(args(path_length as u64))]
+    #[br(args { size: SizedStringSize::bytes16(path_length) })]
     #[bw(write_with = PosMarker::write_aoff, args(&_path_offset))]
     pub buffer: SizedWideString,
 
@@ -80,7 +80,7 @@ macro_rules! make_remoted_identity_connect{
     (
         $($field:ident: $value:ty),*
     ) => {
-        paste::paste! {
+        pastey::paste! {
 
 #[binwrite]
 #[derive(Debug, BinRead)]

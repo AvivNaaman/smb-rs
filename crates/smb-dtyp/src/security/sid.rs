@@ -36,6 +36,11 @@ pub struct SID {
     pub sub_authority: Vec<u32>,
 }
 impl SID {
+    /// Minimum size of this structure in bytes, when serialized.
+    pub const MIN_SIZE: usize = std::mem::size_of::<u8>()  // Revision
+        + std::mem::size_of::<u8>()  // SubAuthorityCount
+        + 6; // IdentifierAuthority (48 bits)
+
     /// SID common string prefix
     const PREFIX: &'static str = "S-1-";
 

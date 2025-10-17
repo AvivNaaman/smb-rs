@@ -1,13 +1,11 @@
 use super::ResourceHandle;
 use crate::Error;
 use crate::msg_handler::{MessageHandler, ReceiveOptions};
-use crate::sync_helpers::Mutex;
+use crate::sync_helpers::*;
 use maybe_async::*;
 use smb_fscc::*;
 use smb_msg::*;
 use std::ops::{Deref, DerefMut};
-#[cfg(feature = "async")]
-use std::sync::Arc;
 use std::time::Duration;
 
 /// A directory resource on the server.
@@ -41,7 +39,6 @@ impl Directory {
     /// # Returns
     /// * A vector of [`QueryDirectoryInfoValue`] objects, containing the results of the query.
     /// * If the query returned [`Status::NoMoreFiles`], an empty vector is returned.
-    #[maybe_async]
     async fn send_query<T>(
         &self,
         pattern: &str,
@@ -226,8 +223,7 @@ impl Directory {
         filter: NotifyFilter,
         recursive: bool,
     ) -> crate::Result<Vec<FileNotifyInformation>> {
-        self._watch_timeout(filter, recursive, Some(Duration::MAX))
-            .await
+        self.watch_timeout(filter, recursive, Duration::MAX).await
     }
 
     /// Watches the directory for changes, with a specified timeout.
@@ -246,62 +242,287 @@ impl Directory {
         recursive: bool,
         timeout: std::time::Duration,
     ) -> crate::Result<Vec<FileNotifyInformation>> {
-        self._watch_timeout(filter, recursive, Some(timeout)).await
+        self._watch_options(
+            filter,
+            recursive,
+            ReceiveOptions::new().with_timeout(timeout),
+        )
+        .await
+        .into()
+    }
+
+    #[cfg(feature = "async")]
+    /// Watches the directory for changes, returning a [`Stream`][`futures_core::Stream`] of notifications.
+    ///
+    /// * See [`watch_stream_cancellable`][Self::watch_stream_cancellable] for a version that supports cancellation,
+    ///  via a [`CancellationToken`][tokio_util::sync::CancellationToken].
+    ///
+    /// # Arguments
+    /// * `filter` - The filter to use for the changes. This is a bitmask of the changes to watch for.
+    /// * `recursive` - Whether to watch the directory recursively or not.
+    /// # Returns
+    /// * A stream of [`FileNotifyInformation`] objects, containing the changes that occurred.
+    ///
+    /// # Notes
+    /// Error handling in this stream is done by returning `Result<FileNotifyInformation>`.
+    pub fn watch_stream(
+        this: &Arc<Self>,
+        filter: NotifyFilter,
+        recursive: bool,
+    ) -> crate::Result<impl futures_core::Stream<Item = crate::Result<FileNotifyInformation>>> {
+        Self::watch_stream_cancellable(this, filter, recursive, Default::default())
+    }
+
+    #[cfg(feature = "async")]
+    pub fn watch_stream_cancellable(
+        this: &Arc<Self>,
+        filter: NotifyFilter,
+        recursive: bool,
+        cancel: tokio_util::sync::CancellationToken,
+    ) -> crate::Result<impl futures_core::Stream<Item = crate::Result<FileNotifyInformation>>> {
+        // Since watching for notifications is more passive, this does not require the same level
+        // of synchronization as querying the directory - since we won't DoS the server by sending
+        // too many requests.
+
+        use tokio::select;
+        use tokio_stream::wrappers::ReceiverStream;
+
+        let (sender, receiver) = tokio::sync::mpsc::channel(1024);
+        let (watch_tx, mut watch_rx) = tokio::sync::mpsc::channel(1024);
+
+        let receive_options = ReceiveOptions::default()
+            .with_timeout(Duration::MAX)
+            .with_async_msg_ids(Default::default());
+
+        // Receive task is required to avoid race conditions.
+        // if the receive task is aborted, we might miss a cancellation message.
+        // so cancelling a running watch should only be by cleanup/cancel ack messages,
+        // or stream drop.
+        tokio::spawn({
+            let receive_options = receive_options.clone();
+
+            let directory = this.clone();
+            async move {
+                loop {
+                    select! {
+                        _ = watch_tx.closed() => {
+                            // Receiver dropped, exit the loop.
+                            break;
+                        }
+                        result = directory
+                            ._watch_options(filter, recursive, receive_options.clone())
+                            =>  {
+                            let should_stop = matches!(result, DirectoryWatchResult::Cancelled | DirectoryWatchResult::Cleanup);
+                            if watch_tx.send(result).await.is_err() {
+                                break; // Receiver dropped
+                            }
+                            if should_stop {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        tokio::spawn({
+            let directory = this.clone();
+            async move {
+                let mut cancel_called = false;
+                loop {
+                    select! {
+                        biased;
+                        _ = sender.closed(), if sender.is_closed() && !cancel.is_cancelled() => {
+                            // Sender close. request a cancellation. That triggers the branch above.
+                            log::debug!("Watch receiver closed, stopping watch by raising cancellation.");
+                            if !cancel_called {
+                                cancel.cancel();
+                            }
+                        }
+                        _ = cancel.cancelled(), if !cancel_called => {
+                            // Cancellation step 1: send cancel request to server.
+                            log::debug!("Watch cancelled by user");
+                            directory.send_cancel(receive_options.async_msg_ids.as_ref().unwrap()).await.ok();
+                            cancel_called = true;
+                            // Now, wait for the server to confirm cancellation.
+                        }
+                        result = watch_rx.recv() => {
+                            match result {
+                                Some(DirectoryWatchResult::Notifications(v)) => {
+                                    for item in v {
+                                        if sender.send(Ok(item)).await.is_err() {
+                                            log::debug!("Watch notifications receiver closed, stop sending, begin cancellation.");
+                                            break;
+                                        }
+                                    }
+                                }
+                                Some(DirectoryWatchResult::Cancelled) => {
+                                    if sender.is_closed() {
+                                        // Already closed, ignore - cancellation should be complete anyway.
+                                        log::debug!("Watch cancelled after sender closed, ignoring.");
+                                        break;
+                                    }
+
+                                    if !cancel.is_cancelled() {
+                                        sender.send(Err(Error::Cancelled("watch cancelled unexpectedly"))).await.ok();
+                                    }
+
+                                    // Cancellation step 2: exit the loop.
+                                    log::debug!("Watch cancellation complete.");
+                                    break;
+                                }
+                                Some(DirectoryWatchResult::Cleanup) => {
+                                    // Server cleaned up the watch, exit the loop.
+                                    log::debug!("Watch cleaned up by server. Stopping stream.");
+                                    break;
+                                }
+                                Some(x) => {
+                                    let x: crate::Result<_> = x.into();
+                                    let x = x.unwrap_err();
+                                    log::debug!("Error watching directory: {x}. Stopping stream.");
+                                    sender.send(Err(x)).await.map_err(|e| {
+                                        log::debug!("Error watching directory after sender closed: {e}. Ignoring.");
+                                        e
+                                    }).ok();
+                                    break; // Exit on error
+                                },
+                                None => {
+                                    log::debug!("Watch internal task ended, stopping stream.");
+                                    break; // Internal task ended
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        Ok(ReceiverStream::new(receiver))
+    }
+
+    // TODO: Doc
+
+    #[cfg(feature = "multi_threaded")]
+    pub fn watch_stream(
+        this: &Arc<Self>,
+        filter: NotifyFilter,
+        recursive: bool,
+    ) -> crate::Result<
+        impl Iterator<Item = crate::Result<FileNotifyInformation>> + NotifyDirectoryIteratorCancellable,
+    > {
+        let cancel_handle = NotifyDirectoryIteratorCanceller::new(this);
+        iter_mtd::NotifyDirectoryIterator::new(cancel_handle, filter, recursive)
+    }
+
+    /// Returns an iterator that watches the directory for changes.
+    #[cfg(feature = "single_threaded")]
+    pub fn watch_stream(
+        this: &Arc<Self>,
+        filter: NotifyFilter,
+        recursive: bool,
+    ) -> crate::Result<impl Iterator<Item = crate::Result<FileNotifyInformation>> + '_> {
+        // Simply watch in loop and chain the results.
+        let veci = std::iter::from_fn(move || {
+            match this
+                ._watch_options(filter, recursive, ReceiveOptions::default())
+                .into()
+            {
+                Ok(result) => Some(Ok(result)),
+                Err(e) => Some(Err(e)),
+            }
+        })
+        // Flatten the results into a single item iterator
+        .flat_map(|result| match result {
+            Ok(vec) => vec.into_iter().map(Ok).collect::<Vec<_>>().into_iter(),
+            Err(e) => vec![Err(e)].into_iter(),
+        });
+        Ok(veci)
     }
 
     /// (Internal) Watches the directory for changes, with an optional timeout.
-    async fn _watch_timeout(
+    ///
+    /// This method accepts the `ReceiveOptions` struct, allowing more fine-tuned control over the receive operation.
+    /// It uses:
+    /// * `timeout` - to set the timeout for the receive operation.
+    /// * `async_msg_ids` - to allow async notifications.
+    /// * `async_cancel` - to allow cancellation of the receive operation, when crate feature `async` is enabled.
+    async fn _watch_options(
         &self,
         filter: NotifyFilter,
         recursive: bool,
-        timeout: Option<std::time::Duration>,
-    ) -> crate::Result<Vec<FileNotifyInformation>> {
+        options: ReceiveOptions<'_>,
+    ) -> DirectoryWatchResult {
+        if !self.access.list_directory() {
+            return DirectoryWatchResult::Error(Error::MissingPermissions(
+                "list_directory".to_string(),
+            ));
+        }
+        let output_buffer_length = self.calc_transact_size(None);
+
+        let file_id = match self.file_id() {
+            Ok(id) => id,
+            Err(e) => return DirectoryWatchResult::Error(e),
+        };
+
         let response = self
             .handle
             .handler
             .send_recvo(
                 ChangeNotifyRequest {
-                    file_id: self.file_id()?,
+                    file_id,
                     flags: NotifyFlags::new().with_watch_tree(recursive),
                     completion_filter: filter,
-                    output_buffer_length: 0x1024,
+                    output_buffer_length,
                 }
                 .into(),
                 ReceiveOptions {
                     allow_async: true,
-                    timeout,
+                    #[cfg(feature = "async")]
+                    async_cancel: options.async_cancel,
+                    async_msg_ids: options.async_msg_ids,
+                    timeout: options.timeout,
                     cmd: Some(Command::ChangeNotify),
+                    status: &[
+                        Status::Success,
+                        Status::Cancelled,
+                        Status::NotifyCleanup,
+                        Status::NotifyEnumDir,
+                    ],
                     ..Default::default()
                 },
             )
             .await;
 
         let response = match response {
-            Ok(res) => res,
-            // Handle `Status::NotifyCleanup` as a special case
-            Err(Error::UnexpectedMessageStatus(c)) => {
-                let status = match Status::try_from(c) {
-                    Ok(status) => status,
-                    _ => return Err(Error::UnexpectedMessageStatus(c)),
-                };
-                if status == Status::NotifyCleanup {
-                    log::info!("Notify cleanup, no more notifications");
-                    return Ok(vec![]);
-                } else {
-                    log::error!(
-                        "Error watching directory: {}",
-                        Error::UnexpectedMessageStatus(c)
-                    );
-                    return Err(Error::UnexpectedMessageStatus(c));
+            Ok(res) => match res.message.header.status {
+                Status::U32_SUCCESS => res,
+                // Cancellation from CancelRequest
+                Status::U32_CANCELLED => return DirectoryWatchResult::Cancelled,
+                Status::U32_NOTIFY_CLEANUP => return DirectoryWatchResult::Cleanup,
+                Status::U32_NOTIFY_ENUM_DIR => {
+                    return DirectoryWatchResult::NotifyEnumDir {
+                        provided_size: output_buffer_length as usize,
+                    };
                 }
-            }
+                s => {
+                    log::debug!("Unexpected status while watching directory: {s:?}");
+                    return DirectoryWatchResult::Error(Error::UnexpectedMessageStatus(s));
+                }
+            },
+            // Other cancellation (token)
+            Err(Error::Cancelled(_)) => return DirectoryWatchResult::Cancelled,
             Err(e) => {
-                log::error!("Error watching directory: {e}");
-                return Err(e);
+                log::debug!("Error watching directory: {e}");
+                return DirectoryWatchResult::Error(e);
             }
         };
 
-        Ok(response.message.content.to_changenotify()?.buffer.into())
+        let change_notify = match response.message.content.to_changenotify() {
+            Ok(cn) => cn,
+            Err(e) => return DirectoryWatchResult::Error(e.into()),
+        };
+
+        DirectoryWatchResult::Notifications(change_notify.buffer.into())
     }
 
     /// Queries the quota information for the current file.
@@ -311,19 +532,41 @@ impl Directory {
         &self,
         info: QueryQuotaInfo,
     ) -> crate::Result<Vec<FileQuotaInformation>> {
+        self.query_quota_info_with_options(info, None).await
+    }
+    /// Queries the quota information for the current file.
+    /// # Arguments
+    /// * `info` - The information to query - a [`QueryQuotaInfo`].
+    pub async fn query_quota_info_with_options(
+        &self,
+        info: QueryQuotaInfo,
+        output_buffer_length: Option<usize>,
+    ) -> crate::Result<Vec<FileQuotaInformation>> {
+        if output_buffer_length.is_some_and(|x| x < FileQuotaInformation::MIN_SIZE) {
+            return Err(Error::BufferTooSmall {
+                data_type: "FileQuotaInformation",
+                required: FileQuotaInformation::MIN_SIZE.into(),
+                provided: output_buffer_length.unwrap(),
+            });
+        }
+
         Ok(self
             .handle
-            .query_common(QueryInfoRequest {
-                info_type: InfoType::Quota,
-                info_class: Default::default(),
-                output_buffer_length: 1024,
-                additional_info: AdditionalInfo::new(),
-                flags: QueryInfoFlags::new()
-                    .with_restart_scan(info.restart_scan.into())
-                    .with_return_single_entry(info.return_single.into()),
-                file_id: self.handle.file_id()?,
-                data: GetInfoRequestData::Quota(info),
-            })
+            .query_common(
+                QueryInfoRequest {
+                    info_type: InfoType::Quota,
+                    info_class: Default::default(),
+                    output_buffer_length: 0,
+                    additional_info: AdditionalInfo::new(),
+                    flags: QueryInfoFlags::new()
+                        .with_restart_scan(info.restart_scan.into())
+                        .with_return_single_entry(info.return_single.into()),
+                    file_id: self.handle.file_id()?,
+                    data: GetInfoRequestData::Quota(info),
+                },
+                output_buffer_length,
+                std::any::type_name::<FileQuotaInformation>(),
+            )
             .await?
             .as_quota()?
             .into())
@@ -344,6 +587,45 @@ impl Directory {
     }
 }
 
+/// Single result from a directory watch operation.
+///
+/// Implements `From<DirectoryWatchResult>` to convert into `Result<Vec<FileNotifyInformation>>`.
+/// Note that all states except `Notifications` are converted into errors.
+pub enum DirectoryWatchResult {
+    /// A vector of file change notifications.
+    Notifications(Vec<FileNotifyInformation>),
+
+    /// The specified buffer size cannot contain the results.
+    NotifyEnumDir { provided_size: usize },
+
+    /// The watch was cleaned up by the server.
+    ///
+    /// This is usually due to file being closed, while watch is still active.
+    Cleanup,
+
+    /// The watch was cancelled by the user.
+    Cancelled,
+
+    /// An error occurred while watching the directory.
+    Error(crate::Error),
+}
+
+impl From<DirectoryWatchResult> for crate::Result<Vec<FileNotifyInformation>> {
+    fn from(val: DirectoryWatchResult) -> Self {
+        match val {
+            DirectoryWatchResult::Notifications(v) => Ok(v),
+            DirectoryWatchResult::Cancelled => Err(Error::Cancelled("watch cancelled")),
+            DirectoryWatchResult::Cleanup => Err(Error::Cancelled("watch cleaned up by server")),
+            DirectoryWatchResult::Error(e) => Err(e),
+            DirectoryWatchResult::NotifyEnumDir { provided_size } => Err(Error::BufferTooSmall {
+                data_type: "FileNotifyInformation",
+                required: None,
+                provided: provided_size,
+            }),
+        }
+    }
+}
+
 impl Deref for Directory {
     type Target = ResourceHandle;
 
@@ -361,7 +643,6 @@ impl DerefMut for Directory {
 #[cfg(feature = "async")]
 pub mod iter_stream {
     use super::*;
-    use crate::sync_helpers::*;
     use futures_core::Stream;
     use std::pin::Pin;
     use std::task::{Context, Poll};
@@ -478,8 +759,8 @@ pub mod iter_stream {
 
 #[cfg(not(feature = "async"))]
 pub mod iter_sync {
+
     use super::*;
-    use crate::sync_helpers::*;
     pub struct QueryDirectoryIterator<'a, T>
     where
         T: QueryDirectoryInfoValue,
@@ -555,3 +836,203 @@ pub mod iter_sync {
         }
     }
 }
+
+#[cfg(feature = "multi_threaded")]
+mod iter_mtd {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use crate::msg_handler::AsyncMessageIds;
+    /// A helper structure that allows cancelling a [`NotifyDirectoryIterator`].
+    #[derive(Clone)]
+    pub struct NotifyDirectoryIteratorCanceller {
+        /// Dual-purpose flag:
+        /// 1. Indicates to the worker thread that it should stop (by setting to `true`).
+        /// 2. Used by the worker thread to indicate that a cancellation was requested
+        ///    (by setting to `true` when it sends a cancel request) - in the async processing itself (via `ReceiveOptions`).
+        pub(crate) cancel_flag: Arc<AtomicBool>,
+        pub(crate) directory: Arc<Directory>,
+        pub(crate) async_msg_ids: Arc<AsyncMessageIds>,
+
+        cancel_event: Arc<std::sync::Condvar>,
+        cancel_done: Arc<Mutex<bool>>,
+    }
+
+    impl NotifyDirectoryIteratorCanceller {
+        pub(crate) fn new(directory: &Arc<Directory>) -> Self {
+            Self {
+                cancel_flag: Default::default(),
+                directory: directory.clone(),
+                async_msg_ids: Default::default(),
+                cancel_event: Default::default(),
+                cancel_done: Default::default(),
+            }
+        }
+
+        /// Cancels the ongoing watch operation.
+        ///
+        /// This method is non-blocking: it launches a thread to send the cancel request,
+        /// and returns immediately. The actual cancellation may take some time to complete,
+        /// depending on network conditions and server responsiveness.
+        /// Use [`wait_cancelled`] to block until the cancellation is confirmed.
+        pub fn cancel(&self) {
+            self.cancel_flag.store(true, Ordering::SeqCst);
+
+            // Dropping the iterator requests cancellation of the async operation.
+            // the cancel response should arrive to the worker as well.
+            // * if during the wait, we already have the common async_msg_ids set - use it to send cancel request.
+            // * if before sending next request, the flag is checked.
+            let directory = self.directory.clone();
+            let async_msg_ids = self.async_msg_ids.clone();
+            std::thread::spawn(move || {
+                directory
+                    .send_cancel(&async_msg_ids)
+                    .map_err(|e| {
+                        log::error!("Error sending cancel request: {e}");
+                        e
+                    })
+                    .ok()
+            });
+        }
+
+        /// Blocks the current thread until the cancellation is confirmed.
+        pub fn wait_cancelled(
+            &self,
+        ) -> std::result::Result<(), std::sync::PoisonError<std::sync::MutexGuard<'_, bool>>>
+        {
+            let _lockguard = self
+                .cancel_event
+                .wait_while(self.cancel_done.lock()?, |done| !*done)?;
+            Ok(())
+        }
+
+        pub(crate) fn notify_cancelled(
+            &self,
+        ) -> std::result::Result<(), std::sync::PoisonError<std::sync::MutexGuard<'_, bool>>>
+        {
+            {
+                let mut done = self.cancel_done.lock()?;
+                if *done {
+                    return Ok(()); // Already notified
+                }
+                *done = true;
+            }
+            self.cancel_event.notify_all();
+            Ok(())
+        }
+    }
+
+    pub trait NotifyDirectoryIteratorCancellable {
+        fn get_canceller(&self) -> &NotifyDirectoryIteratorCanceller;
+    }
+
+    /// Iterator over directory change notifications.
+    ///
+    /// This is needed since cancellation of the async operation is complex on multi-threaded
+    /// environments, and requires a dedicated worker thread to handle the async operation.
+    pub(crate) struct NotifyDirectoryIterator {
+        iterator: <std::sync::mpsc::Receiver<crate::Result<FileNotifyInformation>> as IntoIterator>::IntoIter,
+
+        canceller: NotifyDirectoryIteratorCanceller,
+    }
+
+    impl NotifyDirectoryIterator {
+        pub fn new(
+            canceller: NotifyDirectoryIteratorCanceller,
+            notify_filter: NotifyFilter,
+            recursive: bool,
+        ) -> crate::Result<Self> {
+            let async_msg_ids = canceller.async_msg_ids.clone();
+            let cancel_flag = canceller.cancel_flag.clone();
+
+            let (tx, rx) = std::sync::mpsc::channel();
+
+            // Launch the worker thread that will handle the async notifications.
+            std::thread::spawn({
+                let canceller = canceller.clone();
+                let cancel_flag = cancel_flag.clone();
+                let receive_options = ReceiveOptions::new()
+                    .with_async_msg_ids(async_msg_ids.clone())
+                    .with_cancellation_flag(cancel_flag.clone())
+                    .with_timeout(Duration::MAX);
+                move || {
+                    while !cancel_flag.load(Ordering::SeqCst) {
+                        let watch_result = canceller.directory._watch_options(
+                            notify_filter,
+                            recursive,
+                            receive_options.clone(),
+                        );
+                        receive_options.async_msg_ids.as_ref().unwrap().reset();
+
+                        use DirectoryWatchResult::*;
+                        match watch_result {
+                            Notifications(notifications) => {
+                                for notification in notifications {
+                                    if tx.send(Ok(notification)).is_err() {
+                                        break; // Receiver dropped
+                                    }
+                                }
+                            }
+                            Cancelled => {
+                                // Cancelled by user, exit the loop.
+                                canceller
+                                    .notify_cancelled()
+                                    .map_err(|e| {
+                                        log::error!("Error notifying cancellation: {e}");
+                                        e
+                                    })
+                                    .ok();
+                                log::debug!("Watch cancelled by user");
+                                break;
+                            }
+                            Cleanup => {
+                                // Server cleaned up the watch, exit the loop.
+                                log::debug!("Watch cleaned up by server");
+                                tx.send(Err(crate::Error::Cancelled("watch cleaned up by server")))
+                                    .ok();
+                                break;
+                            }
+                            x => {
+                                let x: crate::Result<_> = x.into();
+                                let x = x.unwrap_err();
+                                log::debug!("Error watching directory: {x}");
+                                tx.send(Err(x)).ok();
+                                break; // Exit on error
+                            }
+                        }
+                    }
+                }
+            });
+
+            let iterator = rx.into_iter();
+
+            Ok(Self {
+                iterator,
+                canceller,
+            })
+        }
+    }
+
+    impl Iterator for NotifyDirectoryIterator {
+        type Item = crate::Result<FileNotifyInformation>;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            self.iterator.next()
+        }
+    }
+
+    impl NotifyDirectoryIteratorCancellable for NotifyDirectoryIterator {
+        fn get_canceller(&self) -> &NotifyDirectoryIteratorCanceller {
+            &self.canceller
+        }
+    }
+
+    impl Drop for NotifyDirectoryIterator {
+        fn drop(&mut self) {
+            self.canceller.cancel();
+        }
+    }
+}
+
+#[cfg(feature = "multi_threaded")]
+pub use iter_mtd::{NotifyDirectoryIteratorCancellable, NotifyDirectoryIteratorCanceller};

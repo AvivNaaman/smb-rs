@@ -3,7 +3,7 @@
 //! which is used to chain multiple entries together.
 //! This struct wraps the value, and the offset, and provides a way to iterate over them.
 //! See [`ChainedItemList<T>`] to see how to write this type when in a list.
-//!
+
 use std::{
     io::SeekFrom,
     ops::{Deref, DerefMut},

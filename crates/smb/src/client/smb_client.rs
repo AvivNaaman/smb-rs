@@ -1,7 +1,5 @@
 use crate::ConnectionConfig;
-use crate::{
-    Connection, Error, FileCreateArgs, Resource, Session, Tree, resource::Pipe, sync_helpers::*,
-};
+use crate::{Connection, Error, FileCreateArgs, Pipe, Resource, Session, Tree, sync_helpers::*};
 use maybe_async::maybe_async;
 use smb_msg::{NetworkInterfaceInfo, ReferralEntry, ReferralEntryValue, Status};
 use smb_rpc::interface::{ShareInfo1, SrvSvc};
@@ -789,7 +787,7 @@ impl<'a> DfsResolver<'a> {
             log::info!("Successfully created file on DFS referral: {ref_unc_path}",);
             return Ok(resource);
         }
-        Err(Error::DfsReferralConnectionFail(dfs_path.clone()))
+        Err(Error::DfsError(dfs_path.clone()))
     }
 
     /// Returns a list of DFS referral paths for the given input UNC path.

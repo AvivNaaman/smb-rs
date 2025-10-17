@@ -5,8 +5,7 @@ use common::{TestConstants, make_server_connection};
 use futures_util::StreamExt;
 use serial_test::serial;
 use smb::{
-    ConnectionConfig, FileCreateArgs, ReadAt, WriteAt, connection::EncryptionMode,
-    resource::Directory,
+    ConnectionConfig, Directory, FileCreateArgs, ReadAt, WriteAt, connection::EncryptionMode,
 };
 use smb_fscc::*;
 use smb_msg::{AdditionalInfo, CreateOptions, Dialect};
@@ -16,7 +15,7 @@ mod common;
 macro_rules! basic_test {
     ([$dialect:ident], [$($encrypt_mode:ident),*]) => {
         $(
-            paste::paste! {
+            pastey::paste! {
                 #[test_log::test(maybe_async::test(
                     not(feature = "async"),
                     async(feature = "async", tokio::test(flavor = "multi_thread"))

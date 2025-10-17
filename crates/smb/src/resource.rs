@@ -1,4 +1,7 @@
-use std::sync::{Arc, atomic::AtomicBool};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use maybe_async::*;
 use smb_dtyp::SecurityDescriptor;
@@ -10,7 +13,8 @@ use crate::{
     Error,
     connection::connection_info::ConnectionInfo,
     msg_handler::{
-        HandlerReference, IncomingMessage, MessageHandler, OutgoingMessage, ReceiveOptions,
+        AsyncMessageIds, HandlerReference, IncomingMessage, MessageHandler, OutgoingMessage,
+        ReceiveOptions, SendMessageResult,
     },
     tree::TreeMessageHandler,
 };
@@ -311,17 +315,89 @@ impl ResourceHandle {
 
     /// (Internal)
     ///
+    /// Calculates the transaction size to use for a request,
+    /// considering both the requested size (if any), the max transaction size,
+    /// and the default transaction size.
+    ///
+    /// Prints a warning if the requested size exceeds the max transaction size.
+    fn calc_transact_size(&self, requested: Option<usize>) -> u32 {
+        let max_transact_size = self.conn_info.negotiation.max_transact_size;
+        match requested {
+            Some(requested_length) if requested_length > max_transact_size as usize => {
+                log::warn!(
+                    "Requested transaction size (0x{requested_length:x}) exceeds max transaction size, clamping to 0x{max_transact_size:x}",
+                );
+                max_transact_size
+            }
+            Some(len) => len as u32,
+            None => max_transact_size.min(self.conn_info.config.default_transaction_size()),
+        }
+    }
+
+    /// (Internal)
+    ///
     /// Sends a Query Information Request and parses the response.
     #[maybe_async]
-    async fn query_common(&self, req: QueryInfoRequest) -> crate::Result<QueryInfoData> {
+    async fn query_common(
+        &self,
+        mut req: QueryInfoRequest,
+        output_buffer_length: Option<usize>,
+        data_type: &'static str,
+    ) -> crate::Result<QueryInfoData> {
+        let buffer_length = self.calc_transact_size(output_buffer_length);
+        req.output_buffer_length = buffer_length;
+
         let info_type = req.info_type;
-        Ok(self
-            .send_receive(req.into())
-            .await?
-            .message
-            .content
-            .to_queryinfo()?
-            .parse(info_type)?)
+        let result = self
+            .send_recvo(
+                req.into(),
+                ReceiveOptions::new().with_status(&[
+                    Status::Success,
+                    Status::BufferOverflow,
+                    Status::BufferTooSmall,
+                    Status::InfoLengthMismatch,
+                ]),
+            )
+            .await;
+
+        match result {
+            Ok(response) => {
+                let status = response.message.header.status.try_into().unwrap();
+                match status {
+                    Status::Success => {
+                        Ok(response.message.content.to_queryinfo()?.parse(info_type)?)
+                    }
+                    Status::BufferOverflow | Status::InfoLengthMismatch => {
+                        let required_size = response
+                            .message
+                            .content
+                            .as_error()
+                            .ok()
+                            .and_then(|e| e.find_context(ErrorId::Default))
+                            .map(|ctx| match status {
+                                Status::BufferOverflow => crate::Result::Ok(ctx.as_u32()? as usize),
+                                Status::InfoLengthMismatch => {
+                                    crate::Result::Ok(ctx.as_u64()? as usize)
+                                }
+                                _ => unreachable!(),
+                            })
+                            .transpose()?;
+                        Err(Error::BufferTooSmall {
+                            data_type,
+                            required: required_size,
+                            provided: buffer_length as usize,
+                        })
+                    }
+                    Status::BufferTooSmall => Err(Error::BufferTooSmall {
+                        data_type,
+                        required: None,
+                        provided: buffer_length as usize,
+                    }),
+                    _ => unreachable!(), // already filtered by send_recvo
+                }
+            }
+            Err(e) => Err(e),
+        }
     }
 
     /// (Internal)
@@ -358,7 +434,7 @@ impl ResourceHandle {
             .with_restart_scan(true)
             .with_return_single_entry(true);
 
-        self.query_info_with_options::<T>(flags, 1024).await
+        self.query_info_with_options::<T>(flags, None).await
     }
 
     /// Queries the file for extended attributes information.
@@ -371,23 +447,41 @@ impl ResourceHandle {
         &self,
         names: Vec<&str>,
     ) -> crate::Result<QueryFileFullEaInformation> {
+        self.query_full_ea_info_with_options(names, None).await
+    }
+
+    /// Queries the file for extended attributes information.
+    /// # Arguments
+    /// * `names` - A list of extended attribute names to query.
+    /// # Returns
+    /// A `Result` containing the requested information, of type [QueryFileFullEaInformation].
+    /// See [`ResourceHandle::query_info`] for more information.
+    pub async fn query_full_ea_info_with_options(
+        &self,
+        names: Vec<&str>,
+        output_buffer_length: Option<usize>,
+    ) -> crate::Result<QueryFileFullEaInformation> {
         let result = self
-            .query_common(QueryInfoRequest {
-                info_type: InfoType::File,
-                info_class: QueryInfoClass::File(QueryFileInfoClass::FullEaInformation),
-                output_buffer_length: 1024,
-                additional_info: AdditionalInfo::new(),
-                flags: QueryInfoFlags::new()
-                    .with_restart_scan(true)
-                    .with_return_single_entry(true),
-                file_id: self.file_id()?,
-                data: GetInfoRequestData::EaInfo(GetEaInfoList {
-                    values: names
-                        .iter()
-                        .map(|&s| FileGetEaInformation::new(s))
-                        .collect(),
-                }),
-            })
+            .query_common(
+                QueryInfoRequest {
+                    info_type: InfoType::File,
+                    info_class: QueryInfoClass::File(QueryFileInfoClass::FullEaInformation),
+                    output_buffer_length: 0,
+                    additional_info: AdditionalInfo::new(),
+                    flags: QueryInfoFlags::new()
+                        .with_restart_scan(true)
+                        .with_return_single_entry(true),
+                    file_id: self.file_id()?,
+                    data: GetInfoRequestData::EaInfo(GetEaInfoList {
+                        values: names
+                            .iter()
+                            .map(|&s| FileGetEaInformation::new(s))
+                            .collect(),
+                    }),
+                },
+                output_buffer_length,
+                std::any::type_name::<QueryFileFullEaInformation>(),
+            )
             .await?
             .as_file()?
             .parse(QueryFileInfoClass::FullEaInformation)?
@@ -400,7 +494,9 @@ impl ResourceHandle {
     /// * `T` - The type of information to query. Must implement the [QueryFileInfoValue] trait.
     /// # Arguments
     /// * `flags` - The [QueryInfoFlags] for the query request.
-    /// * `output_buffer_length` - The maximum output buffer to use.
+    /// * `output_buffer_length` - An optional maximum output buffer to use. This should be less
+    /// than or equal to the negotiated max transaction size. If `None`, the default transaction size
+    /// will be used (see [`ConnectionConfig::default_transaction_size`][crate::ConnectionConfig::default_transaction_size]).
     /// # Returns
     /// A `Result` containing the requested information.
     /// # Notes
@@ -408,18 +504,22 @@ impl ResourceHandle {
     pub async fn query_info_with_options<T: QueryFileInfoValue>(
         &self,
         flags: QueryInfoFlags,
-        output_buffer_length: usize,
+        output_buffer_length: Option<usize>,
     ) -> crate::Result<T> {
         let result: T = self
-            .query_common(QueryInfoRequest {
-                info_type: InfoType::File,
-                info_class: QueryInfoClass::File(T::CLASS_ID),
-                output_buffer_length: output_buffer_length as u32,
-                additional_info: AdditionalInfo::new(),
-                flags,
-                file_id: self.file_id()?,
-                data: GetInfoRequestData::None(()),
-            })
+            .query_common(
+                QueryInfoRequest {
+                    info_type: InfoType::File,
+                    info_class: QueryInfoClass::File(T::CLASS_ID),
+                    output_buffer_length: 0,
+                    additional_info: AdditionalInfo::new(),
+                    flags,
+                    file_id: self.file_id()?,
+                    data: GetInfoRequestData::None(()),
+                },
+                output_buffer_length,
+                std::any::type_name::<T>(),
+            )
             .await?
             .as_file()?
             .parse(T::CLASS_ID)?
@@ -431,21 +531,42 @@ impl ResourceHandle {
     /// # Arguments
     /// * `additional_info` - The information to request on the security descriptor.
     /// # Returns
-    /// A `Result` containing the requested information, of type [SecurityDescriptor].
+    /// A `Result` containing the requested information, of type [`SecurityDescriptor`].
     pub async fn query_security_info(
         &self,
         additional_info: AdditionalInfo,
     ) -> crate::Result<SecurityDescriptor> {
+        self.query_security_info_with_options(additional_info, None)
+            .await
+    }
+
+    /// Queries the file for it's security descriptor.
+    /// # Arguments
+    /// * `additional_info` - The information to request on the security descriptor.
+    /// * `output_buffer_length` - An optional maximum output buffer to use. This should be less
+    /// than or equal to the negotiated max transaction size. If `None`, the default transaction size
+    /// will be used (see [`ConnectionConfig::default_transaction_size`][crate::ConnectionConfig::default_transaction_size]).
+    /// # Returns
+    /// A `Result` containing the requested information, of type [`SecurityDescriptor`].
+    pub async fn query_security_info_with_options(
+        &self,
+        additional_info: AdditionalInfo,
+        output_buffer_length: Option<usize>,
+    ) -> crate::Result<SecurityDescriptor> {
         Ok(self
-            .query_common(QueryInfoRequest {
-                info_type: InfoType::Security,
-                info_class: Default::default(),
-                output_buffer_length: 1024,
-                additional_info,
-                flags: QueryInfoFlags::new(),
-                file_id: self.file_id()?,
-                data: GetInfoRequestData::None(()),
-            })
+            .query_common(
+                QueryInfoRequest {
+                    info_type: InfoType::Security,
+                    info_class: Default::default(),
+                    output_buffer_length: 0,
+                    additional_info,
+                    flags: QueryInfoFlags::new(),
+                    file_id: self.file_id()?,
+                    data: GetInfoRequestData::None(()),
+                },
+                output_buffer_length,
+                "SecurityDescriptor",
+            )
             .await?
             .as_security()?)
     }
@@ -556,23 +677,41 @@ impl ResourceHandle {
     where
         T: QueryFileSystemInfoValue,
     {
+        self.query_fs_info_with_options(None).await
+    }
+    /// Queries the file system information for the current file.
+    /// # Type Parameters
+    /// * `T` - The type of information to query. Must implement the [QueryFileSystemInfoValue] trait.
+    /// # Returns
+    /// A `Result` containing the requested information.
+    pub async fn query_fs_info_with_options<T>(
+        &self,
+        output_buffer_length: Option<usize>,
+    ) -> crate::Result<T>
+    where
+        T: QueryFileSystemInfoValue,
+    {
         if self.share_type != ShareType::Disk {
             return Err(crate::Error::InvalidState(
                 "File system information is only available for disk files".into(),
             ));
         }
         let query_result: T = self
-            .query_common(QueryInfoRequest {
-                info_type: InfoType::FileSystem,
-                info_class: QueryInfoClass::FileSystem(T::CLASS_ID),
-                output_buffer_length: 1024,
-                additional_info: AdditionalInfo::new(),
-                flags: QueryInfoFlags::new()
-                    .with_restart_scan(true)
-                    .with_return_single_entry(true),
-                file_id: self.file_id()?,
-                data: GetInfoRequestData::None(()),
-            })
+            .query_common(
+                QueryInfoRequest {
+                    info_type: InfoType::FileSystem,
+                    info_class: QueryInfoClass::FileSystem(T::CLASS_ID),
+                    output_buffer_length: 0,
+                    additional_info: AdditionalInfo::new(),
+                    flags: QueryInfoFlags::new()
+                        .with_restart_scan(true)
+                        .with_return_single_entry(true),
+                    file_id: self.file_id()?,
+                    data: GetInfoRequestData::None(()),
+                },
+                output_buffer_length,
+                std::any::type_name::<T>(),
+            )
             .await?
             .as_filesystem()?
             .parse(T::CLASS_ID)?
@@ -696,6 +835,19 @@ impl ResourceHandle {
         options: ReceiveOptions<'_>,
     ) -> crate::Result<IncomingMessage> {
         self.handler.sendo_recvo(msg, options).await
+    }
+
+    #[maybe_async]
+    #[inline]
+    pub async fn send_cancel(&self, msg_ids: &AsyncMessageIds) -> crate::Result<SendMessageResult> {
+        let mut outgoing_message = OutgoingMessage::new(CancelRequest {}.into());
+        outgoing_message.message.header.message_id = msg_ids.msg_id.load(Ordering::SeqCst);
+        outgoing_message
+            .message
+            .header
+            .to_async(msg_ids.async_id.load(Ordering::SeqCst));
+
+        self.handler.sendo(outgoing_message).await
     }
 
     /// Returns whether current resource is opened from the same tree as the other resource.

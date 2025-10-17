@@ -132,8 +132,7 @@ pub struct ConnectionConfig {
 
     /// Whether to avoid multi-protocol negotiation,
     /// and perform smb2-only negotiation. This results in a
-    /// faster negotiation process, but may not be compatible
-    /// with all servers properly.
+    /// faster negotiation process, but it might fail with some servers,
     pub smb2_only_negotiate: bool,
 
     /// Specifies the transport protocol to be used for the connection.
@@ -143,9 +142,22 @@ pub struct ConnectionConfig {
     /// See [`AuthMethodsConfig`] for more information.
     pub auth_methods: AuthMethodsConfig,
 
-    /// The number of SMB2 credits to use for the connection.
+    /// The number of SMB2 credits to request for the connection.
     /// If not configured, uses a default value.
+    ///
+    /// The higher number of credits, the more concurrent requests can be sent on the connection.
+    /// However, some servers may not issue such high number of credits.
+    ///
+    /// This is the somewhat similar to the [`-Smb2MaxCredits`](<https://learn.microsoft.com/en-us/powershell/module/smbshare/set-smbserverconfiguration?view=windowsserver2025-ps#-smb2creditsmax>)
+    /// parameter in the `Set-SmbServerConfiguration` PowerShell cmdlet, but from the client's side.
     pub credits_backlog: Option<u16>,
+
+    /// The default size, in bytes, of the buffer that can be used for
+    /// [`ResourceHandle::query_info`][crate::ResourceHandle::query_info], [`ResourceHandle::query_fs_info`][crate::ResourceHandle::query_fs_info],
+    /// [`ResourceHandle::query_security_info`][crate::ResourceHandle::query_security_info], [`Directory::query_quota_info`][crate::Directory::query_quota_info],
+    /// their respective `set_*_info` counterparts (such as [`ResourceHandle::set_info`][crate::ResourceHandle::set_info]),
+    /// [`Directory::query`][crate::Directory::query] and [`Directory::watch`][crate::Directory::watch] operations.
+    pub default_transaction_size: Option<u32>,
 }
 
 impl ConnectionConfig {
@@ -170,10 +182,27 @@ impl ConnectionConfig {
                 ));
             }
         }
+
+        if let Some(default_transaction_size) = self.default_transaction_size {
+            if default_transaction_size == 0 {
+                return Err(crate::Error::InvalidConfiguration(
+                    "Default transaction size cannot be zero".to_string(),
+                ));
+            }
+        }
         Ok(())
     }
 
+    /// Returns the effective timeout to be used if [`timeout`][`Self::timeout`] is not set.
     pub fn timeout(&self) -> Duration {
         self.timeout.unwrap_or(Self::DEFAULT_TIMEOUT)
+    }
+
+    pub const DEFAULT_TRANSACTION_SIZE: u32 = 0x10_000;
+
+    /// Returns the effective value to be used if [`default_transaction_size`][`Self::default_transaction_size`] is not set.
+    pub fn default_transaction_size(&self) -> u32 {
+        self.default_transaction_size
+            .unwrap_or(Self::DEFAULT_TRANSACTION_SIZE)
     }
 }

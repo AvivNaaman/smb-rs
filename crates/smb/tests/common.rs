@@ -47,12 +47,17 @@ pub async fn make_server_connection(
     .await
 }
 
+/// Returns the server address for the tests connection.
+pub fn smb_tests_server() -> String {
+    var(TestEnv::SERVER).unwrap_or("127.0.0.1".to_string())
+}
+
 #[maybe_async::maybe_async]
 pub async fn make_server_connection_ex(
     share: &str,
     config: ClientConfig,
 ) -> smb::Result<(Client, UncPath)> {
-    let server = var(TestEnv::SERVER).unwrap_or("127.0.0.1".to_string());
+    let server = smb_tests_server();
     let user = var(TestEnv::USER).unwrap_or(TestEnv::DEFAULT_USER.to_string());
     let password = var(TestEnv::PASSWORD).unwrap_or(TestEnv::DEFAULT_PASSWORD.to_string());
     let smb = Client::new(config);

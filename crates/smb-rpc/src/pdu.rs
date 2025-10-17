@@ -6,11 +6,11 @@ use binrw::prelude::*;
 use modular_bitfield::prelude::*;
 use smb_dtyp::Guid;
 use smb_dtyp::binrw_util::prelude::*;
-use smb_dtyp::guid;
+use smb_dtyp::make_guid;
 
 pub const DCE_RPC_VERSION: DceRpcVersion = DceRpcVersion { major: 5, minor: 0 };
 pub const BIND_TIME_NEGOTIATION: DceRpcSyntaxId = DceRpcSyntaxId {
-    uuid: guid!("6cb71c2c-9812-4540-0300-000000000000"),
+    uuid: make_guid!("6cb71c2c-9812-4540-0300-000000000000"),
     version: 2,
 };
 pub const BIND_TIME_NEGOTIATION_PREFIX: &str = "6cb71c2c-9812-4540-";
@@ -21,7 +21,7 @@ macro_rules! rpc_pkts {
             $($pdu_type:ident = $pdu_oper_id:literal,)+
         }),+
     ) => {
-        paste::paste! {
+        pastey::paste! {
                     $(
 // Entire Packet, for each direction (Request/Response).
 #[binrw::binrw]
@@ -258,7 +258,7 @@ pub struct DcRpcCoPktBindAck {
 
     #[bw(calc = port_spec.size() as u16)]
     port_spec_len: u16,
-    #[br(args(port_spec_len as u64))]
+    #[br(args { size: SizedStringSize::bytes16(port_spec_len) })]
     pub port_spec: SizedAnsiString,
 
     #[br(align_before = 4)]
@@ -363,7 +363,7 @@ mod tests {
     #[test]
     fn test_bind_writes() {
         let wkksvc_abstract_syntax = DceRpcSyntaxId {
-            uuid: guid!("6bffd098-a112-3610-9833-46c3f87e345a"),
+            uuid: make_guid!("6bffd098-a112-3610-9833-46c3f87e345a"),
             version: 1,
         };
 
@@ -377,7 +377,7 @@ mod tests {
                         context_id: 0,
                         abstract_syntax: wkksvc_abstract_syntax.clone(),
                         transfer_syntaxes: vec![DceRpcSyntaxId {
-                            uuid: guid!("8a885d04-1ceb-11c9-9fe8-08002b104860"),
+                            uuid: make_guid!("8a885d04-1ceb-11c9-9fe8-08002b104860"),
                             version: 2,
                         }],
                     },
@@ -385,7 +385,7 @@ mod tests {
                         context_id: 1,
                         abstract_syntax: wkksvc_abstract_syntax.clone(),
                         transfer_syntaxes: vec![DceRpcSyntaxId {
-                            uuid: guid!("71710533-beba-4937-8319-b5dbef9ccc36"),
+                            uuid: make_guid!("71710533-beba-4937-8319-b5dbef9ccc36"),
                             version: 1,
                         }],
                     },
@@ -393,7 +393,7 @@ mod tests {
                         context_id: 2,
                         abstract_syntax: wkksvc_abstract_syntax.clone(),
                         transfer_syntaxes: vec![DceRpcSyntaxId {
-                            uuid: guid!("6cb71c2c-9812-4540-0300-000000000000"),
+                            uuid: make_guid!("6cb71c2c-9812-4540-0300-000000000000"),
                             version: 1,
                         }],
                     },
@@ -459,7 +459,7 @@ mod tests {
                             result: DceRpcCoPktBindAckDefResult::Acceptance,
                             reason: DcRpcCoPktBindAckReason::NotSpecified,
                             syntax: DceRpcSyntaxId {
-                                uuid: guid!("71710533-beba-4937-8319-b5dbef9ccc36"),
+                                uuid: make_guid!("71710533-beba-4937-8319-b5dbef9ccc36"),
                                 version: 1,
                             }
                         },

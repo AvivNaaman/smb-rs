@@ -27,6 +27,16 @@ pub struct FileQuotaInformation {
     pub sid: SID,
 }
 
+impl FileQuotaInformation {
+    /// Minimum size of this structure in bytes.
+    pub const MIN_SIZE: usize = std::mem::size_of::<u32>()
+        + std::mem::size_of::<FileTime>()
+        + std::mem::size_of::<u64>()
+        + std::mem::size_of::<u64>()
+        + std::mem::size_of::<u64>()
+        + SID::MIN_SIZE;
+}
+
 /// This structure is used to provide the list of SIDs for which quota query information is requested.
 ///
 /// [MS-FSCC 2.4.41.1](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/56adae21-add4-4434-97ec-e40e87739d52>)

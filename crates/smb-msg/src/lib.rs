@@ -68,6 +68,9 @@ pub enum SmbMsgError {
         expected: &'static str,
     },
 
+    #[error("Invalid data: {0}")]
+    InvalidData(String),
+
     #[error("Invalid negotiate dialect cast to dialect: {0:?}")]
     InvalidDialect(NegotiateDialect),
 

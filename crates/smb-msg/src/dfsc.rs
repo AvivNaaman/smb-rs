@@ -56,15 +56,15 @@ pub struct DfsRequestFlags {
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct DfsRequestData {
-    #[bw(try_calc = request_file_name.len().try_into())]
+    #[bw(try_calc = request_file_name.size().try_into())]
     request_file_name_length: u16,
     /// A Unicode string specifying the path to be resolved. The specified path MUST be interpreted in a case-insensitive manner. Its format depends on the type of referral request, as specified in section 3.1.4.2.
-    #[br(args(request_file_name_length as u64))]
+    #[br(args { size: SizedStringSize::bytes16(request_file_name_length) })]
     request_file_name: SizedWideString,
-    #[bw(try_calc = site_name.len().try_into())]
+    #[bw(try_calc = site_name.size().try_into())]
     site_name_length: u16,
     /// A Unicode string specifying the name of the site to which the DFS client computer belongs. The length of this string is determined by the value of the SiteNameLength field.
-    #[br(args(site_name_length as u64))]
+    #[br(args { size: SizedStringSize::bytes16(site_name_length) })]
     site_name: SizedWideString,
 }
 
@@ -124,7 +124,7 @@ macro_rules! gen_ref_entry_val {
     (
         $($ver:literal,)+
     ) => {
-        paste::paste! {
+        pastey::paste! {
         #[binrw::binrw]
         #[derive(Debug, PartialEq, Eq)]
         #[br(import(version: u16))]
