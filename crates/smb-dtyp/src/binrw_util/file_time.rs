@@ -20,9 +20,22 @@ impl FileTime {
     const SCALE_VALUE_TO_NANOS: u64 = 100;
     const SCALE_VALUE_TO_SECS: u64 = 1_000_000_000 / Self::SCALE_VALUE_TO_NANOS;
 
+    /// Converts the FileTime to a PrimitiveDateTime.
+    ///
+    /// > This is a legacy method. Use `FileTime::Into<PrimitiveDateTime>` instead.
     pub fn date_time(&self) -> PrimitiveDateTime {
         let duration = core::time::Duration::from_nanos(self.value * Self::SCALE_VALUE_TO_NANOS);
         Self::EPOCH + duration
+    }
+
+    /// A constant representing a zero FileTime value.
+    pub const ZERO: FileTime = FileTime { value: 0 };
+
+    /// Returns true if the FileTime value is zero.
+    ///
+    /// This is usually an indicator of "no time" or "not set".
+    pub fn is_zero(&self) -> bool {
+        self.value == 0
     }
 }
 
@@ -50,6 +63,12 @@ impl From<PrimitiveDateTime> for FileTime {
         Self {
             value: duration.whole_nanoseconds() as u64 / Self::SCALE_VALUE_TO_NANOS,
         }
+    }
+}
+
+impl From<FileTime> for PrimitiveDateTime {
+    fn from(val: FileTime) -> Self {
+        val.date_time()
     }
 }
 
@@ -88,5 +107,12 @@ mod tests {
     #[test]
     pub fn test_file_time_from_datetime_correct() {
         assert_eq!(*FileTime::from(TEST_VAL1_DT), TEST_VAL1_U64)
+    }
+
+    #[test]
+    pub fn test_zero_file_time() {
+        let ft = FileTime::ZERO;
+        assert!(ft.is_zero());
+        assert_eq!(ft.date_time(), FileTime::EPOCH);
     }
 }

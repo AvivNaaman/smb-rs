@@ -4,6 +4,8 @@
 //!
 //! [MS-FSCC 2.4](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/4718fc40-e539-4014-8e33-b675af74e3e1>)
 
+use std::ops::Deref;
+
 use binrw::{NullString, prelude::*};
 use modular_bitfield::prelude::*;
 
@@ -56,7 +58,7 @@ pub struct FileFullEaInformationInner {
     pub ea_value: Option<Vec<u8>>,
 }
 
-pub type FileFullEaInformation = ChainedItemList<FileFullEaInformationInner>;
+pub type FileFullEaInformation = ChainedItemList<FileFullEaInformationInner, 4>;
 
 /// Query or Set file mode information.
 ///
@@ -143,6 +145,28 @@ pub struct FileNameInformation {
     /// The full path name of the file.
     #[br(args { size: SizedStringSize::bytes(file_name_length)})]
     pub file_name: SizedWideString,
+}
+
+impl Deref for FileNameInformation {
+    type Target = SizedWideString;
+
+    fn deref(&self) -> &Self::Target {
+        &self.file_name
+    }
+}
+
+impl From<SizedWideString> for FileNameInformation {
+    fn from(value: SizedWideString) -> Self {
+        Self { file_name: value }
+    }
+}
+
+impl From<&str> for FileNameInformation {
+    fn from(value: &str) -> Self {
+        Self {
+            file_name: SizedWideString::from(value),
+        }
+    }
 }
 
 /// Reparse Tag Values

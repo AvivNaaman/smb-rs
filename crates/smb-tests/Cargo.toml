@@ -13,3 +13,4 @@ categories.workspace = true
 
 [dependencies]
 binrw = { workspace = true }
+hex = "0.4"
