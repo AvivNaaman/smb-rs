@@ -5,7 +5,8 @@
 use binrw::prelude::*;
 use modular_bitfield::prelude::*;
 
-/// The following attributes are defined for files and directories.
+/// Attributes of a file or directory.
+///
 /// They can be used in any combination unless noted in the description of the attribute's meaning
 ///
 /// [MS-FSCC 2.6](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/ca28ec38-f155-4768-81d6-4bfeb8586fc9>)

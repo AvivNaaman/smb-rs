@@ -17,10 +17,9 @@ pub trait FileInfoType:
     fn class(&self) -> Self::Class;
 }
 
-/// A macro for generating a file class enums,
+/// An internal macro for generating a file class enums,
 /// for both the file information class, and information value.
 /// including a trait for the value types.
-#[macro_export]
 macro_rules! file_info_classes {
     (
         $svis:vis $name:ident {
@@ -96,7 +95,7 @@ macro_rules! file_info_classes {
                         pub use $crate::FileInfoType;
                         match value {
                             $name::[<$field_name Information>](v) => Ok(v),
-                            _ => Err($crate::SmbFsccError::UnexpectedInformationType(<Self as [<$name Value>]>::CLASS_ID as u8, value.class() as u8)),
+                            _ => Err($crate::SmbFsccError::UnexpectedInformationType(stringify!([<$field_name Information>]), <Self as [<$name Value>]>::CLASS_ID as u8, value.class() as u8)),
                         }
                     }
                 }
@@ -108,3 +107,5 @@ macro_rules! file_info_classes {
         }
     }
 }
+
+pub(crate) use file_info_classes;

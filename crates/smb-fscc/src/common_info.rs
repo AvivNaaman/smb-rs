@@ -11,7 +11,7 @@ use smb_dtyp::binrw_util::prelude::*;
 
 use crate::{ChainedItemList, FileAttributes};
 
-/// This information class is used to query or set file information.
+/// Query or Set file information.
 ///
 /// [MS-FSCC 2.4.7](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/16023025-8a78-492f-8b96-c873b042ac50>)
 #[binrw::binrw]
@@ -32,7 +32,7 @@ pub struct FileBasicInformation {
     _reserved: u32,
 }
 
-/// This information class is used to query or set extended attribute (EA) information for a file.
+/// Query or Set extended attribute (EA) information for a file.
 ///
 /// [MS-FSCC 2.4.15](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/e8d926d1-3a22-4654-be9c-58317a85540b>)
 #[binrw::binrw]
@@ -58,7 +58,7 @@ pub struct FileFullEaInformationInner {
 
 pub type FileFullEaInformation = ChainedItemList<FileFullEaInformationInner>;
 
-/// This information class is used to query or set file mode information.
+/// Query or Set file mode information.
 ///
 /// [MS-FSCC 2.4.31](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/52df7798-8330-474b-ac31-9afe8075640c>)
 #[bitfield]
@@ -88,7 +88,7 @@ pub struct FileModeInformation {
     __: B19,
 }
 
-/// This information class is used to query or set named pipe information.
+/// Query or Set named pipe information.
 ///
 /// [MS-FSCC 2.4.37](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/cd805dd2-9248-4024-ac0f-b87a702dd366>)
 #[binrw::binrw]
@@ -122,7 +122,7 @@ pub enum PipeCompletionMode {
     Complete = 1,
 }
 
-/// This information class is used to query or set the current byte offset of the file pointer.
+/// Query or Set the current byte offset of the file pointer.
 ///
 /// [MS-FSCC 2.4.40](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/e3ce4a39-327e-495c-99b6-6b61606b6f16>)
 #[binrw::binrw]
@@ -132,7 +132,7 @@ pub struct FilePositionInformation {
     pub current_byte_offset: u64,
 }
 
-/// This information class is used to query the name of a file.
+/// Query the name of a file.
 ///
 /// [MS-FSCC 2.4.32](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/cb30e415-54c5-4483-a346-822ea90e1e89>)
 #[binrw::binrw]
@@ -145,6 +145,8 @@ pub struct FileNameInformation {
     pub file_name: SizedWideString,
 }
 
+/// Reparse Tag Values
+///
 /// Each reparse point has a reparse tag.
 /// The reparse tag uniquely identifies the owner of that reparse point.
 /// The owner is the implementer of the file system filter driver associated with a reparse tag.

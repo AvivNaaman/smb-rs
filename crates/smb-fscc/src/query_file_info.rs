@@ -46,7 +46,7 @@ pub type QueryFileFullEaInformation = FileFullEaInformation;
 
 pub type FileStreamInformation = ChainedItemList<FileStreamInformationInner>;
 
-/// This information class is used to query the access rights of a file that were granted when the file was opened.
+/// Query the access rights of a file that were granted when the file was opened.
 ///
 /// [MS-FSCC 2.4.1](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/01cf43d2-deb3-40d3-a39b-9e68693d7c90>)
 #[binrw::binrw]
@@ -56,7 +56,7 @@ pub struct FileAccessInformation {
     pub access_flags: FileAccessMask,
 }
 
-/// This information class is used to query a collection of file information structures.
+/// Query a collection of file information structures.
 ///
 /// [MS-FSCC 2.4.2](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/95f3056a-ebc1-4f5d-b938-3f68a44677a6>)
 #[binrw::binrw]
@@ -82,7 +82,7 @@ pub struct FileAllInformation {
     pub name: FileNameInformation,
 }
 
-/// This information class is used to query the buffer alignment required by the underlying device.
+/// Query the buffer alignment required by the underlying device.
 ///
 /// [MS-FSCC 2.4.3](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/9b0b9971-85aa-4651-8438-f1c4298bcb0d>)
 #[binrw::binrw]
@@ -111,7 +111,7 @@ pub enum FileAlignmentInformation {
     _512Byte = 0x1ff,
 }
 
-/// This information class is used to query the alternate name (8.3 short name) of a file.
+/// Query the alternate name (8.3 short name) of a file.
 ///
 /// [MS-FSCC 2.4.5](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/cb90d9e0-695d-4418-8d89-a29e2ba9faf8>)
 #[binrw::binrw]
@@ -129,7 +129,7 @@ impl Deref for FileAlternateNameInformation {
     }
 }
 
-/// This information class is used to query file attribute and reparse tag information for a file.
+/// Query file attribute and reparse tag information for a file.
 ///
 /// [MS-FSCC 2.4.6](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/d295752f-ce89-4b98-8553-266d37c84f0e>)
 #[binrw::binrw]
@@ -141,7 +141,7 @@ pub struct FileAttributeTagInformation {
     pub reparse_tag: ReparseTag,
 }
 
-/// This information class is used to query compression information for a file.
+/// Query compression information for a file.
 ///
 /// [MS-FSCC 2.4.9](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/0a7e50c4-2839-438e-aa6c-0da7d681a5a7>)
 #[binrw::binrw]
@@ -173,7 +173,7 @@ pub enum FileCompressionFormat {
     Lznt1 = 2,
 }
 
-/// This information class is used to query the size of the extended attributes (EA) for a file.
+/// Query the size of the extended attributes (EA) for a file.
 ///
 /// [MS-FSCC 2.4.13](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/db6cf109-ead8-441a-b29e-cb2032778b0f>)
 #[binrw::binrw]
@@ -183,7 +183,7 @@ pub struct FileEaInformation {
     pub ea_size: u32,
 }
 
-/// This information class is used to query the file system's 8-byte file reference number for a file.
+/// Query the file system's 8-byte file reference number for a file.
 ///
 /// [MS-FSCC 2.4.26](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/e4185a8a-ed8d-4f98-ab55-ca34dc8916e6>)
 #[binrw::binrw]
@@ -195,7 +195,7 @@ pub struct FileIdInformation {
     pub file_id: u128,
 }
 
-/// This information class is used to query the file system's 8-byte file reference number for a file.
+/// Query the file system's 8-byte file reference number for a file.
 ///
 /// [MS-FSCC 2.4.27](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/7d796611-2fa5-41ac-8178-b6fea3a017b3>)
 #[binrw::binrw]
@@ -205,7 +205,7 @@ pub struct FileInternalInformation {
     pub index_number: u64,
 }
 
-/// This information class is used to query network file open information for a file.
+/// Query network file open information for a file.
 ///
 /// [MS-FSCC 2.4.34](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/26d261db-58d1-4513-a548-074448cbb146>)
 #[binrw::binrw]
@@ -229,7 +229,7 @@ pub struct FileNetworkOpenInformation {
     _reserved: u32,
 }
 
-/// This information class is used to query the normalized name of a file.
+/// Query the normalized name of a file.
 /// A normalized name is an absolute pathname where each short name component has been replaced with the corresponding long name component,
 /// and each name component uses the exact letter casing stored on disk
 ///
@@ -249,7 +249,7 @@ impl Deref for FileNormalizedNameInformation {
     }
 }
 
-/// This information class is used to query information associated with a named pipe that is not specific to one end of the pipe or another.
+/// Query information associated with a named pipe that is not specific to one end of the pipe or another.
 ///
 /// [MS-FSCC 2.4.38](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/de9abdc7-b974-4ec3-a4dc-42853777f412>)
 #[binrw::binrw]
@@ -325,7 +325,7 @@ pub enum NamedPipeEnd {
     Server = 1,
 }
 
-/// This information class is used to query information that is associated with the remote end of a named pipe.
+/// Query information that is associated with the remote end of a named pipe.
 ///
 /// [MS-FSCC 2.4.39](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/4319b135-4472-482f-a0a3-6cc3a856c6b6>)
 #[binrw::binrw]
@@ -337,7 +337,7 @@ pub struct FilePipeRemoteInformation {
     pub maximum_collection_count: u32,
 }
 
-/// This information class is used to query standard information for a file.
+/// Query standard information for a file.
 ///
 /// [MS-FSCC 2.4.47](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/5afa7f66-619c-48f3-955f-68c4ece704ae>)
 #[binrw::binrw]
@@ -358,7 +358,7 @@ pub struct FileStandardInformation {
     reserved: u16,
 }
 
-/// This information class is used to enumerate the data streams for a file.
+/// Enumerate the data streams for a file.
 ///
 /// [MS-FSCC 2.4.49](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/f8762be6-3ab9-411e-a7d6-5cc68f70c78d>)
 #[binrw::binrw]
@@ -375,7 +375,7 @@ pub struct FileStreamInformationInner {
     pub stream_name: SizedWideString,
 }
 
-/// This information class is used to query extended attributes for a file.
+/// Query extended attributes for a file.
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[bw(import(has_next: bool))]

@@ -30,7 +30,7 @@ file_info_classes! {
     }, Write
 }
 
-/// This information class is used to query attribute information for a file system.
+/// Query attribute information for a file system.
 ///
 /// [MS-FSCC 2.5.1](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/ebc7e6e5-4650-4e54-b17c-cf60f6fbeeaa>)
 #[binrw::binrw]
@@ -108,7 +108,7 @@ pub struct FileSystemAttributes {
     __: B3,
 }
 
-/// This information class is used to query or set quota and content indexing control information for a file system volume.
+/// Query or Set quota and content indexing control information for a file system volume.
 /// Setting quota information requires the caller to have permission to open a volume handle or a handle to the quota index file for write access.
 ///
 /// [MS-FSCC 2.5.2](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/e5a70738-7ee4-46d9-a5f7-6644daa49a51>)
@@ -241,7 +241,7 @@ pub struct FileSystemControlFlags {
     __: B22,
 }
 
-/// This information class is used to query sector size information for a file system volume.
+/// Query sector size information for a file system volume.
 ///
 /// [MS-FSCC 2.5.4](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/63768db7-9012-4209-8cca-00781e7322f5)
 #[binrw::binrw]
@@ -254,7 +254,7 @@ pub struct FileFsFullSizeInformation {
     pub bytes_per_sector: u32,
 }
 
-/// This information class is used to query or set the object ID for a file system data element. The operation MUST fail if the file system does not support object IDs.
+/// Query or Set the object ID for a file system data element. The operation MUST fail if the file system does not support object IDs.
 ///
 /// [MS-FSCC 2.5.6](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/dbf535ae-315a-4508-8bc5-84276ea106d4>)
 #[binrw::binrw]
@@ -266,7 +266,7 @@ pub struct FileFsObjectIdInformation {
     pub extended_info: [u8; 48],
 }
 
-/// This information class is used to query for the extended sector size and alignment information for a volume.
+/// Query for the extended sector size and alignment information for a volume.
 /// The message contains a FILE_FS_SECTOR_SIZE_INFORMATION data element.
 ///
 /// [MS-FSCC 2.5.7](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/3e75d97f-1d0b-4e47-b435-73c513837a57>)
@@ -316,7 +316,7 @@ pub struct SectorSizeInfoFlags {
     __: B28,
 }
 
-/// This information class is used to query sector size information for a file system volume.
+/// Query sector size information for a file system volume.
 ///
 /// [MS-FSCC 2.5.8](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/e13e068c-e3a7-4dd4-94fd-3892b492e6e7>)
 #[binrw::binrw]
@@ -332,7 +332,7 @@ pub struct FileFsSizeInformation {
     pub bytes_per_sector: u32,
 }
 
-/// This information class is used to query information on a volume on which a file system is mounted.
+/// Query information on a volume on which a file system is mounted.
 ///
 /// [MS-FSCC 2.5.9](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/bf691378-c34e-4a13-976e-404ea1a87738>)
 #[binrw::binrw]

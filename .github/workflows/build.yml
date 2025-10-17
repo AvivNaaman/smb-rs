@@ -8,6 +8,10 @@ on:
     branches: ["main"]
   workflow_dispatch:
 
+concurrency:
+  group: smb-rs-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   COMMON_FEATURES: "sign,encrypt,compress,kerberos"

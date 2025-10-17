@@ -7,7 +7,7 @@
 
 use binrw::prelude::*;
 
-use crate::file_info_classes;
+use crate::info_classes::file_info_classes;
 use smb_dtyp::binrw_util::prelude::*;
 
 use super::{FileAttributes, ReparseTag};
@@ -93,7 +93,7 @@ macro_rules! query_dir_type {
     };
 }
 
-/// This information class is used to query detailed information for the files in a directory.
+/// Query detailed information for the files in a directory.
 ///
 /// [MS-FSCC 2.4.10](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/b38bf518-9057-4c88-9ddd-5e2d3976a64b>)
 ///
@@ -125,14 +125,14 @@ pub struct FileDirectoryInformation {
 }
 
 query_dir_type! {
-    /// This information class is used to query detailed information for the files in a directory.
+    /// Query detailed information for the files in a directory.
     ///
     /// [MS-FSCC 2.4.17](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/46021e52-29b1-475c-b6d3-fe5497d23277>)
     pub struct FileFullDirectoryInformation {}
 }
 
 query_dir_type! {
-    /// This information class is used to query detailed information for the files in a directory.
+    /// Query detailed information for the files in a directory.
     ///
     /// [MS-FSCC 2.4.18](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/b3a27a50-454f-4f8f-b8ea-decfedc5c454>)
     pub struct FileId64ExtdBothDirectoryInformation {
@@ -152,7 +152,7 @@ query_dir_type! {
 }
 
 query_dir_type! {
-    /// This information class is used to query detailed information for the files in a directory.
+    /// Query detailed information for the files in a directory.
     ///
     /// [MS-FSCC 2.4.19](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/174921dd-9be2-42ed-8220-58c310b1b916>)
     pub struct FileId64ExtdDirectoryInformation {
@@ -164,7 +164,7 @@ query_dir_type! {
 }
 
 query_dir_type! {
-    /// This information class is used to query detailed information for the files in a directory.
+    /// Query detailed information for the files in a directory.
     ///
     /// [MS-FSCC 2.4.20](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/1dbb9619-873e-4834-af01-849dcce87d7d>)
     pub struct FileIdAllExtdBothDirectoryInformation {
@@ -184,7 +184,7 @@ query_dir_type! {
 }
 
 query_dir_type! {
-    /// This information class is used to query detailed information for the files in a directory.
+    /// Query detailed information for the files in a directory.
     ///
     /// [MS-FSCC 2.4.21](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/02991a71-6610-4127-93ef-76b8ea80fef6>)
     pub struct FileIdAllExtdDirectoryInformation {
@@ -198,7 +198,7 @@ query_dir_type! {
 }
 
 query_dir_type! {
-    /// This information class is used to query detailed information for the files in a directory.
+    /// Query detailed information for the files in a directory.
     ///
     /// [MS-FSCC 2.4.22](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/1e144bff-c056-45aa-bd29-c13d214ee2ba>)
     pub struct FileIdBothDirectoryInformation {
@@ -216,7 +216,7 @@ query_dir_type! {
 }
 
 query_dir_type! {
-    /// This information class is used to query detailed information for the files in a directory.
+    /// Query detailed information for the files in a directory.
     ///
     /// [MS-FSCC 2.4.23](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/36172f0b-8dce-435a-8748-859978d632f8>)
     pub struct FileIdExtdDirectoryInformation {
@@ -228,7 +228,7 @@ query_dir_type! {
 }
 
 query_dir_type! {
-    /// This information class is used to query detailed information for the files in a directory.
+    /// Query detailed information for the files in a directory.
     ///
     /// [MS-FSCC 2.4.24](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/ab8e7558-899c-4be1-a7c5-3a9ae8ab76a0>)
     pub struct FileIdFullDirectoryInformation {
@@ -239,7 +239,7 @@ query_dir_type! {
     }
 }
 
-/// This information class is used to query the names of the files in a directory.
+/// Query the names of the files in a directory.
 ///
 /// [MS-FSCC 2.4.33](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/a289f7a8-83d2-4927-8c88-b2d328dde5a5>)
 ///
@@ -257,7 +257,7 @@ pub struct FileNamesInformation {
 }
 
 query_dir_type! {
-    /// This information class is used to query detailed information for the files in a directory.
+    /// Query detailed information for the files in a directory.
     ///
     /// [MS-FSCC 2.4.8](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/270df317-9ba5-4ccb-ba00-8d22be139bc5>)
     pub struct FileBothDirectoryInformation {

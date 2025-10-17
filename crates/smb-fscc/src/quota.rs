@@ -2,7 +2,7 @@ use binrw::{io::TakeSeekExt, prelude::*};
 use smb_dtyp::SID;
 use smb_dtyp::binrw_util::prelude::*;
 
-/// This information class is used to query or to set file quota information for a volume.
+/// Query or to set file quota information for a volume.
 /// For queries, an optional buffer of FILE_GET_QUOTA_INFORMATION (section 2.4.41.1) data elements is provided by the client to specify the SIDs for which quota information is requested.
 /// If the FILE_GET_QUOTA_INFORMATION buffer is not specified, information for all quotas is returned.
 /// A buffer of FILE_QUOTA_INFORMATION data elements is returned by the server.

@@ -32,7 +32,7 @@ file_info_classes! {
     }, Write
 }
 
-/// This information class is used to set end-of-file information for a file.
+/// Set end-of-file information for a file.
 ///
 /// [MS-FSCC 2.4.14](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/75241cca-3167-472f-8058-a52d77c6bb17>)
 #[binrw::binrw]
@@ -45,7 +45,7 @@ pub struct FileEndOfFileInformation {
     pub end_of_file: u64,
 }
 
-/// This information class is used to mark a file for deletion.
+/// Mark a file for deletion.
 ///
 /// [MS-FSCC 2.4.11](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/12c3dd1c-14f6-4229-9d29-75fb2cb392f6>)
 #[binrw::binrw]
@@ -64,7 +64,7 @@ impl Default for FileDispositionInformation {
     }
 }
 
-/// This information class is used to rename a file within the SMB2 protocol.
+/// Rename a file within the SMB2 protocol.
 ///
 /// [MS-FSCC 2.4.42.2](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/52aa0b70-8094-4971-862d-79793f41e6a8>) - FileRenameInformation for SMB2 protocol
 #[binrw::binrw]
@@ -87,7 +87,8 @@ pub struct FileRenameInformation {
     pub file_name: SizedWideString,
 }
 
-/// This information class is used to set but not to query the allocation size for a file.
+/// Set the allocation size for a file.
+///
 /// The file system is passed a 64-bit signed integer containing the file allocation size, in bytes.
 /// The file system rounds the requested allocation size up to an integer multiple of the cluster size for nonresident files,
 /// or an implementation-defined multiple for resident files.
@@ -101,7 +102,7 @@ pub struct FileAllocationInformation {
     pub allocation_size: u64,
 }
 
-/// This information class is used to create a hard link to an existing file via the SMB Version 2 Protocol, as specified in [MS-SMB2].
+/// Create a hard link to an existing file via the SMB Version 2 Protocol, as specified in [MS-SMB2].
 ///
 /// [MS-FSCC 2.4.8.2](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/58f44021-120d-4662-bf2c-9905ed4940dc>) - FileLinkInformation for SMB2 protocol
 #[binrw::binrw]
@@ -126,7 +127,8 @@ pub struct FileLinkInformation {
     pub file_name: SizedWideString,
 }
 
-/// This information class is used to change a file's short name.
+/// change a file's short name.
+///
 /// If the supplied name is of zero length, the file's existing short name, if any,
 /// SHOULD be deleted.
 /// Otherwise, the supplied name MUST be a valid short name as specified in section 2.1.5.2.1
@@ -149,7 +151,8 @@ impl Deref for FileShortNameInformation {
     }
 }
 
-/// This information class is used to set the valid data length information for a file.
+/// set the valid data length information for a file.
+///
 /// A file's valid data length is the length, in bytes, of the data that has been written to the file.
 /// This valid data extends from the beginning of the file to the last byte in the file that has not been zeroed or left uninitialized
 ///

@@ -1,6 +1,8 @@
 //! Test utilities for binrw-related code.
 
 /// BinWrite test macro.
+///
+/// Creates a test
 /// ```ignore
 /// test_binrw_write! {
 ///     StructName {
@@ -26,13 +28,30 @@ macro_rules! test_binrw_write {
                 let value = $name {
                     $($field: $value),*
                 };
-                let mut writer = Cursor::new(Vec::new());
-                value.write_le(&mut writer).unwrap();
-                let expected: Vec<u8> = vec![$($bytes),*];
-                assert_eq!(writer.into_inner(), expected);
+
+                $crate::binrw_write_and_assert_eq!(
+                    value,
+                    [$($bytes),*]
+                );
             }
         }
 
+    };
+}
+
+#[macro_export]
+macro_rules! binrw_write_and_assert_eq {
+    (
+        $value:expr,
+        [$($bytes:expr),* $(,)?]
+    ) => {
+        {
+            use ::binrw::{prelude::*, io::Cursor};
+            let mut writer = Cursor::new(Vec::new());
+            $value.write_le(&mut writer).unwrap();
+            let expected: Vec<u8> = vec![$($bytes),*];
+            assert_eq!(writer.into_inner(), expected);
+        }
     };
 }
 
@@ -72,5 +91,6 @@ macro_rules! test_binrw_read {
     };
 }
 
+pub use binrw_write_and_assert_eq;
 pub use test_binrw_read;
 pub use test_binrw_write;
