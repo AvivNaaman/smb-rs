@@ -279,7 +279,7 @@ impl fmt::Debug for SizedWideString {
 }
 
 #[inline]
-fn display_utf16<Transformer: Fn(char) -> O, O: Iterator<Item = char>>(
+pub(crate) fn display_utf16<Transformer: Fn(char) -> O, O: Iterator<Item = char>>(
     input: &[u16],
     f: &mut fmt::Formatter<'_>,
     t: Transformer,

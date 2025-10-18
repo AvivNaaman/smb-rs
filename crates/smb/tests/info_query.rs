@@ -44,6 +44,9 @@ async fn test_file_query_information() -> Result<(), Box<dyn std::error::Error>>
 
 #[maybe_async::maybe_async]
 async fn do_test_query_information(file: &File) -> smb::Result<()> {
+    const TEST_DATA: &[u8] = b"Hello, world!";
+    file.write_at(TEST_DATA, 0).await?;
+
     file.query_info::<FileAccessInformation>().await?;
     file.query_info::<FileAccessInformation>().await?;
     file.query_info::<FileAlignmentInformation>().await?;
@@ -59,8 +62,20 @@ async fn do_test_query_information(file: &File) -> smb::Result<()> {
     file.query_info::<FileModeInformation>().await?;
     file.query_info::<FileNetworkOpenInformation>().await?;
     file.query_info::<FileNormalizedNameInformation>().await?;
-    file.query_info::<FilePositionInformation>().await?;
-    file.query_info::<FileStandardInformation>().await?;
+
+    let position_info = file.query_info::<FilePositionInformation>().await?;
+    assert_eq!(
+        position_info,
+        FilePositionInformation {
+            current_byte_offset: 0
+        }
+    );
+
+    let std_info = file.query_info::<FileStandardInformation>().await?;
+    assert_eq!(std_info.end_of_file, TEST_DATA.len() as u64);
+    assert_eq!(std_info.allocation_size >= TEST_DATA.len() as u64, true);
+    assert_eq!(std_info.delete_pending, true.into());
+
     file.query_info::<FileStreamInformation>().await?;
 
     file.query_fs_info::<FileFsSizeInformation>().await?;

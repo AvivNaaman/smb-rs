@@ -6,7 +6,9 @@ use smb_dtyp::binrw_util::prelude::*;
 
 /// FILE_NOTIFY_INFORMATION - [MS-FSCC 2.7.1](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/634043d7-7b39-47e9-9e26-bda64685e4c9>)
 ///
-/// This structure is similar to the references struct, excluding the NextEntryOffset field. Use [`ChainedItemList<FileNotifyInformation>`] to represent a list of these structures.
+/// This structure is similar to the references struct, excluding the NextEntryOffset field.
+///
+/// You must use [`ChainedItemList<FileNotifyInformation>`][crate::ChainedItemList] to properly represent a list of these structures.
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[bw(import(has_next: bool))]
@@ -72,3 +74,5 @@ pub enum NotifyAction {
     /// This notification is only sent when the directory being monitored is the special directory "\$Extend\$ObjId:$O:$INDEX_ALLOCATION".
     TunnelledIdCollision = 0xb,
 }
+
+// Unit Tests for those structures exist in the `smb-msg` crate (for `ChangeNotifyResponse`)

@@ -1,4 +1,4 @@
-//! File System Control Codes [MS-FSCC](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/efbfe127-73ad-4140-9967-ec6500e66d5e) For SMB
+//! ## File System Control Codes ([MS-FSCC](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/efbfe127-73ad-4140-9967-ec6500e66d5e)) For SMB
 //!
 //! The FSCC types are widely used in SMB messages.
 //! This module contains implementation of many structs supported in SMB from the FSCC specification,
@@ -8,11 +8,11 @@
 //! This crate also contains common utility structures to wrap around common FSCC structures.
 //!
 //! The crate contains the following implementations:
-//! * Querying file information [`QueryFileInfo`]
-//! * Setting file information [`SetFileInfo`]
+//! * File information [`QueryFileInfo`], [`SetFileInfo`]
+//! * File system information [`QueryFileSystemInfo`], [`SetFileSystemInfo`]
 //! * Directory query types [`QueryDirectoryInfo`]
 //! * Change notifications [`FileNotifyInformation`]
-//! * Access masks types, including the [`access_mask!{...}`][`access_mask!`] macro.
+//! * Access masks [`FileAccessMask`], [`DirAccessMask`]
 
 #![allow(unused_parens)]
 
@@ -30,7 +30,7 @@ mod quota;
 mod set_file_info;
 
 pub use access_masks::*;
-pub use chained_list::{CHAINED_ITEM_PREFIX_SIZE, ChainedItem, ChainedItemList};
+pub use chained_list::{CHAINED_ITEM_PREFIX_SIZE, ChainedItemList};
 pub use common_info::*;
 pub use directory_info::*;
 pub use error::SmbFsccError;

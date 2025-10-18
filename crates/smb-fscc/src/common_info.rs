@@ -4,6 +4,10 @@
 //!
 //! [MS-FSCC 2.4](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/4718fc40-e539-4014-8e33-b675af74e3e1>)
 
+#![allow(clippy::identity_op)]
+
+use std::ops::Deref;
+
 use binrw::{NullString, prelude::*};
 use modular_bitfield::prelude::*;
 
@@ -11,7 +15,7 @@ use smb_dtyp::binrw_util::prelude::*;
 
 use crate::{ChainedItemList, FileAttributes};
 
-/// This information class is used to query or set file information.
+/// Query or Set file information.
 ///
 /// [MS-FSCC 2.4.7](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/16023025-8a78-492f-8b96-c873b042ac50>)
 #[binrw::binrw]
@@ -32,33 +36,44 @@ pub struct FileBasicInformation {
     _reserved: u32,
 }
 
-/// This information class is used to query or set extended attribute (EA) information for a file.
+/// Query or Set extended attribute (EA) information for a file.
 ///
-/// [MS-FSCC 2.4.15](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/e8d926d1-3a22-4654-be9c-58317a85540b>)
+/// [MS-FSCC 2.4.16](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/0eb94f48-6aac-41df-a878-79f4dcfd8989>)
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct FileFullEaInformationInner {
     /// Can contain zero or more of the following flag values. Unused bit fields should be set to 0.
-    pub flags: u8,
+    pub flags: EaFlags,
     #[bw(try_calc = ea_name.len().try_into())]
     ea_name_length: u8,
-    #[bw(calc = match ea_value {
-        Some(v) => v.len() as u16,
-        None => 0
-    })]
+    #[bw(calc = ea_value.len() as u16)]
     ea_value_length: u16,
     /// The name of the extended attribute. This field is not null-terminated.
     #[br(assert(ea_name.len() == ea_name_length as usize))]
     pub ea_name: NullString,
     /// The value of the extended attribute. This field can be zero bytes in length.
-    #[br(if(ea_value_length > 0))]
     #[br(count = ea_value_length)]
-    pub ea_value: Option<Vec<u8>>,
+    pub ea_value: Vec<u8>,
 }
 
-pub type FileFullEaInformation = ChainedItemList<FileFullEaInformationInner>;
+/// Extended Attribute (EA) Flags
+///
+/// See [`FileFullEaInformationInner`]
+#[bitfield]
+#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
+#[repr(u8)]
+pub struct EaFlags {
+    #[skip]
+    __: B7,
+    /// If this flag is set, the file to which the EA belongs cannot be interpreted by applications that do not understand EAs.
+    pub file_need_ea: bool,
+}
 
-/// This information class is used to query or set file mode information.
+pub type FileFullEaInformation = ChainedItemList<FileFullEaInformationInner, 4>;
+
+/// Query or Set file mode information.
 ///
 /// [MS-FSCC 2.4.31](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/52df7798-8330-474b-ac31-9afe8075640c>)
 #[bitfield]
@@ -88,7 +103,7 @@ pub struct FileModeInformation {
     __: B19,
 }
 
-/// This information class is used to query or set named pipe information.
+/// Query or Set named pipe information.
 ///
 /// [MS-FSCC 2.4.37](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/cd805dd2-9248-4024-ac0f-b87a702dd366>)
 #[binrw::binrw]
@@ -122,7 +137,7 @@ pub enum PipeCompletionMode {
     Complete = 1,
 }
 
-/// This information class is used to query or set the current byte offset of the file pointer.
+/// Query or Set the current byte offset of the file pointer.
 ///
 /// [MS-FSCC 2.4.40](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/e3ce4a39-327e-495c-99b6-6b61606b6f16>)
 #[binrw::binrw]
@@ -132,7 +147,7 @@ pub struct FilePositionInformation {
     pub current_byte_offset: u64,
 }
 
-/// This information class is used to query the name of a file.
+/// Query the name of a file.
 ///
 /// [MS-FSCC 2.4.32](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/cb30e415-54c5-4483-a346-822ea90e1e89>)
 #[binrw::binrw]
@@ -145,6 +160,30 @@ pub struct FileNameInformation {
     pub file_name: SizedWideString,
 }
 
+impl Deref for FileNameInformation {
+    type Target = SizedWideString;
+
+    fn deref(&self) -> &Self::Target {
+        &self.file_name
+    }
+}
+
+impl From<SizedWideString> for FileNameInformation {
+    fn from(value: SizedWideString) -> Self {
+        Self { file_name: value }
+    }
+}
+
+impl From<&str> for FileNameInformation {
+    fn from(value: &str) -> Self {
+        Self {
+            file_name: SizedWideString::from(value),
+        }
+    }
+}
+
+/// Reparse Tag Values
+///
 /// Each reparse point has a reparse tag.
 /// The reparse tag uniquely identifies the owner of that reparse point.
 /// The owner is the implementer of the file system filter driver associated with a reparse tag.
@@ -319,4 +358,32 @@ pub enum ReparseTag {
 
     /// Used by the Windows Container Isolation filter. Server-side interpretation only, not meaningful over the wire.
     WciLink1 = 0xA0001027,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use smb_tests::test_binrw;
+
+    test_binrw! {
+        FileFullEaInformation: FileFullEaInformation::from(vec![
+            FileFullEaInformationInner {
+                flags: EaFlags::new(),
+                ea_name: "$CI.CATALOGHINT".into(),
+                ea_value: vec![0x1, 0x0, 0x63, 0x0, 0x4d, 0x69, 0x63, 0x72, 0x6f, 0x73, 0x6f, 0x66, 0x74, 0x2d, 0x57, 0x69, 0x6e, 0x64, 0x6f, 0x77, 0x73, 0x2d, 0x43, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x2d, 0x44, 0x65, 0x73, 0x6b, 0x74, 0x6f, 0x70, 0x2d, 0x52, 0x65, 0x71, 0x75, 0x69, 0x72, 0x65, 0x64, 0x2d, 0x50, 0x61, 0x63, 0x6b, 0x61, 0x67, 0x65, 0x30, 0x34, 0x31, 0x30, 0x32, 0x31, 0x7e, 0x33, 0x31, 0x62, 0x66, 0x33, 0x38, 0x35, 0x36, 0x61, 0x64, 0x33, 0x36, 0x34, 0x65, 0x33, 0x35, 0x7e, 0x61, 0x72, 0x6d, 0x36, 0x34, 0x7e, 0x7e, 0x31, 0x30, 0x2e, 0x30, 0x2e, 0x32, 0x32, 0x36, 0x32, 0x31, 0x2e, 0x35, 0x31, 0x38, 0x35, 0x2e, 0x63, 0x61, 0x74]
+            },
+            FileFullEaInformationInner {
+                flags: EaFlags::new(),
+                ea_name: "SKTEXT".into(),
+                ea_value: vec![0x54, 0x68, 0x69, 0x73, 0x20, 0x69, 0x73, 0x20, 0x6e, 0x6f, 0x74, 0x20, 0x72, 0x65, 0x61, 0x6c, 0x6c, 0x79, 0x20, 0x74, 0x68, 0x65, 0x20, 0x53, 0x4b, 0x2c, 0x20, 0x69, 0x74, 0x20, 0x69, 0x73, 0x20, 0x6a, 0x75, 0x73, 0x74, 0x20, 0x73, 0x6f, 0x6d, 0x65, 0x20, 0x66, 0x61, 0x6b, 0x65, 0x20, 0x74, 0x6f, 0x20, 0x68, 0x61, 0x76, 0x65, 0x20, 0x73, 0x6f, 0x6d, 0x65, 0x20, 0x66, 0x75, 0x6e, 0x0]
+            },
+        ]) => "80000000000f67002443492e434154414c4f4748494e5400010063004d6963726f736f66742d57696e646f77732d436c69656e742d4465736b746f702d52657175697265642d5061636b6167653034313032317e333162663338353661643336346533357e61726d36347e7e31302e302e32323632312e353138352e636174000000000000064100534b544558540054686973206973206e6f74207265616c6c792074686520534b2c206974206973206a75737420736f6d652066616b6520746f206861766520736f6d652066756e00"
+    }
+
+    test_binrw! {
+        struct FilePipeInformation {
+            read_mode: PipeReadMode::Message,
+            completion_mode: PipeCompletionMode::Queue,
+        } => "0100000000000000"
+    }
 }

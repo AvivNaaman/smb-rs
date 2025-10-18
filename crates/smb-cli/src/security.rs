@@ -29,7 +29,7 @@ pub struct GetSecurityCmd {
 #[derive(Parser, Debug)]
 pub struct SetSecurityCmd {
     /// DACLs to add. This is how you can add allow/deny access for users and groups on the object.
-    /// Format: <allow|deny>:<SID>:<hex-mask>
+    /// Format: (allow|deny):SID:hex-mask
     ///
     /// Example: --add-dacl "allow:S-1-5-21-78297438...:101002ff" - will add the specified SID with the specified mask as an allow ACE.
     #[arg(long, action = clap::ArgAction::Append)]

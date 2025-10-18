@@ -3,13 +3,12 @@ use clap::{Parser, ValueEnum};
 #[cfg(feature = "async")]
 use futures_util::StreamExt;
 use maybe_async::*;
-use smb::{
-    Client, FileAccessMask, FileBasicInformation, FileIdBothDirectoryInformation, QueryQuotaInfo,
-    UncPath, resource::*,
-};
+use smb::{Client, FileAccessMask, FileBasicInformation, QueryQuotaInfo, UncPath, resource::*};
 use std::collections::VecDeque;
 use std::fmt::Display;
 use std::{error::Error, sync::Arc};
+
+type DirectoryInfoQueryType = smb::FileIdBothDirectoryInformation;
 
 /// Recursion mode options
 #[derive(Debug, Clone, Copy, Default, ValueEnum, PartialEq, Eq, PartialOrd, Ord)]
@@ -44,6 +43,11 @@ pub struct InfoCmd {
     #[arg(long)]
     #[clap(default_value_t = false)]
     pub show_quota: bool,
+
+    /// Whether to display extended attributes (EA) information for files.
+    #[arg(long)]
+    #[clap(default_value_t = false)]
+    pub show_ea: bool,
 }
 
 #[maybe_async]
@@ -81,6 +85,28 @@ pub async fn info(cmd: &InfoCmd, cli: &Cli) -> Result<(), Box<dyn Error>> {
             log::info!("  - Creation time: {}", info.creation_time);
             log::info!("  - Last write time: {}", info.last_write_time);
             log::info!("  - Last access time: {}", info.last_access_time);
+            if cmd.show_ea {
+                log::info!("  - Extended Attributes (EA):");
+                let basic_ea_info = file.query_info::<smb::FileEaInformation>().await?;
+                if basic_ea_info.ea_size > 0 {
+                    let ea_info = file
+                        .query_full_ea_info_with_options(
+                            vec![],
+                            Some(basic_ea_info.ea_size as usize),
+                        )
+                        .await?;
+                    ea_info.iter().for_each(|ea| {
+                        log::info!(
+                            "       - name='{}', size={} bytes, flags={:?}",
+                            ea.ea_name,
+                            ea.ea_value.len(),
+                            ea.flags
+                        );
+                    });
+                } else {
+                    log::info!("       (no EAs present)");
+                }
+            }
             file.close().await?;
         }
         Resource::Directory(dir) => {
@@ -112,7 +138,7 @@ pub async fn info(cmd: &InfoCmd, cli: &Cli) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn display_item_info(info: &FileIdBothDirectoryInformation, dir_path: &UncPath) {
+fn display_item_info(info: &DirectoryInfoQueryType, dir_path: &UncPath) {
     if info.file_name == "." || info.file_name == ".." {
         return; // Skip current and parent directory entries
     }
@@ -196,8 +222,7 @@ async fn iterate_dir_items(
     subdirs: &mut VecDeque<IteratedItem>,
     params: &IterateParams<'_>,
 ) -> smb::Result<()> {
-    let mut info_stream =
-        Directory::query::<FileIdBothDirectoryInformation>(&item.dir, pattern).await?;
+    let mut info_stream = Directory::query::<DirectoryInfoQueryType>(&item.dir, pattern).await?;
     while let Some(info) = info_stream.next().await {
         if let Some(to_push) = handle_iteration_item(&info?, &item.path, params).await {
             subdirs.push_back(to_push);
@@ -213,7 +238,7 @@ fn iterate_dir_items(
     subdirs: &mut VecDeque<IteratedItem>,
     params: &IterateParams<'_>,
 ) -> smb::Result<()> {
-    for info in Directory::query::<FileIdBothDirectoryInformation>(&item.dir, pattern)? {
+    for info in Directory::query::<DirectoryInfoQueryType>(&item.dir, pattern)? {
         if let Some(to_push) = handle_iteration_item(&info?, &item.path, params) {
             subdirs.push_back(to_push);
         }
@@ -223,7 +248,7 @@ fn iterate_dir_items(
 
 #[maybe_async]
 async fn handle_iteration_item(
-    info: &FileIdBothDirectoryInformation,
+    info: &DirectoryInfoQueryType,
     dir_path: &UncPath,
     params: &IterateParams<'_>,
 ) -> Option<IteratedItem> {

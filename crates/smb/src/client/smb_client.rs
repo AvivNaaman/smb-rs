@@ -153,6 +153,7 @@ impl Client {
     pub async fn list_shares(&self, server: &str) -> crate::Result<Vec<ShareInfo1>> {
         let srvsvc_pipe_name: &str = "srvsvc";
         let srvsvc_pipe = self.open_pipe(server, srvsvc_pipe_name).await?;
+
         let mut srvsvc_pipe: SrvSvc<_> = srvsvc_pipe.bind().await?;
         let shares = srvsvc_pipe.netr_share_enum(server).await?;
 

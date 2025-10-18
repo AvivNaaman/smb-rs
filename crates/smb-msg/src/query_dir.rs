@@ -73,7 +73,10 @@ impl QueryDirectoryResponse {
         for<'b> <T as BinWrite>::Args<'b>: Default,
     {
         let mut cursor = std::io::Cursor::new(&self.output_buffer);
-        Ok(ChainedItemList::<T>::read_le(&mut cursor)?.into())
+        Ok(
+            ChainedItemList::<T, { QueryDirectoryInfo::CHAINED_ALIGNMENT }>::read_le(&mut cursor)?
+                .into(),
+        )
     }
 }
 
@@ -150,7 +153,7 @@ mod tests {
                     ea_size: Some(0),
                     reparse_tag: None,
                     short_name_length: 0,
-                    short_name: [0; 12],
+                    short_name: Default::default(),
                     file_id: 562949953454203,
                     file_name: ".".into(),
                 },
@@ -166,7 +169,7 @@ mod tests {
                     ea_size: Some(0),
                     reparse_tag: None,
                     short_name_length: 0,
-                    short_name: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,],
+                    short_name: Default::default(),
                     file_id: 1125899906967338,
                     file_name: "..".into(),
                 },
@@ -182,7 +185,7 @@ mod tests {
                     ea_size: Some(0),
                     reparse_tag: None,
                     short_name_length: 0,
-                    short_name: [0; 12],
+                    short_name: Default::default(),
                     file_id: 2814749767148784,
                     file_name: "a.txt".into(),
                 },
@@ -198,7 +201,7 @@ mod tests {
                     ea_size: Some(0),
                     reparse_tag: None,
                     short_name_length: 0,
-                    short_name: [0; 12],
+                    short_name: Default::default(),
                     file_id: 1125899906906297,
                     file_name: "b.txt".into(),
                 },
@@ -214,7 +217,7 @@ mod tests {
                     ea_size: Some(0),
                     reparse_tag: None,
                     short_name_length: 0,
-                    short_name: [0; 12],
+                    short_name: Default::default(),
                     file_id: 1125899906906299,
                     file_name: "c.txt".into(),
                 },
@@ -230,7 +233,7 @@ mod tests {
                     ea_size: Some(0),
                     reparse_tag: None,
                     short_name_length: 0,
-                    short_name: [0; 12],
+                    short_name: Default::default(),
                     file_id: 1125899906906300,
                     file_name: "d.txt".into(),
                 },

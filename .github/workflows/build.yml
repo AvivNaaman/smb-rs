@@ -8,6 +8,10 @@ on:
     branches: ["main"]
   workflow_dispatch:
 
+concurrency:
+  group: smb-rs-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
   COMMON_FEATURES: "sign,encrypt,compress,kerberos"
@@ -17,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: rustlang/rust:nightly
-    timeout-minutes: 10
+    timeout-minutes: 15
     strategy:
       matrix:
         compile_features: [async, multi_threaded, single_threaded]
@@ -37,6 +41,7 @@ jobs:
     env:
       SMB_RUST_TESTS_SERVER: samba
       RUST_LOG: debug
+      RUSTFLAGS: "-D warnings"
 
     steps:
       - uses: actions/checkout@v4

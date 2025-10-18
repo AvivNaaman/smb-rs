@@ -2,7 +2,8 @@ use binrw::{io::TakeSeekExt, prelude::*};
 use smb_dtyp::SID;
 use smb_dtyp::binrw_util::prelude::*;
 
-/// This information class is used to query or to set file quota information for a volume.
+/// Query or to set file quota information for a volume.
+///
 /// For queries, an optional buffer of FILE_GET_QUOTA_INFORMATION (section 2.4.41.1) data elements is provided by the client to specify the SIDs for which quota information is requested.
 /// If the FILE_GET_QUOTA_INFORMATION buffer is not specified, information for all quotas is returned.
 /// A buffer of FILE_QUOTA_INFORMATION data elements is returned by the server.
@@ -12,7 +13,7 @@ use smb_dtyp::binrw_util::prelude::*;
 /// [MS-FSCC 2.4.41](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/acdc0738-ba3c-47a1-b11a-72e22d831c57>)
 ///
 /// _Note_: This structure is partial: it does not contain the NextEntryOffset field, as it is intended to be used
-/// in a chained list, see [`ChainedItemList<T>`].
+/// in a chained list, see [`ChainedItemList<T>`][crate::ChainedItemList].
 #[binrw::binrw]
 #[derive(Debug)]
 pub struct FileQuotaInformation {
@@ -42,7 +43,7 @@ impl FileQuotaInformation {
 /// [MS-FSCC 2.4.41.1](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/56adae21-add4-4434-97ec-e40e87739d52>)
 ///
 /// _Note_: This structure is partial: it does not contain the NextEntryOffset field, as it is intended to be used
-/// in a chained list, see [`ChainedItemList<T>`].
+/// in a chained list, see [`ChainedItemList<T>`][crate::ChainedItemList].
 #[binrw::binrw]
 #[derive(Debug)]
 pub struct FileGetQuotaInformation {

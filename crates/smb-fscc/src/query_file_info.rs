@@ -16,6 +16,7 @@ use crate::{ReparseTag, file_info_classes};
 use smb_dtyp::binrw_util::prelude::*;
 
 file_info_classes! {
+    /// Query file information classes.
     pub QueryFileInfo {
         pub Access = 8,
         pub Alignment = 17,
@@ -40,13 +41,11 @@ file_info_classes! {
     }, Read
 }
 
-/// A [FileFullEaInformation](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/0eb94f48-6aac-41df-a878-79f4dcfd8989)
-/// structure to be used when querying for extended attributes. You may use [super::SetFileFullEaInformation] for setting.
 pub type QueryFileFullEaInformation = FileFullEaInformation;
 
-pub type FileStreamInformation = ChainedItemList<FileStreamInformationInner>;
+pub type FileStreamInformation = ChainedItemList<FileStreamInformationInner, 8>;
 
-/// This information class is used to query the access rights of a file that were granted when the file was opened.
+/// Query the access rights of a file that were granted when the file was opened.
 ///
 /// [MS-FSCC 2.4.1](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/01cf43d2-deb3-40d3-a39b-9e68693d7c90>)
 #[binrw::binrw]
@@ -56,7 +55,7 @@ pub struct FileAccessInformation {
     pub access_flags: FileAccessMask,
 }
 
-/// This information class is used to query a collection of file information structures.
+/// Query a collection of file information structures.
 ///
 /// [MS-FSCC 2.4.2](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/95f3056a-ebc1-4f5d-b938-3f68a44677a6>)
 #[binrw::binrw]
@@ -82,7 +81,7 @@ pub struct FileAllInformation {
     pub name: FileNameInformation,
 }
 
-/// This information class is used to query the buffer alignment required by the underlying device.
+/// Query the buffer alignment required by the underlying device.
 ///
 /// [MS-FSCC 2.4.3](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/9b0b9971-85aa-4651-8438-f1c4298bcb0d>)
 #[binrw::binrw]
@@ -111,7 +110,7 @@ pub enum FileAlignmentInformation {
     _512Byte = 0x1ff,
 }
 
-/// This information class is used to query the alternate name (8.3 short name) of a file.
+/// Query the alternate name (8.3 short name) of a file.
 ///
 /// [MS-FSCC 2.4.5](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/cb90d9e0-695d-4418-8d89-a29e2ba9faf8>)
 #[binrw::binrw]
@@ -129,7 +128,15 @@ impl Deref for FileAlternateNameInformation {
     }
 }
 
-/// This information class is used to query file attribute and reparse tag information for a file.
+impl From<&str> for FileAlternateNameInformation {
+    fn from(value: &str) -> Self {
+        Self {
+            inner: FileNameInformation::from(value),
+        }
+    }
+}
+
+/// Query file attribute and reparse tag information for a file.
 ///
 /// [MS-FSCC 2.4.6](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/d295752f-ce89-4b98-8553-266d37c84f0e>)
 #[binrw::binrw]
@@ -141,7 +148,7 @@ pub struct FileAttributeTagInformation {
     pub reparse_tag: ReparseTag,
 }
 
-/// This information class is used to query compression information for a file.
+/// Query compression information for a file.
 ///
 /// [MS-FSCC 2.4.9](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/0a7e50c4-2839-438e-aa6c-0da7d681a5a7>)
 #[binrw::binrw]
@@ -173,7 +180,7 @@ pub enum FileCompressionFormat {
     Lznt1 = 2,
 }
 
-/// This information class is used to query the size of the extended attributes (EA) for a file.
+/// Query the size of the extended attributes (EA) for a file.
 ///
 /// [MS-FSCC 2.4.13](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/db6cf109-ead8-441a-b29e-cb2032778b0f>)
 #[binrw::binrw]
@@ -183,7 +190,7 @@ pub struct FileEaInformation {
     pub ea_size: u32,
 }
 
-/// This information class is used to query the file system's 8-byte file reference number for a file.
+/// Query the file system's 8-byte file reference number for a file.
 ///
 /// [MS-FSCC 2.4.26](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/e4185a8a-ed8d-4f98-ab55-ca34dc8916e6>)
 #[binrw::binrw]
@@ -195,7 +202,7 @@ pub struct FileIdInformation {
     pub file_id: u128,
 }
 
-/// This information class is used to query the file system's 8-byte file reference number for a file.
+/// Query the file system's 8-byte file reference number for a file.
 ///
 /// [MS-FSCC 2.4.27](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/7d796611-2fa5-41ac-8178-b6fea3a017b3>)
 #[binrw::binrw]
@@ -205,7 +212,7 @@ pub struct FileInternalInformation {
     pub index_number: u64,
 }
 
-/// This information class is used to query network file open information for a file.
+/// Query network file open information for a file.
 ///
 /// [MS-FSCC 2.4.34](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/26d261db-58d1-4513-a548-074448cbb146>)
 #[binrw::binrw]
@@ -229,7 +236,8 @@ pub struct FileNetworkOpenInformation {
     _reserved: u32,
 }
 
-/// This information class is used to query the normalized name of a file.
+/// Query the normalized name of a file.
+///
 /// A normalized name is an absolute pathname where each short name component has been replaced with the corresponding long name component,
 /// and each name component uses the exact letter casing stored on disk
 ///
@@ -249,7 +257,15 @@ impl Deref for FileNormalizedNameInformation {
     }
 }
 
-/// This information class is used to query information associated with a named pipe that is not specific to one end of the pipe or another.
+impl From<&str> for FileNormalizedNameInformation {
+    fn from(value: &str) -> Self {
+        Self {
+            inner: FileNameInformation::from(value),
+        }
+    }
+}
+
+/// Query information associated with a named pipe that is not specific to one end of the pipe or another.
 ///
 /// [MS-FSCC 2.4.38](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/de9abdc7-b974-4ec3-a4dc-42853777f412>)
 #[binrw::binrw]
@@ -265,10 +281,12 @@ pub struct FilePipeLocalInformation {
     pub current_instances: u32,
     /// The inbound quota in bytes.
     pub inbound_quota: u32,
+    /// Bytes of data available to be read from the named pipe.
+    pub read_data_available: u32,
     /// The outbound quota in bytes.
     pub outbound_quota: u32,
     /// The write quota in bytes.
-    pub write_quota: u32,
+    pub write_quota_available: u32,
     /// The named pipe state.
     pub named_pipe_state: NamedPipeState,
     /// Specifies whether the named pipe handle is for the client or server end of a named pipe.
@@ -325,7 +343,7 @@ pub enum NamedPipeEnd {
     Server = 1,
 }
 
-/// This information class is used to query information that is associated with the remote end of a named pipe.
+/// Query information that is associated with the remote end of a named pipe.
 ///
 /// [MS-FSCC 2.4.39](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/4319b135-4472-482f-a0a3-6cc3a856c6b6>)
 #[binrw::binrw]
@@ -337,7 +355,7 @@ pub struct FilePipeRemoteInformation {
     pub maximum_collection_count: u32,
 }
 
-/// This information class is used to query standard information for a file.
+/// Query standard information for a file.
 ///
 /// [MS-FSCC 2.4.47](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/5afa7f66-619c-48f3-955f-68c4ece704ae>)
 #[binrw::binrw]
@@ -358,7 +376,7 @@ pub struct FileStandardInformation {
     reserved: u16,
 }
 
-/// This information class is used to enumerate the data streams for a file.
+/// Enumerate the data streams for a file.
 ///
 /// [MS-FSCC 2.4.49](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/f8762be6-3ab9-411e-a7d6-5cc68f70c78d>)
 #[binrw::binrw]
@@ -375,7 +393,7 @@ pub struct FileStreamInformationInner {
     pub stream_name: SizedWideString,
 }
 
-/// This information class is used to query extended attributes for a file.
+/// Query extended attributes for a file.
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[bw(import(has_next: bool))]
@@ -393,4 +411,227 @@ impl FileGetEaInformation {
             ea_name: NullString::from(name.into()),
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use smb_tests::test_binrw;
+    use time::macros::datetime;
+
+    fn get_file_access_information_for_test() -> FileAccessInformation {
+        FileAccessInformation {
+            access_flags: FileAccessMask::new()
+                .with_file_read_data(true)
+                .with_file_write_data(true)
+                .with_file_append_data(true)
+                .with_file_read_ea(true)
+                .with_file_write_ea(true)
+                .with_file_execute(true)
+                .with_file_delete_child(true)
+                .with_file_read_attributes(true)
+                .with_file_write_attributes(true)
+                .with_delete(true)
+                .with_read_control(true)
+                .with_write_dacl(true)
+                .with_write_owner(true)
+                .with_synchronize(true),
+        }
+    }
+    const FILE_ACCESS_INFORMATION_FOR_TEST_STRING: &str = "ff011f00";
+    test_binrw! {
+        FileAccessInformation: get_file_access_information_for_test() => FILE_ACCESS_INFORMATION_FOR_TEST_STRING
+    }
+
+    fn get_file_alignment_information_for_test() -> FileAlignmentInformation {
+        FileAlignmentInformation::Byte
+    }
+    const FILE_ALIGNMENT_INFORMATION_FOR_TEST_STRING: &str = "00000000";
+    test_binrw! {
+        FileAlignmentInformation: get_file_alignment_information_for_test() => FILE_ALIGNMENT_INFORMATION_FOR_TEST_STRING
+    }
+
+    test_binrw! {
+        FileAlternateNameInformation: FileAlternateNameInformation::from("query_info_o") => "18000000710075006500720079005f0069006e0066006f005f006f00"
+    }
+
+    test_binrw! {
+        // TODO: DFS reparse tag here can be cool
+        struct FileAttributeTagInformation {
+            file_attributes: FileAttributes::new()
+                .with_archive(true),
+            reparse_tag: ReparseTag::ReservedZero,
+        } => "2000000000000000"
+    }
+
+    fn get_file_basic_information_for_test() -> FileBasicInformation {
+        FileBasicInformation {
+            creation_time: datetime!(2025-10-17 10:35:07.801764000).into(),
+            last_access_time: datetime!(2025-10-17 10:35:07.801764000).into(),
+            last_write_time: datetime!(2025-10-17 10:35:07.801764000).into(),
+            change_time: datetime!(2025-10-17 10:35:07.801764000).into(),
+            file_attributes: FileAttributes::new().with_archive(true),
+        }
+    }
+    const FILE_BASIC_INFORMATION_FOR_TEST_STRING: &str =
+        "681621b5513fdc01681621b5513fdc01681621b5513fdc01681621b5513fdc012000000000000000";
+
+    test_binrw! {
+        FileBasicInformation: get_file_basic_information_for_test() => FILE_BASIC_INFORMATION_FOR_TEST_STRING
+    }
+
+    test_binrw! {
+        // TODO: something with actual compression
+        struct FileCompressionInformation => no {
+            compressed_file_size: 13,
+            compression_format: FileCompressionFormat::None,
+            compression_unit: 0,
+            chunk_shift: 0,
+            cluster_shift: 0,
+        } => "0d000000000000000000000000000000"
+    }
+
+    fn get_internal_information_for_test() -> FileInternalInformation {
+        FileInternalInformation {
+            index_number: 0x33b16,
+        }
+    }
+    const FILE_INTERNAL_INFORMATION_FOR_TEST_STRING: &str = "163b030000000000";
+
+    test_binrw! {
+         FileInternalInformation: get_internal_information_for_test() => FILE_INTERNAL_INFORMATION_FOR_TEST_STRING
+    }
+
+    fn get_file_mode_information_for_test() -> FileModeInformation {
+        FileModeInformation::new().with_synchronous_io_non_alert(true)
+    }
+
+    const FILE_MODE_INFORMATION_FOR_TEST_STRING: &str = "20000000";
+
+    test_binrw! {
+        FileModeInformation: get_file_mode_information_for_test() => FILE_MODE_INFORMATION_FOR_TEST_STRING
+    }
+
+    test_binrw! {
+        struct FileNetworkOpenInformation {
+            creation_time: datetime!(2025-10-17 12:44:04.747034).into(),
+            last_access_time: datetime!(2025-10-17 12:44:04.747034).into(),
+            last_write_time: datetime!(2025-10-17 12:44:04.747034).into(),
+            change_time: datetime!(2025-10-17 12:44:04.747034).into(),
+            allocation_size: 4096,
+            end_of_file: 13,
+            file_attributes: FileAttributes::new().with_archive(true),
+        } => "043fb5b8633fdc01043fb5b8633fdc01043fb5b8633fdc01043fb5b8633fdc0100100000000000000d000000000000002000000000000000"
+    }
+
+    test_binrw! {
+        FileNormalizedNameInformation: FileNormalizedNameInformation::from("query_info_on.txt") => "22000000710075006500720079005f0069006e0066006f005f006f006e002e00740078007400"
+    }
+
+    fn get_file_position_information_for_test() -> FilePositionInformation {
+        FilePositionInformation {
+            current_byte_offset: 1024,
+        }
+    }
+    const FILE_POSITION_INFORMATION_FOR_TEST_STRING: &str = "0004000000000000";
+
+    test_binrw! {
+        FilePositionInformation: get_file_position_information_for_test() => FILE_POSITION_INFORMATION_FOR_TEST_STRING
+    }
+
+    fn get_standard_information_for_test() -> FileStandardInformation {
+        FileStandardInformation {
+            allocation_size: 4096,
+            end_of_file: 13,
+            number_of_links: 0,
+            delete_pending: true.into(),
+            directory: false.into(),
+        }
+    }
+    const FILE_STANDARD_INFORMATION_FOR_TEST_STRING: &str =
+        "00100000000000000d000000000000000000000001000000";
+
+    test_binrw! {FileStandardInformation: get_standard_information_for_test() => FILE_STANDARD_INFORMATION_FOR_TEST_STRING}
+
+    fn get_file_name_information_for_test() -> FileNameInformation {
+        FileNameInformation::from("File_Name.txt")
+    }
+    const FILE_NAME_INFORMATION_FOR_TEST_STRING: &str =
+        "1a000000460069006c0065005f004e0061006d0065002e00740078007400";
+    test_binrw!(
+        FileNameInformation: get_file_name_information_for_test() =>
+        FILE_NAME_INFORMATION_FOR_TEST_STRING
+    );
+
+    fn get_file_ea_information_for_test() -> FileEaInformation {
+        FileEaInformation { ea_size: 208 }
+    }
+    const FILE_EA_INFORMATION_FOR_TEST_STRING: &str = "d0000000";
+    test_binrw!(
+        FileEaInformation: get_file_ea_information_for_test() =>
+        FILE_EA_INFORMATION_FOR_TEST_STRING
+    );
+
+    const FILE_ALL_INFORMATION_FOR_TEST_STRING: &str = const_format::concatcp!(
+        FILE_BASIC_INFORMATION_FOR_TEST_STRING,
+        FILE_STANDARD_INFORMATION_FOR_TEST_STRING,
+        FILE_INTERNAL_INFORMATION_FOR_TEST_STRING,
+        FILE_EA_INFORMATION_FOR_TEST_STRING,
+        FILE_ACCESS_INFORMATION_FOR_TEST_STRING,
+        FILE_POSITION_INFORMATION_FOR_TEST_STRING,
+        FILE_MODE_INFORMATION_FOR_TEST_STRING,
+        FILE_ALIGNMENT_INFORMATION_FOR_TEST_STRING,
+        FILE_NAME_INFORMATION_FOR_TEST_STRING
+    );
+    test_binrw! {
+        FileAllInformation: FileAllInformation {basic:get_file_basic_information_for_test(),
+            standard:get_standard_information_for_test(),
+            internal: get_internal_information_for_test(),
+            ea: get_file_ea_information_for_test(),
+            access: get_file_access_information_for_test(),
+            position: get_file_position_information_for_test(),
+            mode: get_file_mode_information_for_test(),
+            alignment: get_file_alignment_information_for_test(),
+            name: get_file_name_information_for_test(),
+        }
+        => FILE_ALL_INFORMATION_FOR_TEST_STRING
+    }
+
+    test_binrw! {
+        FileStreamInformation: FileStreamInformation::from(
+            vec![
+                FileStreamInformationInner { stream_size: 1096224, stream_allocation_size: 720896, stream_name: "::$DATA".into() },
+                FileStreamInformationInner { stream_size: 7, stream_allocation_size: 8, stream_name: ":SmartScreen:$DATA".into() },
+                FileStreamInformationInner { stream_size: 63, stream_allocation_size: 64, stream_name: ":Zone.Identifier:$DATA".into() },
+            ]
+        ) => "280000000e00000020ba10000000000000000b00000000003a003a002400440041005400410000004000000024000000070000000000000008000000000000003a0053006d00610072007400530063007200650065006e003a002400440041005400410000000000000000002c0000003f0000000000000040000000000000003a005a006f006e0065002e004900640065006e007400690066006900650072003a0024004400410054004100"
+    }
+
+    test_binrw! {
+        struct FileIdInformation {
+            volume_serial_number: 0xc86ef7996ef77f0e,
+            file_id: 0x0000000000000000006a00000000cd5a,
+        } => "0e7ff76e99f76ec85acd000000006a000000000000000000"
+    }
+
+    test_binrw! {
+        struct FilePipeLocalInformation {
+            named_pipe_type: NamedPipeType::Message,
+            named_pipe_configuration: NamedPipeConfiguration::FullDuplex,
+            maximum_instances: 0xffffffff,
+            current_instances: 4,
+            inbound_quota: 2048,
+            read_data_available: 0,
+            outbound_quota: 2048,
+            write_quota_available: 1024,
+            named_pipe_state: NamedPipeState::Connected,
+            named_pipe_end: NamedPipeEnd::Client,
+        } => "0100000002000000ffffffff04000000000800000000000000080000000400000300000000000000"
+    }
+
+    // Querying this is both no trivial, and also probably passes tests.
+    // test_binrw! {
+    //     struct FilePipeRemoteInformation {
+    //     } => ""
+    // }
 }

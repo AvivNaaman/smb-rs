@@ -2,19 +2,16 @@
 //! Many fscc-query structs have a common "next entry offset" field,
 //! which is used to chain multiple entries together.
 //! This struct wraps the value, and the offset, and provides a way to iterate over them.
-//! See [`ChainedItemList<T>`] to see how to write this type when in a list.
+//! See [`ChainedItemList<T>`][crate::ChainedItemList] to see how to write this type when in a list.
 
-use std::{
-    io::SeekFrom,
-    ops::{Deref, DerefMut},
-};
+use std::{io::SeekFrom, ops::Deref};
 
 use binrw::prelude::*;
 use smb_dtyp::binrw_util::prelude::*;
 
 const CHAINED_ITEM_DEFAULT_OFFSET_PAD: u32 = 4;
 
-/// The size of added fields to the size of T,
+/// The size of added fields to the size of each entry in [`ChainedItemList<T>`],
 /// when bin-writing the data, before the actual T data.
 ///
 /// A possible additional padding of `OFFSET_PAD` bytes may be added after T,
@@ -25,7 +22,7 @@ type NextEntryOffsetType = u32;
 
 /// A single item in a chained list.
 ///
-/// Check out [`ChainedItemList<T>`] for a list of these items.
+/// Check out [`ChainedItemList<T>`][crate::ChainedItemList] for a list of these items.
 /// This is the suggested use case for this struct - not using it directly.
 #[binrw::binrw]
 #[derive(Debug)]
@@ -47,21 +44,6 @@ where
     #[bw(align_before = OFFSET_PAD)]
     #[bw(write_with = PosMarker::write_roff, args(&next_entry_offset))]
     _write_offset_placeholder: (),
-}
-
-impl<T, const OFFSET_PAD: u32> ChainedItem<T, OFFSET_PAD>
-where
-    T: BinRead + BinWrite,
-    for<'a> <T as BinRead>::Args<'a>: Default,
-    for<'b> <T as BinWrite>::Args<'b>: Default,
-{
-    pub fn new(value: T) -> Self {
-        Self::from(value)
-    }
-
-    pub fn value(&self) -> &T {
-        &self.value
-    }
 }
 
 impl<T, const OFFSET_PAD: u32> PartialEq for ChainedItem<T, OFFSET_PAD>
@@ -112,8 +94,8 @@ where
 
 /// Implements a chained item list.
 ///
-/// A chained item list is a sequence of [`ChainedItem<T>`] entries,
-/// where each entry contains a value of type `T` and an offset to the next entry.
+/// A chained item list is a sequence of T entries,
+/// where each entry contains a value of type `T` and an offset to the next entry before it.
 /// The last entry in the list has a next entry offset of `0`.
 ///
 /// This is a common pattern for Microsoft fscc-query responses, and is used to
@@ -133,6 +115,49 @@ where
     #[br(parse_with = ChainedItem::<T, OFFSET_PAD>::read_chained)]
     #[bw(write_with = ChainedItem::<T, OFFSET_PAD>::write_chained)]
     values: Vec<ChainedItem<T, OFFSET_PAD>>,
+}
+
+impl<T, const OFFSET_PAD: u32> ChainedItemList<T, OFFSET_PAD>
+where
+    T: BinRead + BinWrite,
+    for<'a> <T as BinRead>::Args<'a>: Default,
+    for<'b> <T as BinWrite>::Args<'b>: Default,
+{
+    /// Returns an iterator over the values in the chained item list.
+    #[inline]
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        self.values.iter().map(|item| &item.value)
+    }
+
+    /// Returns true if the chained item list is empty.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.values.is_empty()
+    }
+
+    /// Returns the number of items in the chained item list.
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.values.len()
+    }
+}
+
+impl<T, const OFFSET_PAD: u32> IntoIterator for ChainedItemList<T, OFFSET_PAD>
+where
+    T: BinRead + BinWrite,
+    for<'a> <T as BinRead>::Args<'a>: Default,
+    for<'b> <T as BinWrite>::Args<'b>: Default,
+{
+    type Item = T;
+
+    type IntoIter = std::iter::Map<
+        std::vec::IntoIter<ChainedItem<T, OFFSET_PAD>>,
+        fn(ChainedItem<T, OFFSET_PAD>) -> T,
+    >;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.values.into_iter().map(|item| item.value)
+    }
 }
 
 impl<T, const OFFSET_PAD: u32> ChainedItem<T, OFFSET_PAD>
@@ -217,30 +242,6 @@ where
 {
     fn default() -> Self {
         Self { values: Vec::new() }
-    }
-}
-
-impl<T, const OFFSET_PAD: u32> Deref for ChainedItemList<T, OFFSET_PAD>
-where
-    T: BinRead + BinWrite,
-    for<'a> <T as BinRead>::Args<'a>: Default,
-    for<'b> <T as BinWrite>::Args<'b>: Default,
-{
-    type Target = Vec<ChainedItem<T, OFFSET_PAD>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.values
-    }
-}
-
-impl<T, const OFFSET_PAD: u32> DerefMut for ChainedItemList<T, OFFSET_PAD>
-where
-    T: BinRead + BinWrite,
-    for<'a> <T as BinRead>::Args<'a>: Default,
-    for<'b> <T as BinWrite>::Args<'b>: Default,
-{
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.values
     }
 }
 

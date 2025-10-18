@@ -11,6 +11,7 @@ use modular_bitfield::prelude::*;
 use smb_dtyp::{Guid, binrw_util::prelude::*};
 
 file_info_classes! {
+    /// Query file system information classes.
     pub QueryFileSystemInfo {
         pub FsAttribute = 5,
         pub FsControl = 6,
@@ -24,13 +25,14 @@ file_info_classes! {
 }
 
 file_info_classes! {
+    /// Set file system information classes.
     pub SetFileSystemInfo {
         pub FsControl = 6,
         pub FsObjectId = 8,
     }, Write
 }
 
-/// This information class is used to query attribute information for a file system.
+/// Query attribute information for a file system.
 ///
 /// [MS-FSCC 2.5.1](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/ebc7e6e5-4650-4e54-b17c-cf60f6fbeeaa>)
 #[binrw::binrw]
@@ -51,6 +53,9 @@ pub struct FileFsAttributeInformation {
     pub file_system_name: SizedWideString,
 }
 
+/// File system attributes.
+///
+/// Used in [`FileFsAttributeInformation`]
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
@@ -108,7 +113,8 @@ pub struct FileSystemAttributes {
     __: B3,
 }
 
-/// This information class is used to query or set quota and content indexing control information for a file system volume.
+/// Query or Set quota and content indexing control information for a file system volume.
+///
 /// Setting quota information requires the caller to have permission to open a volume handle or a handle to the quota index file for write access.
 ///
 /// [MS-FSCC 2.5.2](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/e5a70738-7ee4-46d9-a5f7-6644daa49a51>)
@@ -148,6 +154,9 @@ pub enum FsDeviceType {
     Disk = 7,
 }
 
+/// Characteristics of a file system volume.
+///
+/// See [`FileFsDeviceInformation`]
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
@@ -195,6 +204,9 @@ pub struct FsDeviceCharacteristics {
     __: B13,
 }
 
+/// File system control flags.
+///
+/// Used in [`FileFsControlInformation`]
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
@@ -241,7 +253,7 @@ pub struct FileSystemControlFlags {
     __: B22,
 }
 
-/// This information class is used to query sector size information for a file system volume.
+/// Query sector size information for a file system volume.
 ///
 /// [MS-FSCC 2.5.4](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/63768db7-9012-4209-8cca-00781e7322f5)
 #[binrw::binrw]
@@ -254,7 +266,7 @@ pub struct FileFsFullSizeInformation {
     pub bytes_per_sector: u32,
 }
 
-/// This information class is used to query or set the object ID for a file system data element. The operation MUST fail if the file system does not support object IDs.
+/// Query or Set the object ID for a file system data element. The operation MUST fail if the file system does not support object IDs.
 ///
 /// [MS-FSCC 2.5.6](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/dbf535ae-315a-4508-8bc5-84276ea106d4>)
 #[binrw::binrw]
@@ -266,7 +278,8 @@ pub struct FileFsObjectIdInformation {
     pub extended_info: [u8; 48],
 }
 
-/// This information class is used to query for the extended sector size and alignment information for a volume.
+/// Query for the extended sector size and alignment information for a volume.
+///
 /// The message contains a FILE_FS_SECTOR_SIZE_INFORMATION data element.
 ///
 /// [MS-FSCC 2.5.7](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/3e75d97f-1d0b-4e47-b435-73c513837a57>)
@@ -298,6 +311,7 @@ pub struct FileFsSectorSizeInformation {
     pub byte_offset_for_partition_alignment: u32,
 }
 
+/// File system sector flags.
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
@@ -316,7 +330,7 @@ pub struct SectorSizeInfoFlags {
     __: B28,
 }
 
-/// This information class is used to query sector size information for a file system volume.
+/// Query sector size information for a file system volume.
 ///
 /// [MS-FSCC 2.5.8](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/e13e068c-e3a7-4dd4-94fd-3892b492e6e7>)
 #[binrw::binrw]
@@ -332,7 +346,7 @@ pub struct FileFsSizeInformation {
     pub bytes_per_sector: u32,
 }
 
-/// This information class is used to query information on a volume on which a file system is mounted.
+/// Query information on a volume on which a file system is mounted.
 ///
 /// [MS-FSCC 2.5.9](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/bf691378-c34e-4a13-976e-404ea1a87738>)
 #[binrw::binrw]
@@ -362,46 +376,46 @@ pub struct FileFsVolumeInformation {
 mod tests {
     use super::*;
     use smb_dtyp::make_guid;
-    use smb_tests::test_binrw_read;
+    use smb_tests::test_binrw;
     use time::macros::datetime;
 
-    test_binrw_read! {
-        FileFsVolumeInformation {
+    test_binrw! {
+        struct FileFsVolumeInformation {
             volume_creation_time: datetime!(2025-10-13 12:35:04.593237).into(),
             volume_serial_number: 0x529d2cf4,
             volume_label: "MyShare".into(),
             supports_objects: false.into(),
-        }: [0x52, 0x51, 0x19, 0xcd, 0x3d, 0x3c, 0xdc, 0x1, 0xf4, 0x2c, 0x9d, 0x52, 0xe, 0x0, 0x0, 0x0, 0x0, 0x0, 0x4d, 0x0, 0x79, 0x0, 0x53, 0x0, 0x68, 0x0, 0x61, 0x0, 0x72, 0x0, 0x65, 0x0]
+        } => "525119cd3d3cdc01f42c9d520e00000000004d00790053006800610072006500"
     }
 
-    test_binrw_read! {
-        FileFsSizeInformation {
+    test_binrw! {
+        struct FileFsSizeInformation {
             total_allocation_units: 61202244,
             available_allocation_units: 45713576,
             sectors_per_allocation_unit: 2,
             bytes_per_sector: 512,
-        }: [0x44, 0xdf, 0xa5, 0x3, 0x0, 0x0, 0x0, 0x0, 0xa8, 0x88, 0xb9, 0x2, 0x0, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0]
+        } => "44dfa50300000000a888b902000000000200000000020000"
     }
 
-    test_binrw_read! {
-        FileFsFullSizeInformation {
+    test_binrw! {
+        struct FileFsFullSizeInformation {
             total_allocation_units: 0x03a5df44,
             actual_available_allocation_units: 0x02b98894,
             caller_available_allocation_units: 0x02b98894,
             sectors_per_allocation_unit: 2,
             bytes_per_sector: 512,
-        }: [0x44, 0xdf, 0xa5, 0x3, 0x0, 0x0, 0x0, 0x0, 0x94, 0x88, 0xb9, 0x2, 0x0, 0x0, 0x0, 0x0, 0x94, 0x88, 0xb9, 0x2, 0x0, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0]
+        } => "44dfa503000000009488b902000000009488b902000000000200000000020000"
     }
 
-    test_binrw_read! {
-        FileFsDeviceInformation {
+    test_binrw! {
+        struct FileFsDeviceInformation {
             device_type: FsDeviceType::Disk,
             characteristics: FsDeviceCharacteristics::new().with_device_is_mounted(true),
-        }: [0x07, 0x00, 0x00, 0x00, 0x20, 0x00, 0x00, 0x00]
+        } => "0700000020000000"
     }
 
-    test_binrw_read! {
-        FileFsAttributeInformation {
+    test_binrw! {
+        struct FileFsAttributeInformation {
             attributes: FileSystemAttributes::new()
                 .with_case_sensitive_search(true)
                 .with_case_preserved_names(true)
@@ -413,11 +427,11 @@ mod tests {
                 .with_named_streams(true),
             maximum_component_name_length: 255,
             file_system_name: "NTFS".into(),
-        }: [0x6f, 0x0, 0x5, 0x0, 0xff, 0x0, 0x0, 0x0, 0x8, 0x0, 0x0, 0x0, 0x4e, 0x0, 0x54, 0x0, 0x46, 0x0, 0x53, 0x0]
+        } => "6f000500ff000000080000004e00540046005300"
     }
 
-    test_binrw_read! {
-        FileFsSectorSizeInformation {
+    test_binrw! {
+        struct FileFsSectorSizeInformation {
             logical_bytes_per_sector: 512,
             physical_bytes_per_sector: 512,
             physical_bytes_per_sector_for_performance: 512,
@@ -427,16 +441,14 @@ mod tests {
                 .with_partition_aligned_on_device(true),
             byte_offset_for_sector_alignment: 0,
             byte_offset_for_partition_alignment: 0,
-        }: [0x0, 0x2, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x3, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0]
+        } => "00020000000200000002000000020000030000000000000000000000"
     }
 
-    test_binrw_read! {
-        FileFsObjectIdInformation {
+    test_binrw! {
+        struct FileFsObjectIdInformation {
             object_id: make_guid!("ed3e2170-2733-48b3-e5c0-bd5334f85a37"),
             extended_info: [0x61, 0x42, 0x6d, 0x53, 0x0, 0x6, 0x14, 0x4, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x34, 0x2e, 0x32, 0x30, 0x2e,
                             0x36, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0],
-        }: [0x70, 0x21, 0x3e, 0xed, 0x33, 0x27, 0xb3, 0x48, 0xe5, 0xc0, 0xbd, 0x53, 0x34, 0xf8, 0x5a, 0x37, 0x61, 0x42, 0x6d, 0x53, 0x0, 0x6, 0x14, 0x4, 0x0, 0x0,
-            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x34, 0x2e, 0x32, 0x30, 0x2e, 0x36, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0]
+        } => "70213eed3327b348e5c0bd5334f85a3761426d5300061404000000000000000000000000342e32302e3600000000000000000000000000000000000000000000"
     }
 }

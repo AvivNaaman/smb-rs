@@ -2,6 +2,7 @@
 
 pub mod debug;
 pub mod file_time;
+pub mod fixed_string;
 pub mod helpers;
 pub mod pos_marker;
 pub mod sized_wide_string;

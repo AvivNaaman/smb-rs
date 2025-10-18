@@ -451,12 +451,17 @@ impl ResourceHandle {
     }
 
     /// Queries the file for extended attributes information.
+    ///
+    /// The `output_buffer_length` should usually be the returned value from a prior
+    /// [`FileEaInformation`] query, as it indicates the total size of all EAs.
+    ///
     /// # Arguments
     /// * `names` - A list of extended attribute names to query.
     /// # Returns
     /// A `Result` containing the requested information, of type [QueryFileFullEaInformation].
     /// See [`ResourceHandle::query_info`] for more information.
     pub async fn query_full_ea_info_with_options(
+        // TODO: Make this a nicer iterator (like Directory listing).
         &self,
         names: Vec<&str>,
         output_buffer_length: Option<usize>,
@@ -468,9 +473,7 @@ impl ResourceHandle {
                     info_class: QueryInfoClass::File(QueryFileInfoClass::FullEaInformation),
                     output_buffer_length: 0,
                     additional_info: AdditionalInfo::new(),
-                    flags: QueryInfoFlags::new()
-                        .with_restart_scan(true)
-                        .with_return_single_entry(true),
+                    flags: QueryInfoFlags::new().with_restart_scan(true),
                     file_id: self.file_id()?,
                     data: GetInfoRequestData::EaInfo(GetEaInfoList {
                         values: names
