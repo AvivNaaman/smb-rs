@@ -3,10 +3,7 @@ use clap::{Parser, ValueEnum};
 #[cfg(feature = "async")]
 use futures_util::StreamExt;
 use maybe_async::*;
-use smb::{
-    Client, FileAccessMask, FileBasicInformation, FileIdInformation, QueryQuotaInfo, UncPath,
-    resource::*,
-};
+use smb::{Client, FileAccessMask, FileBasicInformation, QueryQuotaInfo, UncPath, resource::*};
 use std::collections::VecDeque;
 use std::fmt::Display;
 use std::{error::Error, sync::Arc};
@@ -81,7 +78,6 @@ pub async fn info(cmd: &InfoCmd, cli: &Cli) -> Result<(), Box<dyn Error>> {
 
     match resource {
         Resource::File(file) => {
-            file.query_info::<FileIdInformation>().await?;
             let info: FileBasicInformation = file.query_info().await?;
             let size_kb = file.get_len().await?.div_ceil(1024);
             log::info!("{}", cmd.path);

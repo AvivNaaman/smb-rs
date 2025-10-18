@@ -1,6 +1,6 @@
 //! Test utilities for binrw-related code.
 
-pub fn __hex_stream_decode(hex_stream: &'static str) -> Vec<u8> {
+pub fn __hex_stream_decode(hex_stream: &str) -> Vec<u8> {
     let hex_stream = hex_stream.split_whitespace().collect::<String>();
     ::hex::decode(hex_stream).expect("Invalid hex string")
 }
@@ -72,7 +72,6 @@ macro_rules! test_binrw_write {
             fn [<test_ $type:snake _write>]() {
                 let expr_eval = $value_expr;
                 $crate::binrw_write_and_assert_eq!(
-                    $type,
                     expr_eval,
                     $byte_arr_or_hex_stream
                 );
@@ -89,7 +88,6 @@ macro_rules! test_binrw_write {
             fn [<test_ $type:snake _write $suffix:lower>]() {
                 let expr_eval = $value_expr;
                 $crate::binrw_write_and_assert_eq!(
-                    $type,
                     expr_eval,
                     $byte_arr_or_hex_stream
                 );
@@ -101,7 +99,6 @@ macro_rules! test_binrw_write {
 #[macro_export]
 macro_rules! binrw_write_and_assert_eq {
     (
-        $type:ty,
         $value:expr,
         $byte_arr_or_hex_stream:tt
     ) => {{

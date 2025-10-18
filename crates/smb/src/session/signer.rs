@@ -83,7 +83,7 @@ impl Clone for MessageSigner {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "sign_gmac"))]
 mod tests {
     use crate::crypto::make_signing_algo;
 

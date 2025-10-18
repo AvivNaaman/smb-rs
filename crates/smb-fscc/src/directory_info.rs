@@ -119,29 +119,6 @@ macro_rules! query_dir_type {
                         file_name: SizedWideString::from(file_name),
                     }
                 }
-
-                #[cfg(test)]
-                /// This is a test helper function to quickly initialize common fields for test cases.
-                #[allow(dead_code)]
-                fn make_common_test_file(file_index: u32, created: time::PrimitiveDateTime, access_time: time::PrimitiveDateTime, write_time: time::PrimitiveDateTime,
-                    change_time: time::PrimitiveDateTime, file_name: &str, eof: u64, alloc_size: u64, ea_size: u32) -> Self {
-                    Self {
-                        file_index,
-                        creation_time: created.into(),
-                        last_access_time: access_time.into(),
-                        last_write_time: write_time.into(),
-                        change_time: change_time.into(),
-                        end_of_file: eof,
-                        allocation_size: alloc_size,
-                        file_attributes: FileAttributes::new().with_directory(true),
-                        ea_size: Some(ea_size),
-                        reparse_tag: None,
-                        $(
-                            $actual_field: Default::default(),
-                        )*
-                        file_name: SizedWideString::from(file_name),
-                    }
-                }
             }
         }
     };

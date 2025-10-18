@@ -28,7 +28,7 @@ type NextEntryOffsetType = u32;
 #[derive(Debug)]
 #[bw(import(last: bool))]
 #[allow(clippy::manual_non_exhaustive)]
-struct ChainedItem<T, const OFFSET_PAD: u32 = CHAINED_ITEM_DEFAULT_OFFSET_PAD>
+pub struct ChainedItem<T, const OFFSET_PAD: u32 = CHAINED_ITEM_DEFAULT_OFFSET_PAD>
 where
     T: BinRead + BinWrite,
     for<'a> <T as BinRead>::Args<'a>: Default,
@@ -139,6 +139,24 @@ where
     #[inline]
     pub fn len(&self) -> usize {
         self.values.len()
+    }
+}
+
+impl<T, const OFFSET_PAD: u32> IntoIterator for ChainedItemList<T, OFFSET_PAD>
+where
+    T: BinRead + BinWrite,
+    for<'a> <T as BinRead>::Args<'a>: Default,
+    for<'b> <T as BinWrite>::Args<'b>: Default,
+{
+    type Item = T;
+
+    type IntoIter = std::iter::Map<
+        std::vec::IntoIter<ChainedItem<T, OFFSET_PAD>>,
+        fn(ChainedItem<T, OFFSET_PAD>) -> T,
+    >;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.values.into_iter().map(|item| item.value)
     }
 }
 

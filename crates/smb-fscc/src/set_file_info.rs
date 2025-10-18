@@ -105,6 +105,8 @@ pub struct FileAllocationInformation {
 
 /// Create a hard link to an existing file via the SMB Version 2 Protocol, as specified in [MS-SMB2].
 ///
+/// WARNING: This operation is currently unstable and untested, and may lead to data loss or corruption if used improperly!
+///
 /// [MS-FSCC 2.4.8.2](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/58f44021-120d-4662-bf2c-9905ed4940dc>) - FileLinkInformation for SMB2 protocol
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
@@ -218,10 +220,20 @@ mod tests {
         } => "00000000000000000000000000000000790eb19f06abdb01790eb19f06abdb010000000000000000"
     }
 
-    // TODO: the following tests are currently missing:
-    //     pub FullEa = 15,
+    test_binrw! {
+        struct FileValidDataLengthInformation {
+            valid_data_length: 0x123456789,
+        } => "8967452301000000"
+    }
+
+    test_binrw! {
+        struct FileShortNameInformation {
+            inner: FileNameInformation {
+                file_name: SizedWideString::from("SHORTN~1.TXT"),
+            },
+        } => "18000000530048004f00520054004e007e0031002e00540058005400"
+    }
+
+    // TODO: the following test is currently missing.
     //     pub Link = 11,
-    //     pub Pipe = 23,
-    //     pub ShortName = 40,
-    //     pub ValidDataLength = 39,
 }

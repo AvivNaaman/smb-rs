@@ -453,7 +453,7 @@ impl ResourceHandle {
     /// Queries the file for extended attributes information.
     ///
     /// The `output_buffer_length` should usually be the returned value from a prior
-    /// [`FileEaInformation`][smb_fscc::FileEaInformation] query, as it indicates the total size of all EAs.
+    /// [`FileEaInformation`] query, as it indicates the total size of all EAs.
     ///
     /// # Arguments
     /// * `names` - A list of extended attribute names to query.

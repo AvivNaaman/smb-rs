@@ -87,7 +87,7 @@ macro_rules! same_generic_impls {
 impl<const N: usize> FromStr for BaseFixedString<$chartype, N> {
     type Err = &'static str;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.len() > N {
+        if s.len() > Self::MAX_CHARS {
             return Err("Input string is longer than fixed size");
         }
         Ok(Self::from(s))
@@ -116,7 +116,7 @@ impl<const N: usize> TryInto<String> for FixedAnsiString<N> {
 impl<const N: usize> TryInto<String> for FixedWideString<N> {
     type Error = FromUtf16Error;
     fn try_into(self) -> Result<String, Self::Error> {
-        Ok(String::from_utf16(self.as_slice())?.to_string())
+        String::from_utf16(self.as_slice())
     }
 }
 

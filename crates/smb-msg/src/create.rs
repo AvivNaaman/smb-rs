@@ -234,7 +234,7 @@ pub enum CreateAction {
     Overwritten = 0x3,
 }
 
-/// This is meant to be used within a [`ChainedItemList<T>`][crate::ChainedItemList]!
+/// This is meant to be used within a [`ChainedItemList<T>`][smb_fscc::ChainedItemList<T>]!
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[bw(import(is_last: bool))]
