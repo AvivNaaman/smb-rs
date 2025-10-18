@@ -1,6 +1,7 @@
 use crate::ConnectionConfig;
 use crate::{Connection, Error, FileCreateArgs, Pipe, Resource, Session, Tree, sync_helpers::*};
 use maybe_async::maybe_async;
+use smb_fscc::{FilePipeInformation, FilePipeLocalInformation, FilePipeRemoteInformation};
 use smb_msg::{NetworkInterfaceInfo, ReferralEntry, ReferralEntryValue, Status};
 use smb_rpc::interface::{ShareInfo1, SrvSvc};
 use smb_transport::TransportConfig;
@@ -153,6 +154,13 @@ impl Client {
     pub async fn list_shares(&self, server: &str) -> crate::Result<Vec<ShareInfo1>> {
         let srvsvc_pipe_name: &str = "srvsvc";
         let srvsvc_pipe = self.open_pipe(server, srvsvc_pipe_name).await?;
+
+        srvsvc_pipe.query_info::<FilePipeInformation>().await?;
+        srvsvc_pipe.query_info::<FilePipeLocalInformation>().await?;
+        srvsvc_pipe
+            .query_info::<FilePipeRemoteInformation>()
+            .await?;
+
         let mut srvsvc_pipe: SrvSvc<_> = srvsvc_pipe.bind().await?;
         let shares = srvsvc_pipe.netr_share_enum(server).await?;
 

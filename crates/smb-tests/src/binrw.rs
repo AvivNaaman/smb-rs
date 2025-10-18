@@ -53,7 +53,7 @@ macro_rules! test_binrw_write {
             $(
                 $field:ident : $value:expr,
             )*
-        }: $byte_arr_or_hex_stream:tt
+        } => $byte_arr_or_hex_stream:tt
     ) => {
         $crate::test_binrw_write! {
             $name $(=> $suffix)?: $name {
@@ -131,7 +131,7 @@ macro_rules! test_binrw_read {
             $(
                 $field:ident : $value:expr,
             )*
-        }: $byte_arr_or_hex_stream:tt
+        } => $byte_arr_or_hex_stream:tt
     ) => {
         $crate::test_binrw_read! {
             $name $(=> $suffix)?: $name {

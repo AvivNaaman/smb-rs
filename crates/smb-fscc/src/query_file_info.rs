@@ -281,10 +281,12 @@ pub struct FilePipeLocalInformation {
     pub current_instances: u32,
     /// The inbound quota in bytes.
     pub inbound_quota: u32,
+    /// Bytes of data available to be read from the named pipe.
+    pub read_data_available: u32,
     /// The outbound quota in bytes.
     pub outbound_quota: u32,
     /// The write quota in bytes.
-    pub write_quota: u32,
+    pub write_quota_available: u32,
     /// The named pipe state.
     pub named_pipe_state: NamedPipeState,
     /// Specifies whether the named pipe handle is for the client or server end of a named pipe.
@@ -459,7 +461,7 @@ mod tests {
             file_attributes: FileAttributes::new()
                 .with_archive(true),
             reparse_tag: ReparseTag::ReservedZero,
-        }: "2000000000000000"
+        } => "2000000000000000"
     }
 
     fn get_file_basic_information_for_test() -> FileBasicInformation {
@@ -486,7 +488,7 @@ mod tests {
             compression_unit: 0,
             chunk_shift: 0,
             cluster_shift: 0,
-        }: "0d000000000000000000000000000000"
+        } => "0d000000000000000000000000000000"
     }
 
     fn get_internal_information_for_test() -> FileInternalInformation {
@@ -519,7 +521,7 @@ mod tests {
             allocation_size: 4096,
             end_of_file: 13,
             file_attributes: FileAttributes::new().with_archive(true),
-        }: "043fb5b8633fdc01043fb5b8633fdc01043fb5b8633fdc01043fb5b8633fdc0100100000000000000d000000000000002000000000000000"
+        } => "043fb5b8633fdc01043fb5b8633fdc01043fb5b8633fdc01043fb5b8633fdc0100100000000000000d000000000000002000000000000000"
     }
 
     test_binrw! {
@@ -562,9 +564,9 @@ mod tests {
     );
 
     fn get_file_ea_information_for_test() -> FileEaInformation {
-        FileEaInformation { ea_size: 17 }
+        FileEaInformation { ea_size: 208 }
     }
-    const FILE_EA_INFORMATION_FOR_TEST_STRING: &str = "11000000";
+    const FILE_EA_INFORMATION_FOR_TEST_STRING: &str = "d0000000";
     test_binrw!(
         FileEaInformation: get_file_ea_information_for_test() =>
         FILE_EA_INFORMATION_FOR_TEST_STRING
@@ -595,13 +597,6 @@ mod tests {
         => FILE_ALL_INFORMATION_FOR_TEST_STRING
     }
 
-    // TODO: the following tests are currently missing:
-    //     pub FullEa = 15,
-    //     pub Id = 59,
-    //     pub Pipe = 23,
-    //     pub PipeLocal = 24,
-    //     pub PipeRemote  = 25,
-
     test_binrw! {
         FileStreamInformation: FileStreamInformation::from(
             vec![
@@ -611,4 +606,32 @@ mod tests {
             ]
         ) => "280000000e00000020ba10000000000000000b00000000003a003a002400440041005400410000004000000024000000070000000000000008000000000000003a0053006d00610072007400530063007200650065006e003a002400440041005400410000000000000000002c0000003f0000000000000040000000000000003a005a006f006e0065002e004900640065006e007400690066006900650072003a0024004400410054004100"
     }
+
+    test_binrw! {
+        struct FileIdInformation {
+            volume_serial_number: 0xc86ef7996ef77f0e,
+            file_id: 0x0000000000000000006a00000000cd5a,
+        } => "0e7ff76e99f76ec85acd000000006a000000000000000000"
+    }
+
+    test_binrw! {
+        struct FilePipeLocalInformation {
+            named_pipe_type: NamedPipeType::Message,
+            named_pipe_configuration: NamedPipeConfiguration::FullDuplex,
+            maximum_instances: 0xffffffff,
+            current_instances: 4,
+            inbound_quota: 2048,
+            read_data_available: 0,
+            outbound_quota: 2048,
+            write_quota_available: 1024,
+            named_pipe_state: NamedPipeState::Connected,
+            named_pipe_end: NamedPipeEnd::Client,
+        } => "0100000002000000ffffffff04000000000800000000000000080000000400000300000000000000"
+    }
+
+    // Querying this is both no trivial, and also probably passes tests.
+    // test_binrw! {
+    //     struct FilePipeRemoteInformation {
+    //     } => ""
+    // }
 }

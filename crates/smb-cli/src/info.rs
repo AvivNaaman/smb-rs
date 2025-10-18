@@ -3,7 +3,10 @@ use clap::{Parser, ValueEnum};
 #[cfg(feature = "async")]
 use futures_util::StreamExt;
 use maybe_async::*;
-use smb::{Client, FileAccessMask, FileBasicInformation, QueryQuotaInfo, UncPath, resource::*};
+use smb::{
+    Client, FileAccessMask, FileBasicInformation, FileIdInformation, QueryQuotaInfo, UncPath,
+    resource::*,
+};
 use std::collections::VecDeque;
 use std::fmt::Display;
 use std::{error::Error, sync::Arc};
@@ -43,6 +46,11 @@ pub struct InfoCmd {
     #[arg(long)]
     #[clap(default_value_t = false)]
     pub show_quota: bool,
+
+    /// Whether to display extended attributes (EA) information for files.
+    #[arg(long)]
+    #[clap(default_value_t = false)]
+    pub show_ea: bool,
 }
 
 #[maybe_async]
@@ -73,6 +81,7 @@ pub async fn info(cmd: &InfoCmd, cli: &Cli) -> Result<(), Box<dyn Error>> {
 
     match resource {
         Resource::File(file) => {
+            file.query_info::<FileIdInformation>().await?;
             let info: FileBasicInformation = file.query_info().await?;
             let size_kb = file.get_len().await?.div_ceil(1024);
             log::info!("{}", cmd.path);
@@ -80,6 +89,28 @@ pub async fn info(cmd: &InfoCmd, cli: &Cli) -> Result<(), Box<dyn Error>> {
             log::info!("  - Creation time: {}", info.creation_time);
             log::info!("  - Last write time: {}", info.last_write_time);
             log::info!("  - Last access time: {}", info.last_access_time);
+            if cmd.show_ea {
+                log::info!("  - Extended Attributes (EA):");
+                let basic_ea_info = file.query_info::<smb::FileEaInformation>().await?;
+                if basic_ea_info.ea_size > 0 {
+                    let ea_info = file
+                        .query_full_ea_info_with_options(
+                            vec![],
+                            Some(basic_ea_info.ea_size as usize),
+                        )
+                        .await?;
+                    ea_info.iter().for_each(|ea| {
+                        log::info!(
+                            "       - name='{}', size={} bytes, flags={:?}",
+                            ea.ea_name,
+                            ea.ea_value.len(),
+                            ea.flags
+                        );
+                    });
+                } else {
+                    log::info!("       (no EAs present)");
+                }
+            }
             file.close().await?;
         }
         Resource::Directory(dir) => {

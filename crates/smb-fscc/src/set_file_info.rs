@@ -176,19 +176,19 @@ mod tests {
     test_binrw! {
         struct FileAllocationInformation {
             allocation_size: 500,
-        }: "f401000000000000"
+        } => "f401000000000000"
     }
 
     test_binrw! {
         struct FileEndOfFileInformation {
             end_of_file: 777,
-        }: "0903000000000000"
+        } => "0903000000000000"
     }
 
     test_binrw! {
         struct FileDispositionInformation {
             delete_pending: true.into(),
-        }: "01"
+        } => "01"
     }
 
     test_binrw_read! {
@@ -196,7 +196,7 @@ mod tests {
             replace_if_exists: false.into(),
             root_directory: 0,
             file_name: SizedWideString::from("b.txt"),
-        }: "0002750062006c0000000000000000000a00000062002e00740078007400"
+        } => "0002750062006c0000000000000000000a00000062002e00740078007400"
     }
 
     test_binrw_write! {
@@ -204,7 +204,7 @@ mod tests {
             replace_if_exists: false.into(),
             root_directory: 0,
             file_name: SizedWideString::from("b.txt"),
-        }: "000000000000000000000000000000000a00000062002e00740078007400"
+        } => "000000000000000000000000000000000a00000062002e00740078007400"
     }
 
     test_binrw! {
@@ -214,7 +214,7 @@ mod tests {
             last_write_time: datetime!(2025-04-11 17:24:47.489599300).into(),
             change_time: datetime!(2025-04-11 17:24:47.489599300).into(),
             file_attributes: FileAttributes::new(),
-        }: "00000000000000000000000000000000790eb19f06abdb01790eb19f06abdb010000000000000000"
+        } => "00000000000000000000000000000000790eb19f06abdb01790eb19f06abdb010000000000000000"
     }
 
     // TODO: the following tests are currently missing:

@@ -37,6 +37,15 @@ impl FileTime {
     pub fn is_zero(&self) -> bool {
         self.value == 0
     }
+
+    /// Returns the duration since the FILETIME epoch (January 1, 1601).
+    ///
+    /// This is useful for cases where the file time represents a duration offset.
+    pub fn since_epoch(&self) -> Duration {
+        let secs = self.value / Self::SCALE_VALUE_TO_SECS;
+        let nanos = self.value % Self::SCALE_VALUE_TO_SECS * Self::SCALE_VALUE_TO_NANOS;
+        Duration::new(secs, nanos as u32)
+    }
 }
 
 impl Display for FileTime {
@@ -83,9 +92,7 @@ impl Deref for FileTime {
 impl From<FileTime> for SystemTime {
     fn from(src: FileTime) -> SystemTime {
         let epoch = SystemTime::from(FileTime::EPOCH.as_utc());
-        let secs = src.value / FileTime::SCALE_VALUE_TO_SECS;
-        let nanos = src.value % FileTime::SCALE_VALUE_TO_SECS * FileTime::SCALE_VALUE_TO_NANOS;
-        epoch + Duration::new(secs, nanos as u32)
+        epoch + src.since_epoch()
     }
 }
 
