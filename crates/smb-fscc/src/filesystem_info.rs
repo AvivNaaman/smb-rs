@@ -11,6 +11,7 @@ use modular_bitfield::prelude::*;
 use smb_dtyp::{Guid, binrw_util::prelude::*};
 
 file_info_classes! {
+    /// Query file system information classes.
     pub QueryFileSystemInfo {
         pub FsAttribute = 5,
         pub FsControl = 6,
@@ -24,6 +25,7 @@ file_info_classes! {
 }
 
 file_info_classes! {
+    /// Set file system information classes.
     pub SetFileSystemInfo {
         pub FsControl = 6,
         pub FsObjectId = 8,
@@ -51,6 +53,9 @@ pub struct FileFsAttributeInformation {
     pub file_system_name: SizedWideString,
 }
 
+/// File system attributes.
+///
+/// Used in [`FileFsAttributeInformation`]
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
@@ -109,6 +114,7 @@ pub struct FileSystemAttributes {
 }
 
 /// Query or Set quota and content indexing control information for a file system volume.
+///
 /// Setting quota information requires the caller to have permission to open a volume handle or a handle to the quota index file for write access.
 ///
 /// [MS-FSCC 2.5.2](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/e5a70738-7ee4-46d9-a5f7-6644daa49a51>)
@@ -148,6 +154,9 @@ pub enum FsDeviceType {
     Disk = 7,
 }
 
+/// Characteristics of a file system volume.
+///
+/// See [`FileFsDeviceInformation`]
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
@@ -195,6 +204,9 @@ pub struct FsDeviceCharacteristics {
     __: B13,
 }
 
+/// File system control flags.
+///
+/// Used in [`FileFsControlInformation`]
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
@@ -267,6 +279,7 @@ pub struct FileFsObjectIdInformation {
 }
 
 /// Query for the extended sector size and alignment information for a volume.
+///
 /// The message contains a FILE_FS_SECTOR_SIZE_INFORMATION data element.
 ///
 /// [MS-FSCC 2.5.7](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/3e75d97f-1d0b-4e47-b435-73c513837a57>)
@@ -298,6 +311,7 @@ pub struct FileFsSectorSizeInformation {
     pub byte_offset_for_partition_alignment: u32,
 }
 
+/// File system sector flags.
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]

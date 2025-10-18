@@ -8,7 +8,7 @@ use smb_dtyp::binrw_util::prelude::*;
 ///
 /// This structure is similar to the references struct, excluding the NextEntryOffset field.
 ///
-/// You must use [`ChainedItemList<FileNotifyInformation>`] to properly represent a list of these structures.
+/// You must use [`ChainedItemList<FileNotifyInformation>`][crate::ChainedItemList] to properly represent a list of these structures.
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[bw(import(has_next: bool))]

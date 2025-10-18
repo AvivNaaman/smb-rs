@@ -12,9 +12,10 @@ use smb_dtyp::binrw_util::{fixed_string::FixedWideString, prelude::*};
 
 use super::{FileAttributes, ReparseTag};
 
-// Note: here, the information types should be wrapped around [`ChainedItemList<T>`]`.
+// Note: here, the information types should be wrapped around [`ChainedItemList<T>`][crate::ChainedItemList]`.
 
 file_info_classes! {
+    /// Query (list) directory information classes.
     pub QueryDirectoryInfo {
         pub Directory = 0x01,
         pub FullDirectory = 0x02,
@@ -53,7 +54,7 @@ macro_rules! query_dir_type {
             #[derive(Debug, PartialEq, Eq)]
             $(#[$meta])*
             ///
-            /// > Note: This should be wrapped in [`ChainedItemList<T>`] to represent a list of these structures.
+            /// > Note: This should be wrapped in [`ChainedItemList<T>`][crate::ChainedItemList] to represent a list of these structures.
             $svis struct $name {
                 /// The byte offset of the file within the parent directory. This member is undefined for file systems, such as NTFS, in which the position of a file within the parent directory is not fixed and can be changed at any time to maintain sort order.
                 pub file_index: u32,
@@ -153,7 +154,7 @@ type FileName83 = FixedWideString<12>; // 8.3 => 8+1+3 = 12
 ///
 /// [MS-FSCC 2.4.10](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/b38bf518-9057-4c88-9ddd-5e2d3976a64b>)
 ///
-/// This should be wrapped in [`ChainedItemList<T>`] to represent a list of these structures.
+/// This should be wrapped in [`ChainedItemList<T>`][crate::ChainedItemList] to represent a list of these structures.
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct FileDirectoryInformation {
@@ -297,7 +298,7 @@ query_dir_type! {
 ///
 /// [MS-FSCC 2.4.33](<https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/a289f7a8-83d2-4927-8c88-b2d328dde5a5>)
 ///
-/// This should be wrapped in [`ChainedItemList<T>`] to represent a list of these structures.
+/// This should be wrapped in [`ChainedItemList<T>`][crate::ChainedItemList] to represent a list of these structures.
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct FileNamesInformation {

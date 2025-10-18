@@ -16,6 +16,7 @@ use super::{
 };
 
 file_info_classes! {
+    /// Set file information classes.
     pub SetFileInfo {
         pub Allocation = 19,
         pub Basic = 4,

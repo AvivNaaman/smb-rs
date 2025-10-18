@@ -56,6 +56,9 @@ pub struct FileFullEaInformationInner {
     pub ea_value: Vec<u8>,
 }
 
+/// Extended Attribute (EA) Flags
+///
+/// See [`FileFullEaInformationInner`]
 #[bitfield]
 #[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]

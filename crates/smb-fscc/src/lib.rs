@@ -8,11 +8,11 @@
 //! This crate also contains common utility structures to wrap around common FSCC structures.
 //!
 //! The crate contains the following implementations:
-//! * Querying file information [`QueryFileInfo`]
-//! * Setting file information [`SetFileInfo`]
+//! * File information [`QueryFileInfo`], [`SetFileInfo`]
+//! * File system information [`QueryFileSystemInfo`], [`SetFileSystemInfo`]
 //! * Directory query types [`QueryDirectoryInfo`]
 //! * Change notifications [`FileNotifyInformation`]
-//! * Access masks types, including the [`access_mask!{...}`][`access_mask!`] macro.
+//! * Access masks [`FileAccessMask`], [`DirAccessMask`]
 
 #![allow(unused_parens)]
 

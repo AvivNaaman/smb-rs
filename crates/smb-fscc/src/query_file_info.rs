@@ -16,6 +16,7 @@ use crate::{ReparseTag, file_info_classes};
 use smb_dtyp::binrw_util::prelude::*;
 
 file_info_classes! {
+    /// Query file information classes.
     pub QueryFileInfo {
         pub Access = 8,
         pub Alignment = 17,
@@ -40,8 +41,6 @@ file_info_classes! {
     }, Read
 }
 
-/// A [FileFullEaInformation](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-fscc/0eb94f48-6aac-41df-a878-79f4dcfd8989)
-/// structure to be used when querying for extended attributes. You may use [super::SetFileFullEaInformation] for setting.
 pub type QueryFileFullEaInformation = FileFullEaInformation;
 
 pub type FileStreamInformation = ChainedItemList<FileStreamInformationInner, 8>;
@@ -238,6 +237,7 @@ pub struct FileNetworkOpenInformation {
 }
 
 /// Query the normalized name of a file.
+///
 /// A normalized name is an absolute pathname where each short name component has been replaced with the corresponding long name component,
 /// and each name component uses the exact letter casing stored on disk
 ///
