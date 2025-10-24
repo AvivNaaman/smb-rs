@@ -180,6 +180,7 @@ mod gmac_signer {
 
     impl Gmac128Signer {
         pub fn build(key: &SigningKey) -> Box<dyn SigningAlgo> {
+            #[allow(deprecated)] // Until RustCrypto ccm is bumped
             let key = Key::<Aes128>::from_slice(key);
             Box::new(Gmac128Signer {
                 gmac: Aes128Gcm::new(key),

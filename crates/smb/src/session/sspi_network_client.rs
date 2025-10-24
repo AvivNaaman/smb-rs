@@ -52,7 +52,7 @@ mod client_impl {
         fn send<'a>(
             &'a mut self,
             network_request: &'a NetworkRequest,
-        ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>>> + 'a>> {
             Box::pin(ReqwestNetworkClient::send(self, network_request))
         }
     }
