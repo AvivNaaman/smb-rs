@@ -109,6 +109,8 @@ pub fn make_encrypting_algo(
 
 #[cfg(any(feature = "encrypt_aes128ccm", feature = "encrypt_aes256ccm"))]
 mod encrypt_ccm {
+    #![allow(deprecated)] // Until RustCrypto ccm is bumped
+
     #[cfg(feature = "encrypt_aes128ccm")]
     use aes::Aes128;
     #[cfg(feature = "encrypt_aes256ccm")]
@@ -221,6 +223,8 @@ mod encrypt_ccm {
 
 #[cfg(any(feature = "encrypt_aes128gcm", feature = "encrypt_aes256gcm"))]
 mod encrypt_gcm {
+    #![allow(deprecated)] // Until RustCrypto ccm is bumped
+
     use aead::AeadMutInPlace;
     use aes::cipher::{BlockCipher, BlockEncrypt, generic_array::GenericArray};
     use aes_gcm::{AesGcm, KeyInit, KeySizeUser};

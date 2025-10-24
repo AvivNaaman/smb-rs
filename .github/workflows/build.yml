@@ -89,7 +89,7 @@ jobs:
           override: true
       # Building ignores the lock file, to prevent crates usage broken.
       - name: Remove lock file
-        run: echo rm Cargo.lock # TODO: re-enable when resolving #136
+        run: rm Cargo.lock
       - name: Build and Doc (Async)
         run: |
           cargo build --no-default-features --features "async,${COMMON_FEATURES}"
