@@ -241,12 +241,8 @@ mod tests {
         )
     }
 
-    #[test]
-    pub fn test_flush_res_parse() {
-        let data = [0x4u8, 0, 0, 0, 0, 0, 0, 0];
-        let mut cursor = Cursor::new(data);
-        let resp = FlushResponse::read_le(&mut cursor).unwrap();
-        assert_eq!(resp, FlushResponse {});
+    smb_tests::test_binrw! {
+        struct FlushResponse {  } => "04 00 00 00"
     }
 
     #[test]
@@ -275,24 +271,10 @@ mod tests {
         ]
     }
 
-    #[test]
-    pub fn test_read_resp_parse() {
-        let data = [
-            0xfeu8, 0x53, 0x4d, 0x42, 0x40, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x8, 0x0, 0x1, 0x0,
-            0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xd4, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xff,
-            0xfe, 0x0, 0x0, 0x5, 0x0, 0x0, 0x0, 0x31, 0x0, 0x0, 0x20, 0x0, 0x30, 0x0, 0x0, 0x0,
-            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x11, 0x0,
-            0x50, 0x0, 0x6, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x62, 0x62,
-            0x62, 0x62, 0x62, 0x62,
-        ];
-
-        let resp = decode_content(&data).content.to_read().unwrap();
-        assert_eq!(
-            resp,
-            ReadResponse {
-                buffer: b"bbbbbb".to_vec(),
-            }
-        );
+    test_response_read! {
+        Read {
+            buffer: b"bbbbbb".to_vec(),
+        } => "fe534d424000010000000000080001000100000000000000d400000000000000fffe00000500000031000020003000000000000000000000000000000000000011005000060000000000000000000000626262626262"
     }
 
     #[test]
@@ -321,13 +303,7 @@ mod tests {
         );
     }
 
-    #[test]
-    pub fn test_write_resp_parse() {
-        let data = [
-            0x11u8, 0x0, 0x0, 0x0, 0xaf, 0xba, 0xef, 0xbe, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-        ];
-        let mut cursor = Cursor::new(data);
-        let resp = WriteResponse::read_le(&mut cursor).unwrap();
-        assert_eq!(resp, WriteResponse { count: 0xbeefbaaf });
+    smb_tests::test_binrw! {
+        struct WriteResponse { count: 0xbeefbaaf, } => "11000000afbaefbe0000000000000000"
     }
 }

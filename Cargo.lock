@@ -2559,10 +2559,12 @@ name = "smb-msg"
 version = "0.10.2"
 dependencies = [
  "binrw",
+ "const_format",
  "modular-bitfield",
  "pastey",
  "smb-dtyp",
  "smb-fscc",
+ "smb-tests",
  "thiserror 2.0.17",
  "time",
 ]

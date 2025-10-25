@@ -300,29 +300,3 @@ macro_rules! make_plain {
 
 make_plain!(Request, false, binrw::binwrite);
 make_plain!(Response, true, binrw::binread);
-
-/// Contains both tests and test helpers for other modules' tests requiring this module.
-#[cfg(test)]
-pub mod tests {
-    use std::io::Cursor;
-
-    use super::*;
-
-    /// Given a content, encode it into a Vec<u8> as if it were a full message,
-    /// But return only the content bytes.
-    ///
-    /// This is useful when encoding structs with offsets relative to the beginning of the SMB header.
-    pub fn encode_content(content: RequestContent) -> Vec<u8> {
-        let mut cursor = Cursor::new(Vec::new());
-        let msg = PlainRequest::new(content);
-        msg.write(&mut cursor).unwrap();
-        let bytes_of_msg = cursor.into_inner();
-        // We only want to return the content of the message, not the header. So cut the HEADER_SIZE bytes:
-        bytes_of_msg[Header::STRUCT_SIZE..].to_vec()
-    }
-
-    pub fn decode_content(bytes: &[u8]) -> PlainResponse {
-        let mut cursor = Cursor::new(bytes);
-        cursor.read_le().unwrap()
-    }
-}
