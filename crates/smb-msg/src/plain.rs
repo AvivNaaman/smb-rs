@@ -179,6 +179,14 @@ impl From<cancel::CancelRequest>
     }
 }
 
+impl From<error::ErrorResponse>
+    for ResponseContent
+{
+    fn from(resp: error::ErrorResponse) -> Self {
+        ResponseContent::Error(resp)
+    }
+}
+
 make_content_impl!{
     RequestContent,
     $(
@@ -275,12 +283,17 @@ macro_rules! make_plain {
 
         impl [<Plain $suffix>] {
             pub fn new(content: [<$suffix Content>]) -> [<Plain $suffix>] {
+                let cmd = content.associated_cmd();
+                Self::new_with_command(content, cmd)
+            }
+
+            pub fn new_with_command(content: [<$suffix Content>], command: Command) -> [<Plain $suffix>] {
                 [<Plain $suffix>] {
                     // default is a sync command, so `tree_id` must be set, and `HeaderFlags::async_command` is false
                     header: Header {
                         credit_charge: 0,
                         status: Status::Success as u32,
-                        command: content.associated_cmd(),
+                        command,
                         credit_request: 0,
                         flags: HeaderFlags::new(),
                         next_command: 0,
@@ -298,5 +311,16 @@ macro_rules! make_plain {
     };
 }
 
-make_plain!(Request, false, binrw::binwrite);
-make_plain!(Response, true, binrw::binread);
+macro_rules! gen_req_resp {
+    ($req_attr:ty, $res_attr:ty) => {
+        make_plain!(Request, false, $req_attr);
+        make_plain!(Response, true, $res_attr);
+    };
+}
+
+#[cfg(all(feature = "server", feature = "client"))]
+gen_req_resp!(binrw::binrw, binrw::binrw);
+#[cfg(all(not(feature = "server"), feature = "client"))]
+gen_req_resp!(binrw::binread, binrw::binwrite);
+#[cfg(all(feature = "server", not(feature = "client")))]
+gen_req_resp!(binrw::binwrite, binrw::binread);

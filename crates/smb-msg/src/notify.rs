@@ -87,6 +87,8 @@ pub struct ChangeNotifyResponse {
     _output_buffer_length: PosMarker<u32>,
     #[br(seek_before = SeekFrom::Start(_output_buffer_offset.value.into()))]
     #[br(map_stream = |s| s.take_seek(_output_buffer_length.value.into()))]
+    #[bw(if(!buffer.is_empty()))]
+    #[bw(write_with = PosMarker::write_aoff_size, args(&_output_buffer_offset, &_output_buffer_length))]
     pub buffer: ChainedItemList<FileNotifyInformation, 4>,
 }
 
@@ -174,7 +176,7 @@ mod tests {
         } => "0900000000000000"
     }
 
-    test_response_read! {
+    test_response! {
         change_notify_with_data: ChangeNotify {
             buffer: vec![
                 FileNotifyInformation {

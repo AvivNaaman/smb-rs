@@ -142,7 +142,7 @@ pub struct IoctlResponse {
     pub file_id: FileId,
     #[bw(calc = PosMarker::default())]
     input_offset: PosMarker<u32>,
-    #[bw(assert(out_buffer.is_empty()))] // there is an exception for pass-through operations.
+    #[bw(assert(in_buffer.is_empty()))] // there is an exception for pass-through operations.
     #[bw(try_calc = in_buffer.len().try_into())]
     #[br(assert(input_count == 0))]
     input_count: u32,
@@ -163,10 +163,12 @@ pub struct IoctlResponse {
 
     #[br(seek_before = SeekFrom::Start(input_offset.value.into()))]
     #[br(count = input_count)]
+    #[bw(write_with = PosMarker::write_aoff, args(&input_offset))]
     pub in_buffer: Vec<u8>,
 
     #[br(seek_before = SeekFrom::Start(output_offset.value.into()))]
     #[br(count = output_count)]
+    #[bw(write_with = PosMarker::write_aoff, args(&output_offset))]
     pub out_buffer: Vec<u8>,
 }
 
@@ -250,7 +252,7 @@ mod tests {
     // Just to make things pretty; do NOT edit.
     const IOCTL_TEST_BUFFER_CONTENT: &'static str = "05000203100000000401000003000000ec00000001000000000002000000000001000000000000000000020000000000200000000000000001000000000000000c000e000000000000000200000000000000020000000000070000000000000000000000000000000600000000000000410056004900560056004d00000000000400000000000000010400000000000515000000173da72e955653f915dff28001000000000000000000020000000000010000000000000001000000000000000a000c00000000000000020000000000000000000000000006000000000000000000000000000000050000000000000061007600690076006e0000000100000000000000";
 
-    test_response_read! {
+    test_response! {
         Ioctl {
                 ctl_code: FsctlCodes::PipeTransceive as u32,
                 file_id: [
