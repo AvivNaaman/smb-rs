@@ -737,7 +737,7 @@ mod tests {
         )
     }
 
-    crate::test::test_response_read! {
+    crate::test::test_response! {
         Create {
                 oplock_level: OplockLevel::None,
                 flags: CreateResponseFlags::new(),

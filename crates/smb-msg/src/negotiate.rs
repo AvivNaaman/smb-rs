@@ -455,7 +455,7 @@ mod tests {
 
     // TODO: Request write
 
-    test_response_read! {
+    test_response! {
         Negotiate {
             security_mode: NegotiateSecurityMode::new().with_signing_enabled(true),
             dialect_revision: NegotiateDialect::Smb0311,
