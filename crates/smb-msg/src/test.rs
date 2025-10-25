@@ -24,7 +24,7 @@ macro_rules! _test_generic_read {
     ) => {
         pastey::paste! {
             #[test]
-            fn [<test_content_ $test_name:snake _read>]() {
+            fn [<test_content_  $req_or_resp:lower _ $test_name:snake _read>]() {
                 use ::binrw::{io::Cursor, prelude::*};
                 let hex_bytes = ::smb_tests::hex_to_u8_array! { $hex };
                 let mut cursor = Cursor::new(hex_bytes);
@@ -49,7 +49,7 @@ macro_rules! _test_generic_write {
     ) => {
         pastey::paste! {
             #[test]
-            fn [<test_content_ $test_name:snake _write>]() {
+            fn [<test_content_ $req_or_resp:lower _ $test_name:snake _write>]() {
                 use ::binrw::{io::Cursor, prelude::*};
                 let response = [<$struct_name $req_or_resp:camel>] {
                     $(
@@ -58,7 +58,11 @@ macro_rules! _test_generic_write {
                 };
                 let mut cursor = Cursor::new(Vec::new());
                 let mut msg = [<Plain $req_or_resp:camel>]::new_with_command(response.into(), $command);
-                msg.header.flags.set_server_to_redir(true); // Since we're writing a response, we must set this flag
+
+                if stringify!([<$req_or_resp:lower>]) == "response" {
+                    msg.header.flags.set_server_to_redir(true); // Since we're writing a response, we must set this flag
+                }
+
                 msg.write(&mut cursor).unwrap();
                 let written_bytes = cursor.into_inner();
                 let expected_bytes = ::smb_tests::hex_to_u8_array! { $hex };

@@ -61,7 +61,7 @@ impl Debug for FileId {
 }
 
 #[binrw::binrw]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct CreateRequest {
     #[bw(calc = 57)]
     #[br(assert(_structure_size == 57))]
@@ -104,7 +104,7 @@ pub struct CreateRequest {
 }
 
 #[binrw::binrw]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 #[brw(repr(u32))]
 pub enum ImpersonationLevel {
     Anonymous = 0x0,
@@ -127,7 +127,7 @@ pub enum CreateDisposition {
 }
 
 #[bitfield]
-#[derive(BinWrite, BinRead, Default, Debug, Clone, Copy)]
+#[derive(BinWrite, BinRead, Default, Debug, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
 #[br(map = Self::from_bytes)]
 pub struct CreateOptions {
@@ -244,7 +244,7 @@ where
     for<'a> T: BinRead<Args<'a> = (&'a Vec<u8>,)> + BinWrite<Args<'static> = ()>,
 {
     #[bw(calc = PosMarker::default())]
-    _name_offset: PosMarker<u16>,
+    _name_offset: PosMarker<u16>, // relative to ChainedItem (any access must consider +CHAINED_ITEM_PREFIX_SIZE from start of item)
     #[bw(calc = u16::try_from(name.len()).unwrap())]
     name_length: u16,
     #[bw(calc = 0)]
@@ -257,11 +257,14 @@ where
 
     #[brw(align_before = 8)]
     #[br(count = name_length)]
+    #[br(seek_before = _name_offset.seek_from(_name_offset.value as u64 - CHAINED_ITEM_PREFIX_SIZE as u64))]
     #[bw(write_with = PosMarker::write_roff_plus, args(&_name_offset, CHAINED_ITEM_PREFIX_SIZE as u64))]
     pub name: Vec<u8>,
 
-    #[brw(align_before = 8)]
+    #[bw(align_before = 8)]
+    #[br(assert(_data_offset.value % 8 == 0))]
     #[bw(write_with = PosMarker::write_roff_size_b_plus, args(&_data_offset, &_data_length, &_name_offset, CHAINED_ITEM_PREFIX_SIZE as u64))]
+    #[br(seek_before = _name_offset.seek_from_if(_data_offset.value as u64 - CHAINED_ITEM_PREFIX_SIZE as u64, _data_length.value > 0))]
     #[br(map_stream = |s| s.take_seek(_data_length.value.into()), args(&name))]
     pub data: T,
 }
@@ -452,6 +455,7 @@ pub struct DurableHandleReconnect {
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq, Default)]
 pub struct QueryMaximalAccessRequest {
+    #[br(parse_with = binread_if_has_data)]
     pub timestamp: Option<FileTime>,
 }
 
@@ -688,10 +692,8 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    pub fn test_create_request_written_correctly() {
-        let file_name = "hello";
-        let request = CreateRequest {
+    test_request! {
+        Create {
             requested_oplock_level: OplockLevel::None,
             impersonation_level: ImpersonationLevel::Impersonation,
             desired_access: FileAccessMask::from_bytes(0x00100081u32.to_le_bytes()),
@@ -704,7 +706,7 @@ mod tests {
             create_options: CreateOptions::new()
                 .with_synchronous_io_nonalert(true)
                 .with_disallow_exclusive(true),
-            name: file_name.into(),
+            name: "hello".into(),
             contexts: vec![
                 DurableHandleRequestV2 {
                     timeout: 0,
@@ -716,25 +718,7 @@ mod tests {
                 QueryOnDiskIdReq.into(),
             ]
             .into(),
-        };
-        let data_without_header = encode_content(request.into());
-        assert_eq!(
-            data_without_header,
-            vec![
-                0x39, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x81, 0x0, 0x10, 0x0, 0x0, 0x0, 0x0, 0x0,
-                0x7, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x20, 0x0, 0x2, 0x0, 0x78, 0x0, 0xa, 0x0,
-                0x88, 0x0, 0x0, 0x0, 0x68, 0x0, 0x0, 0x0, 0x68, 0x0, 0x65, 0x0, 0x6c, 0x0, 0x6c,
-                0x0, 0x6f, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x38, 0x0, 0x0, 0x0, 0x10, 0x0, 0x4,
-                0x0, 0x0, 0x0, 0x18, 0x0, 0x20, 0x0, 0x0, 0x0, 0x44, 0x48, 0x32, 0x51, 0x0, 0x0,
-                0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                0x0, 0x0, 0x20, 0xa3, 0x79, 0xc6, 0xa0, 0xc0, 0xef, 0x11, 0x8b, 0x7b, 0x0, 0xc,
-                0x29, 0x80, 0x16, 0x82, 0x18, 0x0, 0x0, 0x0, 0x10, 0x0, 0x4, 0x0, 0x0, 0x0, 0x18,
-                0x0, 0x0, 0x0, 0x0, 0x0, 0x4d, 0x78, 0x41, 0x63, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                0x0, 0x10, 0x0, 0x4, 0x0, 0x0, 0x0, 0x18, 0x0, 0x0, 0x0, 0x0, 0x0, 0x51, 0x46,
-                0x69, 0x64, 0x0, 0x0, 0x0, 0x0
-            ]
-        )
+        } => "fe534d42400001000000000005000100180000000000000006000000000000000000000001000000590000480384000043ed8b73c9fcd3819eaa34eb72020b81390000000200000000000000000000000000000000000000810010000000000007000000010000002000020078000a008800000068000000680065006c006c006f000000000000003800000010000400000018002000000044483251000000000000000000000000000000000000000020a379c6a0c0ef118b7b000c29801682180000001000040000001800000000004d78416300000000000000001000040000001800000000005146696400000000"
     }
 
     crate::test::test_response! {

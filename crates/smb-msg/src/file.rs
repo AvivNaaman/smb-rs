@@ -36,7 +36,7 @@ pub struct FlushResponse {
 }
 
 #[binrw::binrw]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ReadRequest {
     #[bw(calc = 49)]
     #[br(assert(_structure_size == 49))]
@@ -108,7 +108,7 @@ impl ReadResponse {
 }
 
 #[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy)]
+#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
 #[br(map = Self::from_bytes)]
 pub struct ReadFlags {
@@ -134,7 +134,7 @@ pub enum CommunicationChannel {
 ///
 /// **note:** it is currently assumed that the data is sent immediately after the message.
 #[binrw::binrw]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[allow(clippy::manual_non_exhaustive)]
 pub struct WriteRequest {
     #[bw(calc = 49)]
@@ -202,7 +202,7 @@ pub struct WriteResponse {
 }
 
 #[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy)]
+#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
 #[br(map = Self::from_bytes)]
 pub struct WriteFlags {
@@ -245,9 +245,8 @@ mod tests {
         struct FlushResponse {  } => "04 00 00 00"
     }
 
-    #[test]
-    pub fn test_read_req_write() {
-        let req = ReadRequest {
+    test_request! {
+        Read {
             flags: ReadFlags::new(),
             length: 0x10203040,
             offset: 0x5060708090a0b0c,
@@ -257,18 +256,7 @@ mod tests {
             ]
             .into(),
             minimum_count: 1,
-        };
-        let data = encode_content(req.into());
-        assert_eq![
-            data,
-            [
-                0x31, 0x0, 0x0, 0x0, 0x40, 0x30, 0x20, 0x10, 0x0c, 0x0b, 0x0a, 0x09, 0x08, 0x07,
-                0x06, 0x05, 0x3, 0x3, 0x0, 0x0, 0xc, 0x0, 0x0, 0x0, 0xc5, 0x0, 0x0, 0x0, 0xc, 0x0,
-                0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                0x0, 0x0, // The famous padding byte.
-                0x0
-            ]
-        ]
+        } => "fe534d4240000100010000000800010030000000000000000600000000000000fffe00000500000039000000003400000000000000000000000000000000000031000000403020100c0b0a0908070605030300000c000000c50000000c0000000100000000000000000000000000000000"
     }
 
     test_response! {
@@ -277,30 +265,18 @@ mod tests {
         } => "fe534d424000010000000000080001000100000000000000d400000000000000fffe00000500000031000020003000000000000000000000000000000000000011005000060000000000000000000000626262626262"
     }
 
-    #[test]
-    pub fn test_write_req_write() {
-        let data = encode_content(
-            WriteRequest::new(
-                0x1234abcd,
-                [
-                    0x14, 0x04, 0x00, 0x00, 0x0c, 0x00, 0x00, 0x00, 0x51, 0x00, 0x10, 0x00, 0x0c,
-                    0x00, 0x00, 0x00,
-                ]
-                .into(),
-                WriteFlags::new(),
-                "MeFriend!THIS IS FINE!".as_bytes().to_vec().len() as u32,
-            )
-            .into(),
-        );
-        assert_eq!(
-            data,
-            [
-                0x31, 0x0, 0x70, 0x0, 0x16, 0x0, 0x0, 0x0, 0xcd, 0xab, 0x34, 0x12, 0x0, 0x0, 0x0,
-                0x0, 0x14, 0x4, 0x0, 0x0, 0xc, 0x0, 0x0, 0x0, 0x51, 0x0, 0x10, 0x0, 0xc, 0x0, 0x0,
-                0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                0x0
+    test_request! {
+        Write {
+            offset: 0x1234abcd,
+            file_id: [
+                0x14, 0x04, 0x00, 0x00, 0x0c, 0x00, 0x00, 0x00, 0x51, 0x00, 0x10, 0x00, 0x0c, 0x00,
+                0x00, 0x00,
             ]
-        );
+            .into(),
+            flags: WriteFlags::new(),
+            length: "MeFriend!THIS IS FINE!".as_bytes().to_vec().len() as u32,
+            _write_offset: (),
+        } => "fe534d4240000100010000000900010030000000000000001900000000000000fffe0000010000003900000000340000000000000000000000000000000000003100700016000000cdab341200000000140400000c000000510010000c00000000000000000000000000000000000000"
     }
 
     smb_tests::test_binrw! {

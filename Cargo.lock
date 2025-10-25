@@ -2558,6 +2558,7 @@ dependencies = [
  "pastey",
  "smb-dtyp",
  "smb-fscc",
+ "smb-msg",
  "smb-tests",
  "thiserror 2.0.17",
  "time",
