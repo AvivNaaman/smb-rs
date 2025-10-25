@@ -132,10 +132,7 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_set_info_response_parse() {
-        let data = [0x2, 0x0, 0x0, 0x0];
-        let response = SetInfoResponse::read_le(&mut std::io::Cursor::new(&data)).unwrap();
-        assert_eq!(response, SetInfoResponse {});
+    smb_tests::test_binrw! {
+        struct SetInfoResponse {} => "0200"
     }
 }

@@ -314,12 +314,13 @@ pub(crate) trait SessionSetupProperties {
     where
         T: SessionSetupProperties;
 
-    fn _make_default_request(buffer: Vec<u8>) -> OutgoingMessage {
+    fn _make_default_request(buffer: Vec<u8>, dfs: bool) -> OutgoingMessage {
         OutgoingMessage::new(
             SessionSetupRequest::new(
                 buffer,
                 SessionSecurityMode::new().with_signing_enabled(true),
                 SetupRequestFlags::new(),
+                NegotiateCapabilities::new().with_dfs(dfs),
             )
             .into(),
         )
@@ -333,7 +334,8 @@ pub(crate) trait SessionSetupProperties {
     where
         T: SessionSetupProperties,
     {
-        Ok(Self::_make_default_request(buffer))
+        let has_dfs = _setup.conn_info().negotiation.caps.dfs();
+        Ok(Self::_make_default_request(buffer, has_dfs))
     }
 
     async fn init_session<T>(
@@ -367,7 +369,9 @@ impl SessionSetupProperties for SmbSessionBind {
     where
         T: SessionSetupProperties,
     {
-        let mut request = Self::_make_default_request(buffer);
+        // TODO: what about DFS in previous session?
+        let has_dfs = _setup.conn_info().negotiation.caps.dfs();
+        let mut request = Self::_make_default_request(buffer, has_dfs);
         request
             .message
             .content

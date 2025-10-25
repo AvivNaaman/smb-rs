@@ -1,5 +1,5 @@
 use binrw::{Endian, NullWideString, prelude::*};
-use std::io::{Read, Seek, Write};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::ops::{Deref, DerefMut};
 
 #[binrw::writer(writer, endian)]
@@ -21,6 +21,23 @@ pub fn read_u48() -> binrw::BinResult<u64> {
     };
     reader.read_exact(out)?;
     Ok(conv(buf))
+}
+
+#[binrw::parser(reader, endian)]
+pub fn binread_if_has_data<T>() -> BinResult<Option<T>>
+where
+    for<'a> T: BinRead<Args<'a> = ()>,
+{
+    let current_pos = reader.stream_position()?;
+    let stream_len = reader.seek(SeekFrom::End(0))?;
+    reader.seek(SeekFrom::Start(current_pos))?;
+
+    let data_left = stream_len - current_pos;
+    if data_left > 0 {
+        Ok(Some(T::read_options(reader, endian, ())?))
+    } else {
+        Ok(None)
+    }
 }
 
 #[cfg(test)]
@@ -77,6 +94,27 @@ mod test {
         buf.clear();
         PARSED_BE.write_be(&mut Cursor::new(&mut buf)).unwrap();
         assert_eq!(buf, DATA_BYTES);
+    }
+
+    #[binrw::binrw]
+    #[derive(Debug, PartialEq, Eq)]
+    struct TestBinReadIfHasData {
+        #[br(parse_with = super::binread_if_has_data)]
+        pub val1: Option<u8>,
+    }
+
+    #[test]
+    fn test_if_has_data() {
+        // with data
+        let data_with = [0x42u8];
+        let mut reader = Cursor::new(&data_with);
+        let parsed = TestBinReadIfHasData::read_le(&mut reader).unwrap();
+        assert_eq!(parsed, TestBinReadIfHasData { val1: Some(0x42) });
+        // without data
+        let data_without: [u8; 0] = [];
+        let mut reader = Cursor::new(&data_without);
+        let parsed = TestBinReadIfHasData::read_le(&mut reader).unwrap();
+        assert_eq!(parsed, TestBinReadIfHasData { val1: None });
     }
 }
 

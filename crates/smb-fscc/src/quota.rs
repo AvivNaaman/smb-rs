@@ -45,7 +45,7 @@ impl FileQuotaInformation {
 /// _Note_: This structure is partial: it does not contain the NextEntryOffset field, as it is intended to be used
 /// in a chained list, see [`ChainedItemList<T>`][crate::ChainedItemList].
 #[binrw::binrw]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct FileGetQuotaInformation {
     #[bw(calc = PosMarker::default())]
     sid_length: PosMarker<u32>,

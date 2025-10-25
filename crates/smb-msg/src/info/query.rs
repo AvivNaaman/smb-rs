@@ -11,7 +11,7 @@ use super::common::*;
 use smb_fscc::*;
 
 #[binrw::binrw]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct QueryInfoRequest {
     #[bw(calc = 41)]
     #[br(assert(_structure_size == 41))]
@@ -96,7 +96,7 @@ pub struct QueryInfoFlags {
 /// when asking for information about Quota or Extended Attributes.
 /// In other cases, it is empty.
 #[binrw::binrw]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[brw(import(file_info_class: &QueryInfoClass, query_info_type: InfoType))]
 pub enum GetInfoRequestData {
     /// The query quota to perform.
@@ -115,7 +115,7 @@ pub enum GetInfoRequestData {
 }
 
 #[binrw::binrw]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct QueryQuotaInfo {
     pub return_single: Boolean,
     pub restart_scan: Boolean,
@@ -175,7 +175,7 @@ impl QueryQuotaInfo {
     }
 }
 
-#[derive(BinRead, BinWrite, Debug)]
+#[derive(BinRead, BinWrite, Debug, PartialEq, Eq)]
 pub struct GetEaInfoList {
     pub values: ChainedItemList<FileGetEaInformation>,
 }
@@ -246,37 +246,26 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    pub fn test_query_info_req_short_write() {
-        let data = encode_content(
-            QueryInfoRequest {
-                info_type: InfoType::File,
-                info_class: QueryInfoClass::File(QueryFileInfoClass::NetworkOpenInformation),
-                output_buffer_length: 56,
-                additional_info: AdditionalInfo::new(),
-                flags: QueryInfoFlags::new(),
-                file_id: [
-                    0x77, 0x5, 0x0, 0x0, 0xc, 0x0, 0x0, 0x0, 0xc5, 0x0, 0x10, 0x0, 0xc, 0x0, 0x0,
-                    0x0,
-                ]
-                .into(),
-                data: GetInfoRequestData::None(()),
-            }
-            .into(),
-        );
-        assert_eq!(
-            data,
-            [
-                0x29, 0x0, 0x1, 0x22, 0x38, 0x0, 0x0, 0x0, 0x68, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x77, 0x5, 0x0, 0x0, 0xc, 0x0, 0x0, 0x0,
-                0xc5, 0x0, 0x10, 0x0, 0xc, 0x0, 0x0, 0x0
+    const QUERY_INFO_HEADER_DATA: &'static str = "fe534d4240000100010000001000010030000000000000003100000000000000fffe000005000000390000000034000000000000000000000000000000000000";
+
+    test_request! {
+        query_info_basic: QueryInfo {
+            info_type: InfoType::File,
+            info_class: QueryInfoClass::File(QueryFileInfoClass::NetworkOpenInformation),
+            output_buffer_length: 56,
+            additional_info: AdditionalInfo::new(),
+            flags: QueryInfoFlags::new(),
+            file_id: [
+                0x77, 0x5, 0x0, 0x0, 0xc, 0x0, 0x0, 0x0, 0xc5, 0x0, 0x10, 0x0, 0xc, 0x0, 0x0,
+                0x0,
             ]
-        )
+            .into(),
+            data: GetInfoRequestData::None(()),
+        } => const_format::concatcp!(QUERY_INFO_HEADER_DATA, "290001223800000068000000000000000000000000000000770500000c000000c50010000c000000")
     }
 
-    #[test]
-    pub fn test_query_info_ea_request() {
-        let req = QueryInfoRequest {
+    test_request! {
+        query_info_get_ea: QueryInfo {
             info_type: InfoType::File,
             info_class: QueryInfoClass::File(QueryFileInfoClass::FullEaInformation),
             additional_info: AdditionalInfo::new(),
@@ -291,46 +280,23 @@ mod tests {
                 values: vec![FileGetEaInformation::new("$MpEa_D262AC624451295")].into(),
             }),
             output_buffer_length: 554,
-        };
-        let content_data = encode_content(req.into());
-        assert_eq!(
-            content_data,
-            [
-                0x29, 0x0, 0x1, 0xf, 0x2a, 0x2, 0x0, 0x0, 0x68, 0x0, 0x0, 0x0, 0x1b, 0x0, 0x0, 0x0,
-                0x0, 0x0, 0x0, 0x0, 0x3, 0x0, 0x0, 0x0, 0x7a, 0x5, 0x0, 0x0, 0xc, 0x0, 0x0, 0x0,
-                0xd1, 0x0, 0x10, 0x0, 0xc, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x15, 0x24, 0x4d,
-                0x70, 0x45, 0x61, 0x5f, 0x44, 0x32, 0x36, 0x32, 0x41, 0x43, 0x36, 0x32, 0x34, 0x34,
-                0x35, 0x31, 0x32, 0x39, 0x35, 0x0
-            ]
-        )
+        } => const_format::concatcp!(QUERY_INFO_HEADER_DATA, "2900010f2a020000680000001b00000000000000030000007a0500000c000000d10010000c0000000000000015244d7045615f44323632414336323434353132393500")
     }
 
-    #[test]
-    pub fn test_query_security_request() {
-        let res = encode_content(
-            QueryInfoRequest {
-                info_type: InfoType::Security,
-                info_class: Default::default(),
-                output_buffer_length: 0,
-                additional_info: AdditionalInfo::new()
-                    .with_owner_security_information(true)
-                    .with_group_security_information(true)
-                    .with_dacl_security_information(true)
-                    .with_sacl_security_information(true),
-                flags: QueryInfoFlags::new(),
-                file_id: make_guid!("0000002b-000d-0000-3100-00000d000000").into(),
-                data: GetInfoRequestData::None(()),
-            }
-            .into(),
-        );
-        assert_eq!(
-            res,
-            &[
-                0x29, 0x0, 0x3, 0x0, 0x0, 0x0, 0x0, 0x0, 0x68, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                0xf, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2b, 0x0, 0x0, 0x0, 0xd, 0x0, 0x0, 0x0,
-                0x31, 0x0, 0x0, 0x0, 0xd, 0x0, 0x0, 0x0,
-            ]
-        );
+    test_request! {
+        query_security: QueryInfo {
+            info_type: InfoType::Security,
+            info_class: Default::default(),
+            output_buffer_length: 0,
+            additional_info: AdditionalInfo::new()
+                .with_owner_security_information(true)
+                .with_group_security_information(true)
+                .with_dacl_security_information(true)
+                .with_sacl_security_information(true),
+            flags: QueryInfoFlags::new(),
+            file_id: make_guid!("0000002b-000d-0000-3100-00000d000000").into(),
+            data: GetInfoRequestData::None(()),
+        } => const_format::concatcp!(QUERY_INFO_HEADER_DATA, "290003000000000068000000000000000f000000000000002b0000000d000000310000000d000000")
     }
 
     test_response! {
