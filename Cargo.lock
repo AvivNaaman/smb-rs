@@ -1268,6 +1268,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "kbkdf"
+version = "0.1.0-pre.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e97e1f9b50adafd503518a832b24241dca1d319bfc27e9e708bcf220b0b25419"
+dependencies = [
+ "digest 0.11.0-rc.3",
+]
+
+[[package]]
 name = "keccak"
 version = "0.2.0-rc.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2073,17 +2082,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rust-kbkdf"
-version = "1.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bdb211667cbc3291d401a54f7499904001c2cfc3347844120443bffca6fa0590"
-dependencies = [
- "generic-array",
- "typenum",
- "zeroize",
-]
-
-[[package]]
 name = "rustc-hash"
 version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2457,6 +2455,7 @@ dependencies = [
  "futures-core",
  "futures-util",
  "hmac",
+ "kbkdf",
  "log",
  "lz4_flex",
  "maybe-async",
@@ -2464,7 +2463,6 @@ dependencies = [
  "pastey",
  "rand 0.8.5",
  "reqwest",
- "rust-kbkdf",
  "serial_test",
  "sha2",
  "smb-dtyp",
