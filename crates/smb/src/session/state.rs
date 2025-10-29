@@ -471,7 +471,7 @@ impl<'a> KeyDeriver<'a> {
 
     #[inline]
     pub fn derive(&self, label: &[u8], context: &'a [u8]) -> Result<DerivedKey, CryptoError> {
-        kbkdf_hmacsha256::<16>(self.session_key, label, context)
+        kbkdf_hmacsha256(self.session_key, label, context)
     }
 }
 
