@@ -1,6 +1,9 @@
 //! Framework for implementing FSCC Info Classes
 
-use binrw::{meta::ReadEndian, prelude::*};
+use binrw::{
+    meta::{ReadEndian, WriteEndian},
+    prelude::*,
+};
 
 /// Trait for file information types.
 /// This trait contains all types of all file info types and classes, specified in MS-FSCC.
@@ -8,7 +11,12 @@ use binrw::{meta::ReadEndian, prelude::*};
 /// It's role is to allow converting an instance of a file information type to a class,
 /// and to provide the class type from the file information type.
 pub trait FileInfoType:
-    Sized + for<'a> BinRead<Args<'static> = (Self::Class,)> + ReadEndian + std::fmt::Debug
+    Sized
+    + for<'a> BinRead<Args<'static> = (Self::Class,)>
+    + ReadEndian
+    + for<'a> BinWrite<Args<'static> = ()>
+    + WriteEndian
+    + std::fmt::Debug
 {
     /// The class of the file information.
     type Class;
@@ -25,7 +33,7 @@ macro_rules! file_info_classes {
         $(#[doc = $docstring:literal])*
         $svis:vis $name:ident {
             $($vis:vis $field_name:ident = $cid:literal,)+
-        }, $brw_ty:ty
+        }
     ) => {
         #[allow(unused_imports)]
         use binrw::prelude::*;
@@ -41,7 +49,9 @@ macro_rules! file_info_classes {
                 TryFrom<$name, Error = $crate::SmbFsccError>
                 + Send + 'static
                 + Into<$name>
-                + for <'a> [<Bin $brw_ty>]<Args<'a> = ()> {
+                + for <'a> [<BinRead>]<Args<'a> = ()>
+                + for <'b> [<BinWrite>]<Args<'b> = ()>
+            {
                 const CLASS_ID: [<$name Class>];
             }
 

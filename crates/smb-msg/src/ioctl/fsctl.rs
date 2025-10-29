@@ -519,7 +519,7 @@ pub struct SrvEnumerateSnapshotsResponse {
     snap_shot_array_size: PosMarker<u32>,
     /// A list of snapshots, described as strings, that take on the following form: @GMT-YYYY.MM.DD-HH.MM.SS
     #[br(map_stream = |s| s.take_seek(snap_shot_array_size.value as u64))]
-    pub snap_shots: MultiSz,
+    pub snap_shots: MultiWSz,
 }
 
 impl_fsctl_response!(SrvEnumerateSnapshots, SrvEnumerateSnapshotsResponse);

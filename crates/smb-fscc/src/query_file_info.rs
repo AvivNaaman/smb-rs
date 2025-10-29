@@ -38,7 +38,7 @@ file_info_classes! {
         pub Position = 14,
         pub Standard = 5,
         pub Stream = 22,
-    }, Read
+    }
 }
 
 pub type QueryFileFullEaInformation = FileFullEaInformation;

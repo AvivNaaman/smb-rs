@@ -517,7 +517,7 @@ mod copy {
                 .await?;
             if bytes_read < chunk_size {
                 log::warn!(
-                    "Task {task_id}@{channel_id:?}: Read less bytes than expected. File might be corrupt. Expected: {chunk_size}, Read: {bytes_read}"
+                    "Task {task_id}@{channel_id:?}: Read less bytes than expected. File might be corrupt. Expected: {chunk_size}: {bytes_read}"
                 );
             }
             let valid_chunk_end = bytes_read;
@@ -588,7 +588,7 @@ mod copy {
                 from.read_at_channel(&mut curr_chunk[..chunk_size], offset, channel)?;
             if bytes_read < chunk_size {
                 log::warn!(
-                    "Read less bytes than expected. File might be corrupt. Expected: {chunk_size}, Read: {bytes_read}"
+                    "Read less bytes than expected. File might be corrupt. Expected: {chunk_size}: {bytes_read}"
                 );
             }
             to.write_at(&curr_chunk[..bytes_read], offset)?;

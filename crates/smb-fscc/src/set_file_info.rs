@@ -30,7 +30,7 @@ file_info_classes! {
         pub Rename = 10,
         pub ShortName = 40,
         pub ValidDataLength = 39,
-    }, Write
+    }
 }
 
 /// Set end-of-file information for a file.
