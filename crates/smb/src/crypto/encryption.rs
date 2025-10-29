@@ -41,9 +41,9 @@ pub trait EncryptingAlgo: Debug + Send + Sync {
 
 /// Returns the nonce to be used for encryption/decryption (trimmed to the required size),
 /// as the rest of the nonce is expected to be zero.
-fn trim_nonce<'a, U: aead::array::ArraySize>(
+fn trim_nonce<U: aead::array::ArraySize>(
     algo: &dyn EncryptingAlgo,
-    nonce: &'a EncryptionNonce,
+    nonce: &EncryptionNonce,
 ) -> aead::array::Array<u8, U> {
     // Sanity: the rest of the nonce is expected to be zero.
     debug_assert!(nonce[algo.nonce_size()..].iter().all(|&x| x == 0));
@@ -89,9 +89,7 @@ pub fn make_encrypting_algo(
         #[cfg(feature = "encrypt_aes128gcm")]
         EncryptionCipher::Aes128Gcm => Ok(encrypt_gcm::Aes128GcmEncryptor::build(encrypting_key)?),
         #[cfg(feature = "encrypt_aes256gcm")]
-        EncryptionCipher::Aes256Gcm => Ok(encrypt_gcm::Aes256GcmEncryptor::build(
-            encrypting_key.into(),
-        )?),
+        EncryptionCipher::Aes256Gcm => Ok(encrypt_gcm::Aes256GcmEncryptor::build(encrypting_key)?),
         #[cfg(not(all(
             feature = "encrypt_aes128ccm",
             feature = "encrypt_aes256ccm",
@@ -217,7 +215,6 @@ mod encrypt_ccm {
 
 #[cfg(any(feature = "encrypt_aes128gcm", feature = "encrypt_aes256gcm"))]
 mod encrypt_gcm {
-    use aead::array::Array;
     use aes::cipher::{BlockCipherDecrypt, BlockCipherEncrypt};
     use aes_gcm::{AesGcm, KeyInit, KeySizeUser, aead::AeadInOut};
     use crypto_common::typenum;

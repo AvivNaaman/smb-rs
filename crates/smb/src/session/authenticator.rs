@@ -130,9 +130,11 @@ impl Authenticator {
                 use super::sspi_network_client::ReqwestNetworkClient;
                 #[cfg(feature = "async")]
                 {
-                    generator
-                        .resolve_with_async_client(&mut ReqwestNetworkClient::new())
-                        .await?
+                    Self::_resolve_with_async_client(
+                        &mut generator,
+                        &mut ReqwestNetworkClient::new(),
+                    )
+                    .await?
                 }
                 #[cfg(not(feature = "async"))]
                 {
@@ -153,6 +155,30 @@ impl Authenticator {
             .buffer;
 
         Ok(output_buffer)
+    }
+
+    /// This method, despite being very similar to [`sspi::generator::Generator::resolve_with_async_client`],
+    /// adds the `Send` bound to the network client, which is required for our async code.
+    ///
+    /// See [<https://github.com/Devolutions/sspi-rs/issues/526>] for more details.
+    #[cfg(all(feature = "kerberos", feature = "async"))]
+    async fn _resolve_with_async_client(
+        generator: &mut sspi::generator::GeneratorInitSecurityContext<'_>, // Generator returned from `sspi-rs`.
+        network_client: &mut super::sspi_network_client::ReqwestNetworkClient, // Your custom network client.
+    ) -> sspi::Result<InitializeSecurityContextResult> {
+        let mut state = generator.start();
+
+        use sspi::generator::GeneratorState::*;
+        loop {
+            match state {
+                Suspended(ref request) => {
+                    state = generator.resume(network_client.send(request).await);
+                }
+                Completed(client_state) => {
+                    return client_state;
+                }
+            }
+        }
     }
 
     fn get_available_ssp_pkgs(config: &AuthMethodsConfig) -> String {

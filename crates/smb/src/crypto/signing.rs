@@ -182,7 +182,7 @@ mod gmac_signer {
 
     impl Gmac128Signer {
         pub fn build(key: &SigningKey) -> Box<dyn SigningAlgo> {
-            let key = Key::<Aes128>::from(key.clone());
+            let key = Key::<Aes128>::from(*key);
             Box::new(Gmac128Signer {
                 gmac: Aes128Gcm::new(&key),
                 nonce: OnceCell::new(),
