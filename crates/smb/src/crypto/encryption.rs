@@ -31,20 +31,23 @@ pub trait EncryptingAlgo: Debug + Send + Sync {
     /// Returns the size of the nonce required by the encryption algorithm.
     fn nonce_size(&self) -> usize;
 
-    /// Returns the nonce to be used for encryption/decryption (trimmed to the required size),
-    /// as the rest of the nonce is expected to be zero.
-    fn trim_nonce<'a>(&self, nonce: &'a EncryptionNonce) -> &'a [u8] {
-        // Sanity: the rest of the nonce is expected to be zero.
-        debug_assert!(nonce[self.nonce_size()..].iter().all(|&x| x == 0));
-        &nonce[..self.nonce_size()]
-    }
-
     /// Clone the algo into a boxed trait object.
     ///
     /// This method is added to allow cloning the trait object, and allow cloning it's users,
     /// to enable multi-threaded access to the same encryption algorithm:
     /// Some of the algorithms are only mutable, and can't be shared between threads.
     fn clone_box(&self) -> Box<dyn EncryptingAlgo>;
+}
+
+/// Returns the nonce to be used for encryption/decryption (trimmed to the required size),
+/// as the rest of the nonce is expected to be zero.
+fn trim_nonce<'a, U: aead::array::ArraySize>(
+    algo: &dyn EncryptingAlgo,
+    nonce: &'a EncryptionNonce,
+) -> aead::array::Array<u8, U> {
+    // Sanity: the rest of the nonce is expected to be zero.
+    debug_assert!(nonce[algo.nonce_size()..].iter().all(|&x| x == 0));
+    aead::array::Array::try_from(&nonce[..algo.nonce_size()]).unwrap()
 }
 
 /// A list of all the supported encryption algorithms,
@@ -80,17 +83,11 @@ pub fn make_encrypting_algo(
     }
     match encrypting_algorithm {
         #[cfg(feature = "encrypt_aes128ccm")]
-        EncryptionCipher::Aes128Ccm => Ok(encrypt_ccm::Aes128CcmEncryptor::build(
-            encrypting_key.into(),
-        )?),
+        EncryptionCipher::Aes128Ccm => Ok(encrypt_ccm::Aes128CcmEncryptor::build(encrypting_key)?),
         #[cfg(feature = "encrypt_aes256ccm")]
-        EncryptionCipher::Aes256Ccm => Ok(encrypt_ccm::Aes256CcmEncryptor::build(
-            encrypting_key.into(),
-        )?),
+        EncryptionCipher::Aes256Ccm => Ok(encrypt_ccm::Aes256CcmEncryptor::build(encrypting_key)?),
         #[cfg(feature = "encrypt_aes128gcm")]
-        EncryptionCipher::Aes128Gcm => Ok(encrypt_gcm::Aes128GcmEncryptor::build(
-            encrypting_key.into(),
-        )?),
+        EncryptionCipher::Aes128Gcm => Ok(encrypt_gcm::Aes128GcmEncryptor::build(encrypting_key)?),
         #[cfg(feature = "encrypt_aes256gcm")]
         EncryptionCipher::Aes256Gcm => Ok(encrypt_gcm::Aes256GcmEncryptor::build(
             encrypting_key.into(),
@@ -109,16 +106,14 @@ pub fn make_encrypting_algo(
 
 #[cfg(any(feature = "encrypt_aes128ccm", feature = "encrypt_aes256ccm"))]
 mod encrypt_ccm {
-    #![allow(deprecated)] // Until RustCrypto ccm is bumped
-
     #[cfg(feature = "encrypt_aes128ccm")]
     use aes::Aes128;
     #[cfg(feature = "encrypt_aes256ccm")]
     use aes::Aes256;
-    use aes::cipher::{BlockCipher, BlockEncrypt, BlockSizeUser, generic_array::GenericArray};
+    use aes::cipher::{BlockCipherDecrypt, BlockCipherEncrypt, BlockSizeUser};
     use ccm::{
         Ccm, KeyInit, KeySizeUser,
-        aead::AeadMutInPlace,
+        aead::AeadInOut,
         consts::{U11, U16},
     };
 
@@ -132,7 +127,7 @@ mod encrypt_ccm {
     #[derive(Clone)]
     pub struct CcmEncryptor<C>
     where
-        C: BlockCipher + BlockSizeUser<BlockSize = U16> + BlockEncrypt,
+        C: BlockCipherEncrypt + BlockCipherDecrypt + BlockSizeUser<BlockSize = U16>,
     {
         cipher: Ccm<C, U16, U11>,
     }
@@ -140,18 +135,17 @@ mod encrypt_ccm {
     #[cfg(any(feature = "encrypt_aes128ccm", feature = "encrypt_aes256ccm"))]
     impl<C> CcmEncryptor<C>
     where
-        C: BlockCipher
+        C: BlockCipherEncrypt
+            + BlockCipherDecrypt
+            + KeySizeUser
             + BlockSizeUser<BlockSize = U16>
-            + BlockEncrypt
             + KeyInit
             + Send
             + Clone
             + Sync
             + 'static,
     {
-        pub fn build(
-            encrypting_key: &GenericArray<u8, <C as KeySizeUser>::KeySize>,
-        ) -> Result<Box<dyn EncryptingAlgo>, CryptoError> {
+        pub fn build(encrypting_key: &[u8]) -> Result<Box<dyn EncryptingAlgo>, CryptoError> {
             Ok(Box::new(Self {
                 cipher: Ccm::<C, U16, U11>::new_from_slice(encrypting_key)?,
             }))
@@ -160,9 +154,9 @@ mod encrypt_ccm {
 
     impl<C> EncryptingAlgo for CcmEncryptor<C>
     where
-        C: BlockCipher
+        C: BlockCipherEncrypt
+            + BlockCipherDecrypt
             + BlockSizeUser<BlockSize = U16>
-            + BlockEncrypt
             + Send
             + Clone
             + Sync
@@ -174,10 +168,10 @@ mod encrypt_ccm {
             header_data: &[u8],
             nonce: &EncryptionNonce,
         ) -> Result<EncryptionResult, CryptoError> {
-            let nonce = GenericArray::from_slice(self.trim_nonce(nonce));
-            let signature = self
-                .cipher
-                .encrypt_in_place_detached(nonce, header_data, payload)?;
+            let nonce = trim_nonce(self, nonce);
+            let signature =
+                self.cipher
+                    .encrypt_inout_detached(&nonce, header_data, payload.into())?;
 
             Ok(EncryptionResult {
                 signature: u128::from_le_bytes(signature.into()),
@@ -191,11 +185,11 @@ mod encrypt_ccm {
             nonce: &EncryptionNonce,
             signature: u128,
         ) -> Result<(), CryptoError> {
-            let nonce = GenericArray::from_slice(self.trim_nonce(nonce));
-            self.cipher.decrypt_in_place_detached(
-                nonce,
+            let nonce = trim_nonce(self, nonce);
+            self.cipher.decrypt_inout_detached(
+                &nonce,
                 header_data,
-                payload,
+                payload.into(),
                 &signature.to_le_bytes().into(),
             )?;
 
@@ -213,7 +207,7 @@ mod encrypt_ccm {
 
     impl<C> std::fmt::Debug for CcmEncryptor<C>
     where
-        C: BlockCipher + BlockSizeUser<BlockSize = U16> + BlockEncrypt,
+        C: BlockCipherEncrypt + BlockSizeUser<BlockSize = U16> + BlockCipherDecrypt,
     {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(f, "Ccm128Encrypter")
@@ -223,11 +217,9 @@ mod encrypt_ccm {
 
 #[cfg(any(feature = "encrypt_aes128gcm", feature = "encrypt_aes256gcm"))]
 mod encrypt_gcm {
-    #![allow(deprecated)] // Until RustCrypto ccm is bumped
-
-    use aead::AeadMutInPlace;
-    use aes::cipher::{BlockCipher, BlockEncrypt, generic_array::GenericArray};
-    use aes_gcm::{AesGcm, KeyInit, KeySizeUser};
+    use aead::array::Array;
+    use aes::cipher::{BlockCipherDecrypt, BlockCipherEncrypt};
+    use aes_gcm::{AesGcm, KeyInit, KeySizeUser, aead::AeadInOut};
     use crypto_common::typenum;
 
     use crate::crypto::CryptoError;
@@ -244,18 +236,16 @@ mod encrypt_gcm {
 
     impl<T> AesGcmEncryptor<T>
     where
-        T: BlockCipher<BlockSize = typenum::U16>
-            + BlockEncrypt
-            + KeyInit
+        T: BlockCipherEncrypt<BlockSize = typenum::U16>
+            + BlockCipherDecrypt<BlockSize = typenum::U16>
             + KeySizeUser
+            + KeyInit
             + Send
             + Clone
             + Sync
             + 'static,
     {
-        pub fn build(
-            encrypting_key: &GenericArray<u8, <T as KeySizeUser>::KeySize>,
-        ) -> Result<Box<dyn EncryptingAlgo>, CryptoError> {
+        pub fn build(encrypting_key: &[u8]) -> Result<Box<dyn EncryptingAlgo>, CryptoError> {
             Ok(Box::new(Self {
                 cipher: AesGcm::<T, typenum::U12>::new_from_slice(encrypting_key)?,
             }))
@@ -264,8 +254,8 @@ mod encrypt_gcm {
 
     impl<T> EncryptingAlgo for AesGcmEncryptor<T>
     where
-        T: BlockCipher<BlockSize = typenum::U16>
-            + BlockEncrypt
+        T: BlockCipherEncrypt<BlockSize = typenum::U16>
+            + BlockCipherDecrypt
             + KeyInit
             + KeySizeUser
             + Send
@@ -279,11 +269,10 @@ mod encrypt_gcm {
             header_data: &[u8],
             nonce: &EncryptionNonce,
         ) -> Result<EncryptionResult, CryptoError> {
-            let tag = self.cipher.encrypt_in_place_detached(
-                GenericArray::from_slice(self.trim_nonce(nonce)),
-                header_data,
-                payload,
-            )?;
+            let nonce = trim_nonce(self, nonce);
+            let tag = self
+                .cipher
+                .encrypt_inout_detached(&nonce, header_data, payload.into())?;
             Ok(EncryptionResult {
                 signature: u128::from_le_bytes(tag.into()),
             })
@@ -296,10 +285,11 @@ mod encrypt_gcm {
             nonce: &EncryptionNonce,
             signature: u128,
         ) -> Result<(), CryptoError> {
-            self.cipher.decrypt_in_place_detached(
-                GenericArray::from_slice(self.trim_nonce(nonce)),
+            let nonce = trim_nonce(self, nonce);
+            self.cipher.decrypt_inout_detached(
+                &nonce,
                 header_data,
-                payload,
+                payload.into(),
                 &signature.to_le_bytes().into(),
             )?;
             Ok(())

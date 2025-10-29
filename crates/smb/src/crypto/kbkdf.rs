@@ -1,4 +1,5 @@
 use aes::cipher::{InvalidLength, typenum};
+use ccm::KeyInit;
 use hmac::{Hmac, Mac};
 use rust_kbkdf::{
     CounterMode, InputType, KDFMode, PseudoRandomFunction, PseudoRandomFunctionKey, SpecifiedInput,
