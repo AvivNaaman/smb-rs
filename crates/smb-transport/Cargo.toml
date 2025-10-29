@@ -32,7 +32,7 @@ rustls = { workspace = true, default-features = false, optional = true }
 rustls-platform-verifier = { workspace = true, default-features = false, optional = true }
 
 # RDMA
-# async-rdma = { git = "https://github.com/AvivNaaman/async-rdma.git", rev = "878828dd", features = [
+# async-rdma = { git = "https://github.com/afiffon/async-rdma.git", rev = "878828dd", features = [
 #     "cm",
 #     "raw",
 # ], optional = true }

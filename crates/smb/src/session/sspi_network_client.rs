@@ -25,7 +25,7 @@
 //! <https://github.com/Devolutions/IronRDP/blob/ac291423de6835df855e1b40c8da6b45ac0905d9/crates/ironrdp-tokio/src/reqwest.rs>
 //!
 //!
-//! Modified by Aviv Naaman @AvivNaaman on 2025-08-08
+//! Modified by Aviv N @afiffon on 2025-08-08
 //! This module is async-only, since [sspi] implements a synchronous network client.
 
 use url::Url;
@@ -52,7 +52,7 @@ mod client_impl {
         fn send<'a>(
             &'a mut self,
             network_request: &'a NetworkRequest,
-        ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>>> + Send + 'a>> {
+        ) -> Pin<Box<dyn Future<Output = Result<Vec<u8>>> + 'a>> {
             Box::pin(ReqwestNetworkClient::send(self, network_request))
         }
     }

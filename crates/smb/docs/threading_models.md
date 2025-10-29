@@ -95,6 +95,6 @@ The very same goes to `single_threaded`.
 
 ## Using the crate in different threading models
 
-There is a good variety of using the crates in both the integrations test (see the [integration tests](https://github.com/avivnaaman/smb-rs/tree/main/smb/tests) directory), and in the [`smb_cli`](https://github.com/avivnaaman/smb-rs/tree/main/smb_cli) project.
+There is a good variety of using the crates in both the integrations test (see the [integration tests](https://github.com/afiffon/smb-rs/tree/main/smb/tests) directory), and in the [`smb_cli`](https://github.com/afiffon/smb-rs/tree/main/smb_cli) project.
 
 For example, there's a good example of iterating a directory in either async or multi-threaded environment, in both the tests and the `smb_cli` project - One uses [`futures_core::Stream`], which are the closest way of describing an async iterator in rust, and the other uses a good old [`std::iter::Iterator`]-based implementation.

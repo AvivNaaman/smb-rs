@@ -42,19 +42,19 @@ url = "2.5.0"
 byteorder = { version = "1.5.0", optional = true }
 
 # APIs
-sspi = { version = "0.16.1", features = ["ring"], default-features = false }
+sspi = { version = "0.18.0", features = ["ring"], default-features = false }
 reqwest = { workspace = true, optional = true }
 
-# Crypto
-hmac = "0.12.1"
-sha2 = "0.10.8"
+# Crypto; RustCrypto provides support for RC versions only.
+hmac = "0.13.0-rc.2"
+sha2 = "0.11.0-rc.2"
 rust-kbkdf = { version = "1.1.1" }
-crypto-common = { version = "0.1" }
-aes = "0.8.4"
-aes-gcm = { version = "0.10.3", features = ["std"], optional = true }
-cmac = { version = "0.7.2", optional = true }
-ccm = { version = "0.5.0", optional = true }
-aead = { version = "0.5", optional = true }
+crypto-common = { version = "0.2.0-rc.4" }
+aes = "0.9.0-rc.1"
+aes-gcm = { version = "0.11.0-rc.1", optional = true }
+cmac = { version = "0.8.0-rc.1", optional = true }
+ccm = { version = "0.6.0-pre.0", optional = true }
+aead = { version = "0.6.0-rc.2", optional = true }
 
 # Compression
 lz4_flex = { version = "0.11", default-features = false, features = [
@@ -96,11 +96,12 @@ compress_lz4 = ["dep:lz4_flex"]
 compress = ["compress_pattern_v1", "compress_lz4"]
 
 # Encryption
-encrypt_aes128ccm = ["dep:ccm", "dep:aead"]
-encrypt_aes256ccm = ["dep:ccm", "dep:aead"]
+__encrypt_core = []
+encrypt_aes128ccm = ["dep:ccm", "dep:aead", "__encrypt_core"]
+encrypt_aes256ccm = ["dep:ccm", "dep:aead", "__encrypt_core"]
+encrypt_aes128gcm = ["dep:aes-gcm", "dep:aead", "__encrypt_core"]
+encrypt_aes256gcm = ["dep:aes-gcm", "dep:aead", "__encrypt_core"]
 encrypt_aesccm = ["encrypt_aes128ccm", "encrypt_aes256ccm"]
-encrypt_aes128gcm = ["dep:aes-gcm", "dep:aead"]
-encrypt_aes256gcm = ["dep:aes-gcm", "dep:aead"]
 encrypt_aesgcm = ["encrypt_aes128gcm", "encrypt_aes256gcm"]
 encrypt = ["encrypt_aesccm", "encrypt_aesgcm"]
 

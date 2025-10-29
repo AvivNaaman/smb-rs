@@ -66,7 +66,7 @@ pub trait SigningAlgo: std::fmt::Debug + Send + Sync {
 
 #[cfg(feature = "sign_hmac")]
 mod hmac_signer {
-    use hmac::{Hmac, Mac};
+    use hmac::{Hmac, KeyInit, Mac};
     use sha2::Sha256;
 
     use super::*;
@@ -106,7 +106,7 @@ mod hmac_signer {
 mod cmac_signer {
     use super::*;
     use aes::Aes128;
-    use cmac::Cmac;
+    use cmac::{Cmac, KeyInit};
     use hmac::Mac;
 
     #[derive(Debug, Clone)]
@@ -144,7 +144,7 @@ mod gmac_signer {
     use aes::Aes128;
     use aes_gcm::{
         Aes128Gcm, Key,
-        aead::{AeadMutInPlace, KeyInit},
+        aead::{AeadInOut, KeyInit},
     };
     use binrw::prelude::*;
     use modular_bitfield::prelude::*;
@@ -180,9 +180,9 @@ mod gmac_signer {
 
     impl Gmac128Signer {
         pub fn build(key: &SigningKey) -> Box<dyn SigningAlgo> {
-            let key = Key::<Aes128>::from_slice(key);
+            let key = Key::<Aes128>::from(*key);
             Box::new(Gmac128Signer {
-                gmac: Aes128Gcm::new(key),
+                gmac: Aes128Gcm::new(&key),
                 nonce: OnceCell::new(),
                 buffer: vec![],
             })
@@ -218,10 +218,10 @@ mod gmac_signer {
             let mut empty_data: Vec<u8> = vec![];
             let result = self
                 .gmac
-                .encrypt_in_place_detached(
+                .encrypt_inout_detached(
                     self.nonce.get().unwrap().into(),
                     &self.buffer,
-                    &mut empty_data,
+                    empty_data.as_mut_slice().into(),
                 )
                 .unwrap();
             u128::from_le_bytes(result.into())
