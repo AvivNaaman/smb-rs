@@ -37,4 +37,4 @@ In practice, taking a look at a sniffing of a copy session that uses parallel co
 
 - [Samba Wiki/SMB2 Credits](https://wiki.samba.org/index.php/SMB2_Credits)
 - SNIA.org - Smb3 in samba - [Multi-Channel and beyond](https://www.snia.org/sites/default/files/SDC/2016/presentations/smb/Michael_Adam_SMB3_in_Samba_Multi-Channel_and_Beyond.pdf)
-- Issue [#104](https://github.com/AvivNaaman/smb-rs/issues/104) - "Parallelize File fetching and downloading"
+- Issue [#104](https://github.com/afiffon/smb-rs/issues/104) - "Parallelize File fetching and downloading"

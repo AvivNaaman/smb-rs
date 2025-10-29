@@ -25,7 +25,7 @@
 //! <https://github.com/Devolutions/IronRDP/blob/ac291423de6835df855e1b40c8da6b45ac0905d9/crates/ironrdp-tokio/src/reqwest.rs>
 //!
 //!
-//! Modified by Aviv Naaman @AvivNaaman on 2025-08-08
+//! Modified by Aviv N @afiffon on 2025-08-08
 //! This module is async-only, since [sspi] implements a synchronous network client.
 
 use url::Url;

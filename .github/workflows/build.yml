@@ -28,7 +28,7 @@ jobs:
 
     services:
       samba:
-        image: ghcr.io/avivnaaman/smb-tests:latest
+        image: ghcr.io/afiffon/smb-tests:latest
         env:
           ACCOUNT_LocalAdmin: 123456
           SAMBA_CONF_LOG_LEVEL: 1

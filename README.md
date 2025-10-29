@@ -1,6 +1,6 @@
 # smb-rs: The SMB2 Client in Rust
 
-[![Build](https://github.com/AvivNaaman/smb-rs/actions/workflows/build.yml/badge.svg)](https://github.com/AvivNaaman/smb-rs/actions/workflows/build.yml)
+[![Build](https://github.com/afiffon/smb-rs/actions/workflows/build.yml/badge.svg)](https://github.com/afiffon/smb-rs/actions/workflows/build.yml)
 [![Crates.io](https://img.shields.io/crates/v/smb)](https://crates.io/crates/smb)
 [![docs.rs](https://img.shields.io/docsrs/smb/latest?link=https%3A%2F%2Fdocs.rs%2Fsmb%2Flatest%2Fsmb%2Findex.html)](https://docs.rs/smb/latest/smb/index.html)
 
@@ -30,7 +30,7 @@ Check out the `info` and the `copy` sub-commands for more information.
 - ✅ NTLM & Kerberos authentication (using the [`sspi`](https://crates.io/crates/sspi) crate).
 - ✅ Cross-platform (Windows, Linux, MacOS).
 
-You are welcome to see the project's roadmap in the [GitHub Project](https://github.com/users/AvivNaaman/projects/2).
+You are welcome to see the project's roadmap in the [GitHub Project](https://github.com/users/afiffon/projects/2).
 
 ## Using the crate
 

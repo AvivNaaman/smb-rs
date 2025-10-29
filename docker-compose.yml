@@ -4,7 +4,7 @@ services:
       context: crates/smb/tests
       dockerfile: Dockerfile
       tags:
-        - ghcr.io/avivnaaman/smb-tests:latest
+        - ghcr.io/afiffon/smb-tests:latest
       platforms:
         - linux/amd64
     ports:

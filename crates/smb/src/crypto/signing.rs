@@ -66,8 +66,7 @@ pub trait SigningAlgo: std::fmt::Debug + Send + Sync {
 
 #[cfg(feature = "sign_hmac")]
 mod hmac_signer {
-    use ccm::KeyInit;
-    use hmac::{Hmac, Mac};
+    use hmac::{Hmac, KeyInit, Mac};
     use sha2::Sha256;
 
     use super::*;
@@ -107,8 +106,7 @@ mod hmac_signer {
 mod cmac_signer {
     use super::*;
     use aes::Aes128;
-    use ccm::KeyInit;
-    use cmac::Cmac;
+    use cmac::{Cmac, KeyInit};
     use hmac::Mac;
 
     #[derive(Debug, Clone)]
