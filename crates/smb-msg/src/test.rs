@@ -6,15 +6,6 @@ use super::*;
 use binrw::prelude::*;
 use std::io::Cursor;
 
-pub(crate) fn encode_content(content: RequestContent) -> Vec<u8> {
-    let mut cursor = Cursor::new(Vec::new());
-    let msg = PlainRequest::new(content);
-    msg.write(&mut cursor).unwrap();
-    let bytes_of_msg = cursor.into_inner();
-    // We only want to return the content of the message, not the header. So cut the HEADER_SIZE bytes:
-    bytes_of_msg[Header::STRUCT_SIZE..].to_vec()
-}
-
 /// Implementation of reading plain content test
 macro_rules! _test_generic_read {
     (

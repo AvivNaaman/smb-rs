@@ -10,7 +10,7 @@ use smb_dtyp::binrw_util::prelude::*;
 use smb_fscc::*;
 
 #[binrw::binrw]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ChangeNotifyRequest {
     #[bw(calc = 32)]
     #[br(assert(_structure_size == 32))]
@@ -136,16 +136,13 @@ pub struct NotifySessionClosed {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
-
     use crate::*;
     use smb_dtyp::guid::Guid;
 
     use super::*;
 
-    #[test]
-    pub fn change_notify_request_write() {
-        let request = ChangeNotifyRequest {
+    smb_tests::test_binrw! {
+        struct ChangeNotifyRequest {
             flags: NotifyFlags::new(),
             output_buffer_length: 2048,
             file_id: "000005d1-000c-0000-1900-00000c000000"
@@ -157,17 +154,7 @@ mod tests {
                 .with_dir_name(true)
                 .with_attributes(true)
                 .with_last_write(true),
-        };
-
-        let mut cursor = Cursor::new(Vec::new());
-        request.write_le(&mut cursor).unwrap();
-        assert_eq!(
-            cursor.into_inner(),
-            [
-                0x20, 0x0, 0x0, 0x0, 0x0, 0x8, 0x0, 0x0, 0xd1, 0x5, 0x0, 0x0, 0xc, 0x0, 0x0, 0x0,
-                0x19, 0x0, 0x0, 0x0, 0xc, 0x0, 0x0, 0x0, 0x17, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0
-            ]
-        );
+        } => "2000000000080000d10500000c000000190000000c0000001700000000000000"
     }
 
     smb_tests::test_binrw! {

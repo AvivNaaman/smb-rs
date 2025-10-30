@@ -92,64 +92,31 @@ pub type LeaseBreakResponse = LeaseBreakAckResponse;
 
 #[cfg(test)]
 mod tests {
-    use crate::*;
-    use std::io::Cursor;
-
     use super::*;
-    #[test]
-    pub fn test_lease_break_notify_parses() {
-        let data = [
-            0x2c, 0x0, 0x2, 0x0, 0x1, 0x0, 0x0, 0x0, 0x9e, 0x61, 0xc8, 0x70, 0x5d, 0x16, 0x5e,
-            0x31, 0xd4, 0x92, 0xa0, 0x1b, 0xc, 0xbb, 0x3a, 0xf2, 0x3, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-        ];
 
-        let parsed = LeaseBreakNotify::read_le(&mut Cursor::new(&data)).unwrap();
-        assert_eq!(
-            parsed,
-            LeaseBreakNotify {
-                new_epoch: 2,
-                ack_required: 1,
-                lease_key: "70c8619e-165d-315e-d492-a01b0cbb3af2".parse().unwrap(),
-                current_lease_state: LeaseState::new()
-                    .with_read_caching(true)
-                    .with_handle_caching(true),
-                new_lease_state: LeaseState::new()
-            }
-        )
+    smb_tests::test_binrw! {
+        struct LeaseBreakNotify {
+            new_epoch: 2,
+            ack_required: 1,
+            lease_key: "70c8619e-165d-315e-d492-a01b0cbb3af2".parse().unwrap(),
+            current_lease_state: LeaseState::new()
+                .with_read_caching(true)
+                .with_handle_caching(true),
+            new_lease_state: LeaseState::new(),
+        } => "2c000200010000009e61c8705d165e31d492a01b0cbb3af20300000000000000000000000000000000000000"
     }
 
-    #[test]
-    pub fn test_lease_break_ack_response_write() {
-        let req_data = encode_content(RequestContent::LeaseBreakAck(LeaseBreakAck {
+    smb_tests::test_binrw! {
+        struct LeaseBreakAck {
             lease_key: "70c8619e-165d-315e-d492-a01b0cbb3af2".parse().unwrap(),
             lease_state: LeaseState::new(),
-        }));
-
-        assert_eq!(
-            req_data,
-            [
-                0x24, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x9e, 0x61, 0xc8, 0x70, 0x5d, 0x16, 0x5e,
-                0x31, 0xd4, 0x92, 0xa0, 0x1b, 0xc, 0xbb, 0x3a, 0xf2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                0x0, 0x0, 0x0, 0x0, 0x0, 0x0
-            ]
-        )
+        } => "24000000000000009e61c8705d165e31d492a01b0cbb3af2000000000000000000000000"
     }
 
-    #[test]
-    pub fn test_lease_break_ack_response_parses() {
-        let data = [
-            0x24, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x9e, 0x61, 0xc8, 0x70, 0x5d, 0x16, 0x5e,
-            0x31, 0xd4, 0x92, 0xa0, 0x1b, 0xc, 0xbb, 0x3a, 0xf2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-            0x0, 0x0, 0x0, 0x0, 0x0,
-        ];
-        let parsed = LeaseBreakAckResponse::read_le(&mut Cursor::new(&data)).unwrap();
-        assert_eq!(
-            parsed,
-            LeaseBreakAckResponse {
-                lease_key: "70c8619e-165d-315e-d492-a01b0cbb3af2".parse().unwrap(),
-                lease_state: LeaseState::new(),
-            }
-        )
+    smb_tests::test_binrw! {
+        struct LeaseBreakAckResponse {
+            lease_key: "70c8619e-165d-315e-d492-a01b0cbb3af2".parse().unwrap(),
+            lease_state: LeaseState::new(),
+        } => "24000000000000009e61c8705d165e31d492a01b0cbb3af2000000000000000000000000"
     }
 }
