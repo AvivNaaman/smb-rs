@@ -398,10 +398,11 @@ pub struct FileStreamInformationInner {
 #[derive(Debug, PartialEq, Eq)]
 #[bw(import(has_next: bool))]
 pub struct FileGetEaInformation {
+    // Length does NOT include the null terminator.
     #[bw(try_calc = ea_name.len().try_into())]
     ea_name_length: u8,
     /// The name of the extended attribute.
-    #[br(map_stream = |s| s.take_seek(ea_name_length as u64))]
+    #[br(map_stream = |s| s.take_seek(ea_name_length as u64 + 1))]
     pub ea_name: NullString,
 }
 

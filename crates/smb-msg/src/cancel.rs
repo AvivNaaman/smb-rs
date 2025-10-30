@@ -15,8 +15,6 @@ pub struct CancelRequest {
 
 #[cfg(test)]
 mod tests {
-    use crate::*;
-
     use super::*;
 
     smb_tests::test_binrw! {

@@ -78,6 +78,16 @@ impl Guid {
             ],
         ))
     }
+
+    /// Returns the GUID as a `u128` value.
+    pub fn as_u128(&self) -> u128 {
+        let mut bytes = [0u8; 16];
+        {
+            let mut cursor = Cursor::new(&mut bytes[..]);
+            self.write(&mut cursor).unwrap();
+        }
+        u128::from_le_bytes(bytes)
+    }
 }
 
 /// A macro to create a `Guid` from a string literal at compile time.
