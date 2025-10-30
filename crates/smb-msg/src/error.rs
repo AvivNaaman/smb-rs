@@ -90,6 +90,6 @@ mod tests {
     use crate::*;
 
     test_response! {
-        error_simple, Command::Cancel => Error { error_data: vec![], } => "fe534d4240000100340000c0050001001900000000000000050000000000000000000000010000007100002800300000f70da61d9b2c43d32688740fdf4759240900000000000000"
+        error_simple, Command::Cancel => Error { error_data: vec![], } => "0900000000000000"
     }
 }
