@@ -323,12 +323,13 @@ pub struct TreeDisconnectResponse {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
+    use smb_tests::test_binrw;
 
     use crate::*;
 
     use super::*;
 
+    // TODO(test): Add tests with tree connect contexts.
     test_request! {
         TreeConnect {
             flags: TreeConnectRequestFlags::new(),
@@ -337,20 +338,12 @@ mod tests {
         } => "0900000048002a005c005c006100640063002e0061007600690076002e006c006f00630061006c005c004900500043002400"
     }
 
-    #[test]
-    pub fn test_tree_connect_res_parse() {
-        let mut cursor = Cursor::new(&[
-            0x10, 0x0, 0x1, 0x0, 0x0, 0x8, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xff, 0x1, 0x1f, 0x0,
-        ]);
-        let content_parsed = TreeConnectResponse::read_le(&mut cursor).unwrap();
-        assert_eq!(
-            content_parsed,
-            TreeConnectResponse {
-                share_type: ShareType::Disk,
-                share_flags: ShareFlags::new().with_access_based_directory_enum(true),
-                capabilities: TreeCapabilities::new(),
-                maximal_access: 0x001f01ff,
-            }
-        )
+    test_binrw! {
+        struct TreeConnectResponse {
+            share_type: ShareType::Disk,
+            share_flags: ShareFlags::new().with_access_based_directory_enum(true),
+            capabilities: TreeCapabilities::new(),
+            maximal_access: 0x001f01ff,
+        } => "100001000008000000000000ff011f00"
     }
 }

@@ -10,7 +10,7 @@ use super::header::Header;
 use smb_dtyp::binrw_util::prelude::*;
 
 #[binrw::binrw]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct FlushRequest {
     #[bw(calc = 24)]
     #[br(assert(_structure_size == 24))]
@@ -214,31 +214,19 @@ pub struct WriteFlags {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
-
     use crate::*;
 
     use super::*;
+    use smb_tests::*;
 
-    #[test]
-    pub fn test_flush_req_write() {
-        let mut cursor = Cursor::new(Vec::new());
-        FlushRequest {
+    test_binrw! {
+        struct FlushRequest {
             file_id: [
                 0x14, 0x04, 0x00, 0x00, 0x0c, 0x00, 0x00, 0x00, 0x51, 0x00, 0x10, 0x00, 0x0c, 0x00,
                 0x00, 0x00,
             ]
             .into(),
-        }
-        .write_le(&mut cursor)
-        .unwrap();
-        assert_eq!(
-            cursor.into_inner(),
-            [
-                0x18, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x14, 0x4, 0x0, 0x0, 0xc, 0x0, 0x0, 0x0,
-                0x51, 0x0, 0x10, 0x0, 0xc, 0x0, 0x0, 0x0
-            ]
-        )
+        } => "1800000000000000140400000c000000510010000c000000"
     }
 
     smb_tests::test_binrw! {

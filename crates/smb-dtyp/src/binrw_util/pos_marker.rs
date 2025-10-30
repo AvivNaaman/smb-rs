@@ -446,6 +446,35 @@ where
 
     /// Writer for value
     /// * fill absolute offset to offset location.
+    /// * add extra size to the written **offset**.
+    #[binrw::writer(writer, endian)]
+    pub fn write_roff_b_plus<U, B>(
+        value: &U,
+        write_offset_to: &Self,
+        offset_relative_to: &PosMarker<B>,
+        offset_plus: u64,
+    ) -> BinResult<()>
+    where
+        U: BinWrite<Args<'static> = ()>,
+    {
+        let no_size: Option<&PosMarker<T>> = None;
+        Self::write_hero(
+            value,
+            writer,
+            endian,
+            (
+                no_size,
+                Some(write_offset_to),
+                Some(offset_relative_to),
+                (),
+                Self::NO_EXTRA_SIZE,
+                offset_plus,
+            ),
+        )
+    }
+
+    /// Writer for value
+    /// * fill absolute offset to offset location.
     /// * fill written size to size location.
     /// * add extra size to the written **offset**.
     #[binrw::writer(writer, endian)]
