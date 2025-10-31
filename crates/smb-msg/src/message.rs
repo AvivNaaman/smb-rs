@@ -1,22 +1,33 @@
-use super::compressed::*;
-use super::encrypted::*;
-use super::plain::*;
 use binrw::prelude::*;
 
 macro_rules! make_message {
-    ($name:ident, $derive_attr:ty, $plain_type:ty) => {
-        #[derive($derive_attr, Debug)]
+    ($name:ident, $binrw_type:ident, $plain_type:ty) => {
+        #[binrw::$binrw_type]
+        #[derive(Debug)]
         #[brw(little)]
         pub enum $name {
             Plain($plain_type),
-            Encrypted(EncryptedMessage),
-            Compressed(CompressedMessage),
+            Encrypted($crate::EncryptedMessage),
+            Compressed($crate::CompressedMessage),
         }
     };
 }
 
-make_message!(Request, BinWrite, PlainRequest);
-make_message!(Response, BinRead, PlainResponse);
+macro_rules! make_messages {
+    ($req_type:ident, $res_type:ident) => {
+        make_message!(Request, $req_type, $crate::PlainRequest);
+        make_message!(Response, $res_type, $crate::PlainResponse);
+    };
+}
+
+#[cfg(all(feature = "client", not(feature = "server")))]
+make_messages!(binwrite, binread);
+
+#[cfg(all(feature = "server", not(feature = "client")))]
+make_messages!(binread, binwrite);
+
+#[cfg(all(feature = "server", feature = "client"))]
+make_messages!(binrw, binrw);
 
 impl TryFrom<&[u8]> for Response {
     type Error = binrw::Error;

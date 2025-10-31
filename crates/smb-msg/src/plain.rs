@@ -320,7 +320,7 @@ macro_rules! gen_req_resp {
 
 #[cfg(all(feature = "server", feature = "client"))]
 gen_req_resp!(binrw::binrw, binrw::binrw);
-#[cfg(all(not(feature = "server"), feature = "client"))]
-gen_req_resp!(binrw::binread, binrw::binwrite);
-#[cfg(all(feature = "server", not(feature = "client")))]
+#[cfg(all(feature = "client", not(feature = "server")))]
 gen_req_resp!(binrw::binwrite, binrw::binread);
+#[cfg(all(feature = "server", not(feature = "client")))]
+gen_req_resp!(binrw::binread, binrw::binwrite);

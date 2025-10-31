@@ -1,7 +1,7 @@
 use binrw::prelude::*;
 
 #[binrw::binrw]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[brw(big, magic(b"\x00"))]
 pub struct SmbTcpMessageHeader {
     #[br(parse_with = binrw::helpers::read_u24)]
