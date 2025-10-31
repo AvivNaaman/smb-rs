@@ -153,6 +153,7 @@ macro_rules! test_response {
     };
 }
 
+#[allow(unused_macros)]
 macro_rules! test_request_read {
     ($($v:tt)+) => {
         _test_generic_impl! {
@@ -169,6 +170,7 @@ macro_rules! test_response_read {
     };
 }
 
+#[allow(unused_macros)]
 macro_rules! test_request_write {
     ($($v:tt)+) => {
         _test_generic_impl! {
@@ -177,6 +179,7 @@ macro_rules! test_request_write {
     };
 }
 
+#[allow(unused_macros)]
 macro_rules! test_response_write {
     ($($v:tt)+) => {
         _test_generic_impl! {
@@ -186,8 +189,11 @@ macro_rules! test_response_write {
 }
 
 pub(crate) use test_request;
+#[allow(unused_imports)]
 pub(crate) use test_request_read;
+#[allow(unused_imports)]
 pub(crate) use test_request_write;
 pub(crate) use test_response;
 pub(crate) use test_response_read;
+#[allow(unused_imports)]
 pub(crate) use test_response_write;

@@ -21,6 +21,9 @@ pastey = { workspace = true }
 maybe-async = { workspace = true }
 thiserror = { workspace = true }
 
+[dev-dependencies]
+smb-tests = { path = "../smb-tests", version = "0.10.2" }
+
 [features]
 default = []
 is_sync = ["maybe-async/is_sync"]

@@ -14,33 +14,19 @@ pub use consts::*;
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
+    use smb_tests::test_binrw;
 
     use super::*;
 
-    #[test]
-    fn test_string_ptr() {
-        #[binrw::binrw]
-        #[derive(Debug, PartialEq, Eq)]
+    #[binrw::binrw]
+    #[derive(Debug, PartialEq, Eq)]
+    struct TestNdrStringPtr {
+        string: NdrPtr<NdrString<u16>>,
+    }
+
+    test_binrw! {
         struct TestNdrStringPtr {
-            string: NdrPtr<NdrString<u16>>,
-        }
-
-        let data = TestNdrStringPtr {
             string: r"\\localhostt".parse::<NdrString<u16>>().unwrap().into(),
-        };
-
-        let mut cursor = Cursor::new(vec![]);
-        data.write_le(&mut cursor).unwrap();
-        let write_result = cursor.into_inner();
-        assert_eq!(
-            write_result,
-            [
-                0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0xd, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xd, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                0x5c, 0x0, 0x5c, 0x0, 0x6c, 0x0, 0x6f, 0x0, 0x63, 0x0, 0x61, 0x0, 0x6c, 0x0, 0x68,
-                0x0, 0x6f, 0x0, 0x73, 0x0, 0x74, 0x0, 0x74, 0x0, 0x0, 0x0,
-            ]
-        );
+        } => "00000200000000000d0000000000000000000000000000000d000000000000005c005c006c006f00630061006c0068006f007300740074000000"
     }
 }

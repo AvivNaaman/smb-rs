@@ -208,10 +208,9 @@ mod tests {
                 max_output_response: 1024,
                 flags: IoctlRequestFlags::new().with_is_fsctl(true),
                 buffer: IoctlReqData::FsctlPipeTransceive(
-                    Into::<IoctlBuffer>::into(
+                    IoctlBuffer::from(
                         hex_to_u8_array! {REQ_IOCTL_BUFFER_CONTENT}
-                    )
-                    .into(),
+                    ).into(),
                 ),
         } => const_format::concatcp!("3900000017c01100280500000c000000850000000c0000007800000098000000000000000000000000000000000400000100000000000000", REQ_IOCTL_BUFFER_CONTENT)
     }

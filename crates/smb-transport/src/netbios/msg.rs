@@ -57,7 +57,7 @@ pub enum NBSSTrailer {
 }
 
 #[binrw::binrw]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[brw(big)]
 pub struct NBSessionRequest {
     pub called_name: NetBiosName,
@@ -267,77 +267,28 @@ pub struct NBSSSessionRetargetResponse {
 
 #[cfg(test)]
 mod tests {
+    use smb_tests::test_binrw;
+
     use super::*;
-    use std::io::Cursor;
 
-    #[test]
-    fn test_nb_name_rw() {
-        let data = [
-            0x20u8, 0x43, 0x4b, 0x46, 0x44, 0x45, 0x4e, 0x45, 0x43, 0x46, 0x44, 0x45, 0x46, 0x46,
-            0x43, 0x46, 0x47, 0x45, 0x46, 0x46, 0x43, 0x43, 0x41, 0x43, 0x41, 0x43, 0x41, 0x43,
-            0x41, 0x43, 0x41, 0x43, 0x41, 0x0,
-        ];
-        let name = NetBiosName::read(&mut Cursor::new(&data)).unwrap();
-        assert_eq!(name.name, "*SMBSERVER     ");
-        assert_eq!(name.suffix, 0x20);
-        assert_eq!(name.to_string(), "*SMBSERVER<20>");
-
-        let mut buf = Vec::new();
-        NetBiosName::new(name.name.to_string(), name.suffix)
-            .write(&mut Cursor::new(&mut buf))
-            .unwrap();
-        assert_eq!(buf.len(), data.len());
-        let parsed: Result<NetBiosName, std::io::Error> = "*SMBSERVER<20>".parse();
-        assert_eq!(parsed.unwrap(), name);
+    test_binrw! {
+        NetBiosName: NetBiosName::from_str("*SMBSERVER<20>").unwrap()
+            => "20434b4644454e454346444546464346474546464343414341434143414341434100"
     }
 
-    #[test]
-    fn test_nbss_session_request_write() {
-        let request = NBSessionRequest {
+    test_binrw! {
+        struct NBSessionRequest {
             called_name: NetBiosName::new("*SMBSERVER".to_string(), 0x20),
             calling_name: NetBiosName::new("MACBOOKPRO-AF8A".to_string(), 0x0),
-        };
-        let mut buf = Vec::new();
-        request
-            .write(&mut Cursor::new(&mut buf))
-            .expect("Failed to write NBSessionRequest");
-        assert_eq!(
-            buf,
-            &[
-                0x20, 0x43, 0x4b, 0x46, 0x44, 0x45, 0x4e, 0x45, 0x43, 0x46, 0x44, 0x45, 0x46, 0x46,
-                0x43, 0x46, 0x47, 0x45, 0x46, 0x46, 0x43, 0x43, 0x41, 0x43, 0x41, 0x43, 0x41, 0x43,
-                0x41, 0x43, 0x41, 0x43, 0x41, 0x0, 0x20, 0x45, 0x4e, 0x45, 0x42, 0x45, 0x44, 0x45,
-                0x43, 0x45, 0x50, 0x45, 0x50, 0x45, 0x4c, 0x46, 0x41, 0x46, 0x43, 0x45, 0x50, 0x43,
-                0x4e, 0x45, 0x42, 0x45, 0x47, 0x44, 0x49, 0x45, 0x42, 0x41, 0x41, 0x0,
-            ]
-        );
+        } => "20434b4644454e45434644454646434647454646434341434143414341434143410020454e
+        45424544454345504550454c464146434550434e4542454744494542414100"
     }
 
-    #[test]
-    fn test_nbss_header_read() {
-        let data = [0x82u8, 0x0, 0x0, 0x0];
-        let header = NBSSPacketHeader::read(&mut Cursor::new(&data)).unwrap();
-        assert_eq!(
-            header,
-            NBSSPacketHeader {
-                ptype: NBSSPacketType::PositiveSessionResponse,
-                flags: 0x00,
-                length: 0x0000,
-            }
-        );
-    }
-
-    #[test]
-    fn test_nbss_header_write() {
-        let header = NBSSPacketHeader {
+    test_binrw! {
+        struct NBSSPacketHeader {
             ptype: NBSSPacketType::PositiveSessionResponse,
             flags: 0x00,
             length: 0x0000,
-        };
-        let mut buf = Vec::new();
-        header
-            .write(&mut Cursor::new(&mut buf))
-            .expect("Failed to write NBSSPacketHeader");
-        assert_eq!(buf, [0x82, 0x0, 0x0, 0x0]);
+        } => "82000000"
     }
 }
