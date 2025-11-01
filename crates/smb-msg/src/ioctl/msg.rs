@@ -188,7 +188,7 @@ impl IoctlResponse {
 
 #[cfg(test)]
 mod tests {
-    use smb_tests::hex_to_u8_array;
+    use smb_tests::*;
 
     use crate::*;
 

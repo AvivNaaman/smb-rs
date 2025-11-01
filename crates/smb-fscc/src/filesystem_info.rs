@@ -376,7 +376,7 @@ pub struct FileFsVolumeInformation {
 mod tests {
     use super::*;
     use smb_dtyp::make_guid;
-    use smb_tests::test_binrw;
+    use smb_tests::*;
     use time::macros::datetime;
 
     test_binrw! {

@@ -173,7 +173,7 @@ mod tests {
     use crate::FileAttributes;
 
     use super::*;
-    use smb_tests::{test_binrw, test_binrw_read, test_binrw_write};
+    use smb_tests::*;
     use time::macros::datetime;
 
     test_binrw! {

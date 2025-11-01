@@ -60,7 +60,7 @@ pub struct EncryptedMessage {
 
 #[cfg(test)]
 mod tests {
-    use smb_tests::test_binrw;
+    use smb_tests::*;
 
     use super::*;
 

@@ -170,7 +170,7 @@ impl std::fmt::Debug for Guid {
 
 #[cfg(test)]
 mod tests {
-    use smb_tests::test_binrw;
+    use smb_tests::*;
 
     use super::*;
 

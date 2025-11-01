@@ -519,6 +519,7 @@ pub struct SrvEnumerateSnapshotsResponse {
     snap_shot_array_size: PosMarker<u32>,
     /// A list of snapshots, described as strings, that take on the following form: @GMT-YYYY.MM.DD-HH.MM.SS
     #[br(map_stream = |s| s.take_seek(snap_shot_array_size.value as u64))]
+    #[bw(write_with = PosMarker::write_size, args(&snap_shot_array_size))]
     pub snap_shots: MultiWSz,
 }
 
@@ -671,7 +672,7 @@ make_res_newtype!(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use smb_tests::test_binrw;
+    use smb_tests::*;
 
     test_binrw! {
         struct OffloadReadRequest {

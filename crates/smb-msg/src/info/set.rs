@@ -103,6 +103,7 @@ mod tests {
     use super::*;
     use crate::*;
     use smb_dtyp::*;
+    use smb_tests::*;
 
     test_request! {
         SetInfo {
@@ -117,7 +118,7 @@ mod tests {
         } => "2100010a3a0000006000000000000000420000000e000000050010000e0000000000000000000000000000000000000026000000680065006c006c006f005c006d0079004e0065007700460069006c0065002e00740078007400"
     }
 
-    smb_tests::test_binrw! {
+    test_binrw! {
         struct SetInfoResponse {} => "0200"
     }
 }

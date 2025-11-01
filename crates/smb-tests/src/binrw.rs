@@ -28,7 +28,7 @@ macro_rules! hex_to_u8_array {
     ) => {
         {
             let s = $expr_for_string;
-            $crate::binrw::__hex_stream_decode(s)
+            $crate::__hex_stream_decode(s)
         }
     }
 }
@@ -214,10 +214,3 @@ macro_rules! test_binrw_read_fail {
         }
     };
 }
-
-pub use binrw_read_and_assert_eq;
-pub use binrw_write_and_assert_eq;
-pub use test_binrw;
-pub use test_binrw_read;
-pub use test_binrw_read_fail;
-pub use test_binrw_write;

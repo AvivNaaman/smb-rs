@@ -388,15 +388,16 @@ struct ReferralEntryFlagsV4 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use smb_tests::*;
 
-    smb_tests::test_binrw! {
+    test_binrw! {
         struct ReqGetDfsReferral {
             max_referral_level: ReferralLevel::V4,
             request_file_name: r"\ADC.aviv.local\dfs\Docs".into(),
         } => "04005c004100440043002e0061007600690076002e006c006f00630061006c005c006400660073005c0044006f00630073000000"
     }
 
-    smb_tests::test_binrw_read! {
+    test_binrw_read! {
         struct RespGetDfsReferral {
             path_consumed: 48,
             referral_header_flags: ReferralHeaderFlags::new().with_storage_servers(true),

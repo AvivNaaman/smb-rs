@@ -373,43 +373,26 @@ impl Connection {
             let mut preauth_integrity_hash = [0u8; 32];
             OsRng.fill_bytes(&mut preauth_integrity_hash);
             let mut ctx_list = vec![
-                NegotiateContext {
-                    context_type: NegotiateContextType::PreauthIntegrityCapabilities,
-                    data: NegotiateContextValue::PreauthIntegrityCapabilities(
-                        PreauthIntegrityCapabilities {
-                            hash_algorithms: vec![HashAlgorithm::Sha512],
-                            salt: preauth_integrity_hash.to_vec(),
-                        },
-                    ),
-                },
-                NegotiateContext {
-                    context_type: NegotiateContextType::NetnameNegotiateContextId,
-                    data: NegotiateContextValue::NetnameNegotiateContextId(
-                        NetnameNegotiateContextId {
-                            netname: client_netname.into(),
-                        },
-                    ),
-                },
-                NegotiateContext {
-                    context_type: NegotiateContextType::EncryptionCapabilities,
-                    data: NegotiateContextValue::EncryptionCapabilities(EncryptionCapabilities {
-                        ciphers: encrypting_algorithms,
-                    }),
-                },
-                NegotiateContext {
-                    context_type: NegotiateContextType::CompressionCapabilities,
-                    data: NegotiateContextValue::CompressionCapabilities(CompressionCapabilities {
-                        flags: CompressionCapsFlags::new()
-                            .with_chained(!compression_algorithms.is_empty()),
-                        compression_algorithms,
-                    }),
-                },
-                NegotiateContext {
-                    context_type: NegotiateContextType::SigningCapabilities,
-                    data: NegotiateContextValue::SigningCapabilities(SigningCapabilities {
-                        signing_algorithms,
-                    }),
-                },
+                PreauthIntegrityCapabilities {
+                    hash_algorithms: vec![HashAlgorithm::Sha512],
+                    salt: preauth_integrity_hash.to_vec(),
+                }
+                .into(),
+                NetnameNegotiateContextId {
+                    netname: client_netname.into(),
+                }
+                .into(),
+                EncryptionCapabilities {
+                    ciphers: encrypting_algorithms,
+                }
+                .into(),
+                CompressionCapabilities {
+                    flags: CompressionCapsFlags::new()
+                        .with_chained(!compression_algorithms.is_empty()),
+                    compression_algorithms,
+                }
+                .into(),
+                SigningCapabilities { signing_algorithms }.into(),
             ];
             // QUIC
             #[cfg(feature = "quic")]

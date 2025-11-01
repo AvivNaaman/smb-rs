@@ -87,7 +87,7 @@ pub type Ndr64Align<T> = NdrAlign<T, NDR64_ALIGNMENT>;
 
 #[cfg(test)]
 mod tests {
-    use smb_tests::test_binrw;
+    use smb_tests::*;
 
     use super::*;
 

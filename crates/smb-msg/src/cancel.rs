@@ -16,8 +16,9 @@ pub struct CancelRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use smb_tests::*;
 
-    smb_tests::test_binrw! {
+    test_binrw! {
         struct CancelRequest {} => "04000000"
     }
 }

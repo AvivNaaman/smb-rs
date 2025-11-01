@@ -138,10 +138,11 @@ pub struct NotifySessionClosed {
 mod tests {
     use crate::*;
     use smb_dtyp::guid::Guid;
+    use smb_tests::*;
 
     use super::*;
 
-    smb_tests::test_binrw! {
+    test_binrw! {
         struct ChangeNotifyRequest {
             flags: NotifyFlags::new(),
             output_buffer_length: 2048,
@@ -157,7 +158,7 @@ mod tests {
         } => "2000000000080000d10500000c000000190000000c0000001700000000000000"
     }
 
-    smb_tests::test_binrw! {
+    test_binrw! {
         struct ChangeNotifyResponse => pending {
             buffer: Default::default(),
         } => "0900000000000000"

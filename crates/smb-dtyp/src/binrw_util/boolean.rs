@@ -57,17 +57,18 @@ impl From<Boolean> for bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use smb_tests::*;
 
-    smb_tests::test_binrw! {
+    test_binrw! {
         Boolean => true: Boolean::from(true) => "01"
     }
 
-    smb_tests::test_binrw! {
+    test_binrw! {
         Boolean => false: Boolean::from(false) => "00"
     }
 
     // Non-zero is considered true!
-    smb_tests::test_binrw_read! {
+    test_binrw_read! {
         Boolean => true_non_zero: Boolean::from(true) => "17"
     }
 }

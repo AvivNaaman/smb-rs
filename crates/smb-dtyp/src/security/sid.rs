@@ -111,6 +111,7 @@ impl std::fmt::Display for SID {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use smb_tests::*;
 
     const SID_STRING: &str = "S-1-5-21-782712087-4182988437-2163400469-1002";
 
@@ -129,7 +130,7 @@ mod tests {
         }
     }
 
-    smb_tests::test_binrw! {
+    test_binrw! {
         SID: SID_STRING.parse::<SID>().unwrap()
             => "010500000000000515000000173da72e955653f915dff280ea030000"
     }

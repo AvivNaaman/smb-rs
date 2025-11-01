@@ -323,7 +323,7 @@ pub struct TreeDisconnectResponse {
 
 #[cfg(test)]
 mod tests {
-    use smb_tests::test_binrw;
+    use smb_tests::*;
 
     use crate::*;
 

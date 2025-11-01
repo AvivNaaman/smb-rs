@@ -2,7 +2,7 @@ use super::*;
 use std::str::FromStr;
 
 use binrw::prelude::*;
-use smb_tests::test_binrw;
+use smb_tests::*;
 
 test_binrw! {
     SecurityDescriptor => owner_group:

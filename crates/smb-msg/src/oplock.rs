@@ -93,8 +93,9 @@ pub type LeaseBreakResponse = LeaseBreakAckResponse;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use smb_tests::*;
 
-    smb_tests::test_binrw! {
+    test_binrw! {
         struct LeaseBreakNotify {
             new_epoch: 2,
             ack_required: 1,
@@ -106,14 +107,14 @@ mod tests {
         } => "2c000200010000009e61c8705d165e31d492a01b0cbb3af20300000000000000000000000000000000000000"
     }
 
-    smb_tests::test_binrw! {
+    test_binrw! {
         struct LeaseBreakAck {
             lease_key: "70c8619e-165d-315e-d492-a01b0cbb3af2".parse().unwrap(),
             lease_state: LeaseState::new(),
         } => "24000000000000009e61c8705d165e31d492a01b0cbb3af2000000000000000000000000"
     }
 
-    smb_tests::test_binrw! {
+    test_binrw! {
         struct LeaseBreakAckResponse {
             lease_key: "70c8619e-165d-315e-d492-a01b0cbb3af2".parse().unwrap(),
             lease_state: LeaseState::new(),

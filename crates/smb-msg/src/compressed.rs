@@ -105,10 +105,11 @@ pub struct CompressedData {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use smb_tests::*;
 
     // TODO(TEST): unchained
 
-    smb_tests::test_binrw! {
+    test_binrw! {
         CompressedMessage => chained0: CompressedMessage::Chained(CompressedChainedMessage {
                 original_size: 368,
                 items: vec![
@@ -188,7 +189,7 @@ mod tests {
         "04000000080000000000000038080000"
     );
 
-    smb_tests::test_binrw! {
+    test_binrw! {
         CompressedMessage => chained1: CompressedMessage::Chained(CompressedChainedMessage {
                 original_size: 4176,
                 items: vec![
@@ -221,7 +222,7 @@ mod tests {
             }) => CHAINED1_TEST_DATA
     }
 
-    smb_tests::test_binrw! {
+    test_binrw! {
         CompressedMessage => multiple2: CompressedMessage::Chained(CompressedChainedMessage {
             original_size: 368,
             items: vec![

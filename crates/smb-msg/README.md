@@ -12,6 +12,6 @@ It also contains additional structures that are used by SMB specifically
 ## Usage
 
 This crate is meant to be used with anyone who wants to implement SMB-related functionality in Rust.
-See the dcumentation of the crate for more information.
+See the documentation of the crate for more information.
 
 Configure the features to your use case: use `server`, `client`, or `both`.

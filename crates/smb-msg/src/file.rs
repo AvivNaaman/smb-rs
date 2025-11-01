@@ -229,7 +229,7 @@ mod tests {
         } => "1800000000000000140400000c000000510010000c000000"
     }
 
-    smb_tests::test_binrw! {
+    test_binrw! {
         struct FlushResponse {  } => "04 00 00 00"
     }
 
@@ -267,7 +267,7 @@ mod tests {
         } => "3100700016000000cdab341200000000140400000c000000510010000c00000000000000000000000000000000000000"
     }
 
-    smb_tests::test_binrw! {
+    test_binrw! {
         struct WriteResponse { count: 0xbeefbaaf, } => "11000000afbaefbe0000000000000000"
     }
 }

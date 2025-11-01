@@ -136,7 +136,7 @@ impl<const N: usize> std::fmt::Display for FixedWideString<N> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use smb_tests::{test_binrw, test_binrw_read_fail};
+    use smb_tests::*;
 
     type Ansi6 = FixedAnsiString<6>;
 

@@ -239,7 +239,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use smb_tests::test_binrw_read;
+    use smb_tests::*;
 
     use super::*;
 

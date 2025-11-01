@@ -96,7 +96,7 @@ pub struct CreateRequest {
     #[br(args { size: SizedStringSize::bytes16(name_length) })]
     pub name: SizedWideString,
 
-    /// Use the `CreateContextReqData::first_...` function family to get the first context of a specific type.
+    /// Use the [`CreateContextRequestData`]`::first_...` function family to get the first context of a specific type.
     #[brw(align_before = 8)]
     #[br(map_stream = |s| s.take_seek(_create_contexts_length.value.into()))]
     #[bw(write_with = PosMarker::write_roff_size, args(&_create_contexts_offset, &_create_contexts_length))]
@@ -206,7 +206,7 @@ pub struct CreateResponse {
     #[bw(calc = PosMarker::default())]
     create_contexts_length: PosMarker<u32>, // bytes
 
-    /// Use the `CreateContextRespData::first_...` function family to get the first context of a specific type.
+    /// Use the [`CreateContextResponseData`]`::first_...` function family to get the first context of a specific type.
     #[br(seek_before = SeekFrom::Start(create_contexts_offset.value as u64))]
     #[br(map_stream = |s| s.take_seek(create_contexts_length.value.into()))]
     #[bw(write_with = PosMarker::write_roff_size, args(&create_contexts_offset, &create_contexts_length))]
@@ -803,7 +803,7 @@ mod tests {
      */
 
     use smb_dtyp::guid;
-    use smb_tests::test_binrw;
+    use smb_tests::*;
     use time::macros::datetime;
 
     // Tests for the following contexts are not implemented here:

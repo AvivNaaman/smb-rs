@@ -363,7 +363,7 @@ pub enum ReparseTag {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use smb_tests::test_binrw;
+    use smb_tests::*;
 
     test_binrw! {
         FileFullEaInformation: FileFullEaInformation::from(vec![

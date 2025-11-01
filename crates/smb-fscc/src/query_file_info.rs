@@ -417,7 +417,7 @@ impl FileGetEaInformation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use smb_tests::test_binrw;
+    use smb_tests::*;
     use time::macros::datetime;
 
     fn get_file_access_information_for_test() -> FileAccessInformation {

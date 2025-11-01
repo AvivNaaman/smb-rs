@@ -89,8 +89,9 @@ impl IntoIterator for MultiWSz {
 #[cfg(test)]
 mod tests {
     use crate::binrw_util::prelude::MultiWSz;
+    use smb_tests::*;
 
-    smb_tests::test_binrw! {
+    test_binrw! {
         MultiWSz: (vec![
             "FirstS",
             "AnOther",
