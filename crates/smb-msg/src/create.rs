@@ -11,7 +11,7 @@ use modular_bitfield::prelude::*;
 use smb_dtyp::SecurityDescriptor;
 use smb_dtyp::{Guid, binrw_util::prelude::*};
 use smb_fscc::*;
-use smb_msg_derive::{smb_request, smb_response};
+use smb_msg_derive::*;
 
 /// 2.2.14.1: SMB2_FILEID
 #[binrw::binrw]
@@ -123,10 +123,7 @@ pub enum CreateDisposition {
     OverwriteIf = 0x5,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Default, Debug, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct CreateOptions {
     pub directory_file: bool,
     pub write_through: bool,
@@ -164,10 +161,7 @@ pub struct CreateOptions {
 }
 
 // share_access 4 byte flags:
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct ShareAccessFlags {
     pub read: bool,
     pub write: bool,
@@ -206,10 +200,7 @@ pub struct CreateResponse {
     pub create_contexts: ChainedItemList<ResponseCreateContext, 8>,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct CreateResponseFlags {
     pub reparsepoint: bool,
     #[skip]
@@ -524,10 +515,7 @@ pub struct RequestLeaseV2 {
     reserved: u16,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct LeaseFlags {
     #[skip]
     __: B2,
@@ -549,10 +537,7 @@ pub struct DurableHandleRequestV2 {
     pub create_guid: Guid,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct DurableHandleV2Flags {
     #[skip]
     __: bool,
@@ -698,10 +683,7 @@ pub struct CloseResponse {
     pub file_attributes: FileAttributes,
 }
 
-#[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[bw(map = |&x| Self::into_bytes(x))]
-#[br(map = Self::from_bytes)]
+#[smb_dtyp::mbitfield]
 pub struct CloseFlags {
     pub postquery_attrib: bool,
     #[skip]
