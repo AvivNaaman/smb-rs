@@ -10,7 +10,7 @@ use super::header::Header;
 use smb_dtyp::binrw_util::prelude::*;
 
 #[binrw::binrw]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct FlushRequest {
     #[bw(calc = 24)]
     #[br(assert(_structure_size == 24))]
@@ -36,7 +36,7 @@ pub struct FlushResponse {
 }
 
 #[binrw::binrw]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct ReadRequest {
     #[bw(calc = 49)]
     #[br(assert(_structure_size == 49))]
@@ -108,7 +108,7 @@ impl ReadResponse {
 }
 
 #[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy)]
+#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
 #[br(map = Self::from_bytes)]
 pub struct ReadFlags {
@@ -134,7 +134,7 @@ pub enum CommunicationChannel {
 ///
 /// **note:** it is currently assumed that the data is sent immediately after the message.
 #[binrw::binrw]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[allow(clippy::manual_non_exhaustive)]
 pub struct WriteRequest {
     #[bw(calc = 49)]
@@ -202,7 +202,7 @@ pub struct WriteResponse {
 }
 
 #[bitfield]
-#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy)]
+#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
 #[br(map = Self::from_bytes)]
 pub struct WriteFlags {
@@ -214,44 +214,27 @@ pub struct WriteFlags {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
-
     use crate::*;
 
     use super::*;
+    use smb_tests::*;
 
-    #[test]
-    pub fn test_flush_req_write() {
-        let mut cursor = Cursor::new(Vec::new());
-        FlushRequest {
+    test_binrw! {
+        struct FlushRequest {
             file_id: [
                 0x14, 0x04, 0x00, 0x00, 0x0c, 0x00, 0x00, 0x00, 0x51, 0x00, 0x10, 0x00, 0x0c, 0x00,
                 0x00, 0x00,
             ]
             .into(),
-        }
-        .write_le(&mut cursor)
-        .unwrap();
-        assert_eq!(
-            cursor.into_inner(),
-            [
-                0x18, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x14, 0x4, 0x0, 0x0, 0xc, 0x0, 0x0, 0x0,
-                0x51, 0x0, 0x10, 0x0, 0xc, 0x0, 0x0, 0x0
-            ]
-        )
+        } => "1800000000000000140400000c000000510010000c000000"
     }
 
-    #[test]
-    pub fn test_flush_res_parse() {
-        let data = [0x4u8, 0, 0, 0, 0, 0, 0, 0];
-        let mut cursor = Cursor::new(data);
-        let resp = FlushResponse::read_le(&mut cursor).unwrap();
-        assert_eq!(resp, FlushResponse {});
+    test_binrw! {
+        struct FlushResponse {  } => "04 00 00 00"
     }
 
-    #[test]
-    pub fn test_read_req_write() {
-        let req = ReadRequest {
+    test_request! {
+        Read {
             flags: ReadFlags::new(),
             length: 0x10203040,
             offset: 0x5060708090a0b0c,
@@ -261,73 +244,30 @@ mod tests {
             ]
             .into(),
             minimum_count: 1,
-        };
-        let data = encode_content(req.into());
-        assert_eq![
-            data,
-            [
-                0x31, 0x0, 0x0, 0x0, 0x40, 0x30, 0x20, 0x10, 0x0c, 0x0b, 0x0a, 0x09, 0x08, 0x07,
-                0x06, 0x05, 0x3, 0x3, 0x0, 0x0, 0xc, 0x0, 0x0, 0x0, 0xc5, 0x0, 0x0, 0x0, 0xc, 0x0,
-                0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                0x0, 0x0, // The famous padding byte.
-                0x0
+        } => "31000000403020100c0b0a0908070605030300000c000000c50000000c0000000100000000000000000000000000000000"
+    }
+
+    test_response! {
+        Read {
+            buffer: b"bbbbbb".to_vec(),
+        } => "11005000060000000000000000000000626262626262"
+    }
+
+    test_request! {
+        Write {
+            offset: 0x1234abcd,
+            file_id: [
+                0x14, 0x04, 0x00, 0x00, 0x0c, 0x00, 0x00, 0x00, 0x51, 0x00, 0x10, 0x00, 0x0c, 0x00,
+                0x00, 0x00,
             ]
-        ]
-    }
-
-    #[test]
-    pub fn test_read_resp_parse() {
-        let data = [
-            0xfeu8, 0x53, 0x4d, 0x42, 0x40, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x8, 0x0, 0x1, 0x0,
-            0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xd4, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xff,
-            0xfe, 0x0, 0x0, 0x5, 0x0, 0x0, 0x0, 0x31, 0x0, 0x0, 0x20, 0x0, 0x30, 0x0, 0x0, 0x0,
-            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x11, 0x0,
-            0x50, 0x0, 0x6, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x62, 0x62,
-            0x62, 0x62, 0x62, 0x62,
-        ];
-
-        let resp = decode_content(&data).content.to_read().unwrap();
-        assert_eq!(
-            resp,
-            ReadResponse {
-                buffer: b"bbbbbb".to_vec(),
-            }
-        );
-    }
-
-    #[test]
-    pub fn test_write_req_write() {
-        let data = encode_content(
-            WriteRequest::new(
-                0x1234abcd,
-                [
-                    0x14, 0x04, 0x00, 0x00, 0x0c, 0x00, 0x00, 0x00, 0x51, 0x00, 0x10, 0x00, 0x0c,
-                    0x00, 0x00, 0x00,
-                ]
-                .into(),
-                WriteFlags::new(),
-                "MeFriend!THIS IS FINE!".as_bytes().to_vec().len() as u32,
-            )
             .into(),
-        );
-        assert_eq!(
-            data,
-            [
-                0x31, 0x0, 0x70, 0x0, 0x16, 0x0, 0x0, 0x0, 0xcd, 0xab, 0x34, 0x12, 0x0, 0x0, 0x0,
-                0x0, 0x14, 0x4, 0x0, 0x0, 0xc, 0x0, 0x0, 0x0, 0x51, 0x0, 0x10, 0x0, 0xc, 0x0, 0x0,
-                0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                0x0
-            ]
-        );
+            flags: WriteFlags::new(),
+            length: "MeFriend!THIS IS FINE!".as_bytes().to_vec().len() as u32,
+            _write_offset: (),
+        } => "3100700016000000cdab341200000000140400000c000000510010000c00000000000000000000000000000000000000"
     }
 
-    #[test]
-    pub fn test_write_resp_parse() {
-        let data = [
-            0x11u8, 0x0, 0x0, 0x0, 0xaf, 0xba, 0xef, 0xbe, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-        ];
-        let mut cursor = Cursor::new(data);
-        let resp = WriteResponse::read_le(&mut cursor).unwrap();
-        assert_eq!(resp, WriteResponse { count: 0xbeefbaaf });
+    test_binrw! {
+        struct WriteResponse { count: 0xbeefbaaf, } => "11000000afbaefbe0000000000000000"
     }
 }

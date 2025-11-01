@@ -154,7 +154,7 @@ impl Resource {
         let is_dir = response.file_attributes.directory();
 
         // Get maximal access
-        let access = match CreateContextRespData::first_mxac(&response.create_contexts.into()) {
+        let access = match CreateContextResponseData::first_mxac(&response.create_contexts.into()) {
             Some(response) => response.maximal_access,
             _ => {
                 log::debug!(

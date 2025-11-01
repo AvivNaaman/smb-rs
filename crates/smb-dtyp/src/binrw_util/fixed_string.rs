@@ -129,14 +129,14 @@ impl<const N: usize> std::fmt::Display for FixedAnsiString<N> {
 
 impl<const N: usize> std::fmt::Display for FixedWideString<N> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        super::sized_wide_string::display_utf16(self.as_slice(), f, core::iter::once)
+        super::sized_string::display_utf16(self.as_slice(), f, core::iter::once)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use smb_tests::{test_binrw, test_binrw_read_fail};
+    use smb_tests::*;
 
     type Ansi6 = FixedAnsiString<6>;
 

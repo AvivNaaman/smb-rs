@@ -179,6 +179,14 @@ impl From<cancel::CancelRequest>
     }
 }
 
+impl From<error::ErrorResponse>
+    for ResponseContent
+{
+    fn from(resp: error::ErrorResponse) -> Self {
+        ResponseContent::Error(resp)
+    }
+}
+
 make_content_impl!{
     RequestContent,
     $(
@@ -275,12 +283,17 @@ macro_rules! make_plain {
 
         impl [<Plain $suffix>] {
             pub fn new(content: [<$suffix Content>]) -> [<Plain $suffix>] {
+                let cmd = content.associated_cmd();
+                Self::new_with_command(content, cmd)
+            }
+
+            pub fn new_with_command(content: [<$suffix Content>], command: Command) -> [<Plain $suffix>] {
                 [<Plain $suffix>] {
                     // default is a sync command, so `tree_id` must be set, and `HeaderFlags::async_command` is false
                     header: Header {
                         credit_charge: 0,
                         status: Status::Success as u32,
-                        command: content.associated_cmd(),
+                        command,
                         credit_request: 0,
                         flags: HeaderFlags::new(),
                         next_command: 0,
@@ -298,31 +311,16 @@ macro_rules! make_plain {
     };
 }
 
-make_plain!(Request, false, binrw::binwrite);
-make_plain!(Response, true, binrw::binread);
-
-/// Contains both tests and test helpers for other modules' tests requiring this module.
-#[cfg(test)]
-pub mod tests {
-    use std::io::Cursor;
-
-    use super::*;
-
-    /// Given a content, encode it into a Vec<u8> as if it were a full message,
-    /// But return only the content bytes.
-    ///
-    /// This is useful when encoding structs with offsets relative to the beginning of the SMB header.
-    pub fn encode_content(content: RequestContent) -> Vec<u8> {
-        let mut cursor = Cursor::new(Vec::new());
-        let msg = PlainRequest::new(content);
-        msg.write(&mut cursor).unwrap();
-        let bytes_of_msg = cursor.into_inner();
-        // We only want to return the content of the message, not the header. So cut the HEADER_SIZE bytes:
-        bytes_of_msg[Header::STRUCT_SIZE..].to_vec()
-    }
-
-    pub fn decode_content(bytes: &[u8]) -> PlainResponse {
-        let mut cursor = Cursor::new(bytes);
-        cursor.read_le().unwrap()
-    }
+macro_rules! gen_req_resp {
+    ($req_attr:ty, $res_attr:ty) => {
+        make_plain!(Request, false, $req_attr);
+        make_plain!(Response, true, $res_attr);
+    };
 }
+
+#[cfg(all(feature = "server", feature = "client"))]
+gen_req_resp!(binrw::binrw, binrw::binrw);
+#[cfg(all(feature = "client", not(feature = "server")))]
+gen_req_resp!(binrw::binwrite, binrw::binread);
+#[cfg(all(feature = "server", not(feature = "client")))]
+gen_req_resp!(binrw::binread, binrw::binwrite);

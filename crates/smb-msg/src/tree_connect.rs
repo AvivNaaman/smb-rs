@@ -24,7 +24,7 @@ pub struct TreeConnectRequestFlags {
 /// - On read, uses extension iff `flags.extension_present()` - parses just like the server intends.
 /// - On write, uses extension iff `tree_connect_contexts` is non-empty.
 #[binrw::binrw]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct TreeConnectRequest {
     #[bw(calc = 9)]
     #[br(assert(_structure_size == 9))]
@@ -39,10 +39,12 @@ pub struct TreeConnectRequest {
     #[br(if(flags.extension_present()))]
     #[bw(calc = if tree_connect_contexts.is_empty() { None } else { Some(PosMarker::default()) })]
     tree_connect_context_offset: Option<PosMarker<u32>>,
+
     #[br(if(flags.extension_present()))]
     #[bw(if(!tree_connect_contexts.is_empty()))]
     #[bw(calc = if tree_connect_contexts.is_empty() { None } else { Some(tree_connect_contexts.len().try_into().unwrap()) })]
     tree_connect_context_count: Option<u16>,
+
     #[br(if(flags.extension_present()))]
     #[bw(if(!tree_connect_contexts.is_empty()))]
     #[bw(calc = Some([0u8; 10]))]
@@ -58,14 +60,14 @@ pub struct TreeConnectRequest {
     // -- Extension --
     #[br(if(flags.extension_present()))]
     #[br(seek_before = tree_connect_context_offset.unwrap().seek_relative(true))]
-    #[br(count = tree_connect_context_count.unwrap())]
+    #[br(count = tree_connect_context_count.unwrap_or(0))]
     #[bw(if(!tree_connect_contexts.is_empty()))]
     #[bw(write_with = PosMarker::write_aoff_m, args(tree_connect_context_offset.as_ref()))]
     tree_connect_contexts: Vec<TreeConnectContext>,
 }
 
 #[binrw::binrw]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct TreeConnectContext {
     /// MS-SMB2 2.2.9.2: Must be set to SMB2_REMOTED_IDENTITY_TREE_CONNECT_CONTEXT_ID = 1.
     #[bw(calc = 1)]
@@ -83,7 +85,7 @@ macro_rules! make_remoted_identity_connect{
         pastey::paste! {
 
 #[binwrite]
-#[derive(Debug, BinRead)]
+#[derive(Debug, BinRead, PartialEq, Eq)]
 pub struct RemotedIdentityTreeConnect {
     // MS-SMB2 2.2.9.2.1: Must be set to 0x1.
     #[bw(calc = PosMarker::new(1))]
@@ -321,40 +323,27 @@ pub struct TreeDisconnectResponse {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
+    use smb_tests::*;
 
     use crate::*;
 
     use super::*;
 
-    #[test]
-    pub fn test_tree_connect_req_write() {
-        let result = encode_content(TreeConnectRequest::new(&r"\\127.0.0.1\MyShare").into());
-        assert_eq!(
-            result,
-            [
-                0x9, 0x0, 0x0, 0x0, 0x48, 0x0, 0x26, 0x0, 0x5c, 0x0, 0x5c, 0x0, 0x31, 0x0, 0x32,
-                0x0, 0x37, 0x0, 0x2e, 0x0, 0x30, 0x0, 0x2e, 0x0, 0x30, 0x0, 0x2e, 0x0, 0x31, 0x0,
-                0x5c, 0x0, 0x4d, 0x0, 0x79, 0x0, 0x53, 0x0, 0x68, 0x0, 0x61, 0x0, 0x72, 0x0, 0x65,
-                0x0
-            ]
-        );
+    // TODO(test): Add tests with tree connect contexts.
+    test_request! {
+        TreeConnect {
+            flags: TreeConnectRequestFlags::new(),
+            buffer: r"\\adc.aviv.local\IPC$".into(),
+            tree_connect_contexts: vec![],
+        } => "0900000048002a005c005c006100640063002e0061007600690076002e006c006f00630061006c005c004900500043002400"
     }
 
-    #[test]
-    pub fn test_tree_connect_res_parse() {
-        let mut cursor = Cursor::new(&[
-            0x10, 0x0, 0x1, 0x0, 0x0, 0x8, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xff, 0x1, 0x1f, 0x0,
-        ]);
-        let content_parsed = TreeConnectResponse::read_le(&mut cursor).unwrap();
-        assert_eq!(
-            content_parsed,
-            TreeConnectResponse {
-                share_type: ShareType::Disk,
-                share_flags: ShareFlags::new().with_access_based_directory_enum(true),
-                capabilities: TreeCapabilities::new(),
-                maximal_access: 0x001f01ff,
-            }
-        )
+    test_binrw! {
+        struct TreeConnectResponse {
+            share_type: ShareType::Disk,
+            share_flags: ShareFlags::new().with_access_based_directory_enum(true),
+            capabilities: TreeCapabilities::new(),
+            maximal_access: 0x001f01ff,
+        } => "100001000008000000000000ff011f00"
     }
 }

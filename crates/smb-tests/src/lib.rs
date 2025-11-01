@@ -1,1 +1,3 @@
-pub mod binrw;
+mod binrw;
+
+pub use binrw::*;

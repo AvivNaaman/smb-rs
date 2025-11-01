@@ -3,7 +3,7 @@
 use binrw::prelude::*;
 
 #[binrw::binrw]
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq, Eq)]
 pub struct CancelRequest {
     #[br(assert(_structure_size == 4))]
     #[bw(calc = 4)]
@@ -15,13 +15,10 @@ pub struct CancelRequest {
 
 #[cfg(test)]
 mod tests {
-    use crate::*;
-
     use super::*;
+    use smb_tests::*;
 
-    #[test]
-    pub fn test_cancel_req_write() {
-        let data = encode_content(RequestContent::Cancel(CancelRequest::default()));
-        assert_eq!(data, [0x4, 0x0, 0x0, 0x0])
+    test_binrw! {
+        struct CancelRequest {} => "04000000"
     }
 }

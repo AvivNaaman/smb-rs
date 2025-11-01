@@ -87,55 +87,30 @@ pub type Ndr64Align<T> = NdrAlign<T, NDR64_ALIGNMENT>;
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
+    use smb_tests::*;
 
     use super::*;
 
-    const ALIGNED_MAGIC: u32 = 0x12345678;
+    #[binrw::binrw]
+    #[derive(Debug, PartialEq, Eq)]
+    struct TestNdrAlign {
+        unalign: u8,
+        unalign2: u16,
+        should_align: NdrAlign<u32>,
+    }
 
-    #[test]
-    fn test_align() {
-        #[binrw::binrw]
-        #[derive(Debug, PartialEq, Eq)]
+    test_binrw! {
         struct TestNdrAlign {
-            unalign: u8,
-            unalign2: u16,
-            should_align: NdrAlign<u32>,
-        }
-
-        let data = TestNdrAlign {
             unalign: 0,
             unalign2: 0,
             should_align: NdrAlign {
-                value: ALIGNED_MAGIC,
+                value: 0x12345678,
             },
-        };
-
-        let mut cursor = Cursor::new(vec![]);
-        data.write_le(&mut cursor).unwrap();
-
-        let write_result = cursor.into_inner();
-        assert_eq!(
-            write_result,
-            [
-                0x00, // unalign
-                0x00, 0x00, // unalign2
-                0x00, 0x00, 0x00, 0x00, 0x00, // alignment
-                0x78, 0x56, 0x34, 0x12, // aligned value
-            ]
-        );
-
-        let mut cursor = Cursor::new(&write_result);
-        let read_result: TestNdrAlign = TestNdrAlign::read_le(&mut cursor).unwrap();
-        assert_eq!(
-            read_result,
-            TestNdrAlign {
-                unalign: 0,
-                unalign2: 0,
-                should_align: NdrAlign {
-                    value: ALIGNED_MAGIC
-                }
-            }
-        )
+        } => "
+                00
+                00 00
+                00 00 00 00 00
+                78 56 34 12
+            " // unalign; unalign2; alignment; aligned value
     }
 }

@@ -55,7 +55,7 @@ macro_rules! query_info_data {
             #[doc = concat!("Enum to hold the different info types for ", stringify!($name),
             ", that are used within SMB requests for querying or setting information.")]
             #[binrw::binrw]
-            #[derive(Debug)]
+            #[derive(Debug, PartialEq, Eq)]
             #[brw(little)]
             #[br(import(info_type: InfoType))]
             pub enum $name {
@@ -99,7 +99,7 @@ macro_rules! query_info_data {
                 }
             }
 
-            /// Content to enum conversions:
+            // Content to enum conversions:
             $(
                 impl From<$content> for $name {
                     fn from(value: $content) -> Self {
@@ -108,9 +108,8 @@ macro_rules! query_info_data {
                 }
             )+
 
-            // All same for filesystem:
             #[binrw::binrw]
-            #[derive(Debug)]
+            #[derive(Debug, PartialEq, Eq)]
             pub struct [<Raw $name>]<T>
             where
                 T: Sized,

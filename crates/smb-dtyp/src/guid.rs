@@ -78,6 +78,16 @@ impl Guid {
             ],
         ))
     }
+
+    /// Returns the GUID as a `u128` value.
+    pub fn as_u128(&self) -> u128 {
+        let mut bytes = [0u8; 16];
+        {
+            let mut cursor = Cursor::new(&mut bytes[..]);
+            self.write(&mut cursor).unwrap();
+        }
+        u128::from_le_bytes(bytes)
+    }
 }
 
 /// A macro to create a `Guid` from a string literal at compile time.
@@ -91,7 +101,7 @@ impl Guid {
 /// ```
 #[macro_export]
 macro_rules! guid {
-    ($s:literal) => {{
+    ($s:expr) => {{
         match $crate::Guid::parse_uuid($s) {
             Ok(guid) => guid,
             Err(_) => panic!("Invalid GUID format"),
@@ -160,6 +170,8 @@ impl std::fmt::Debug for Guid {
 
 #[cfg(test)]
 mod tests {
+    use smb_tests::*;
+
     use super::*;
 
     const TEST_GUID_STR: &str = "065eadf1-6daf-1543-b04f-10e69084c9ae";
@@ -169,10 +181,7 @@ mod tests {
         0x1543,
         [0xb0, 0x4f, 0x10, 0xe6, 0x90, 0x84, 0xc9, 0xae],
     );
-    const TEST_GUID_BYTES: [u8; 16] = [
-        0xf1u8, 0xad, 0x5e, 0x06, 0xaf, 0x6d, 0x43, 0x15, 0xb0, 0x4f, 0x10, 0xe6, 0x90, 0x84, 0xc9,
-        0xae,
-    ];
+    const TEST_GUID_BYTES: &'static str = "f1ad5e06af6d4315b04f10e69084c9ae";
 
     #[test]
     pub fn test_guid_parse_runtime() {
@@ -183,25 +192,14 @@ mod tests {
 
     #[test]
     pub fn test_const_guid() {
+        assert_eq!(make_guid!(TEST_GUID_STR), PARSED_GUID_VALUE);
         assert_eq!(
-            make_guid!("065eadf1-6daf-1543-b04f-10e69084c9ae"),
-            PARSED_GUID_VALUE
-        );
-        assert_eq!(
-            make_guid!("{065eadf1-6daf-1543-b04f-10e69084c9ae}"),
+            make_guid!(format!("{{{TEST_GUID_STR}}}").as_str()),
             PARSED_GUID_VALUE
         );
     }
 
-    #[test]
-    pub fn test_guid_parse_bytes() {
-        assert_eq!(Guid::try_from(&TEST_GUID_BYTES).unwrap(), PARSED_GUID_VALUE);
-    }
-
-    #[test]
-    pub fn test_guid_write_bytes() {
-        let mut cursor = Cursor::new(Vec::new());
-        PARSED_GUID_VALUE.write(&mut cursor).unwrap();
-        assert_eq!(cursor.into_inner(), TEST_GUID_BYTES);
+    test_binrw! {
+        Guid: PARSED_GUID_VALUE => TEST_GUID_BYTES
     }
 }

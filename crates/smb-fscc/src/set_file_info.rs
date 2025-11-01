@@ -30,7 +30,7 @@ file_info_classes! {
         pub Rename = 10,
         pub ShortName = 40,
         pub ValidDataLength = 39,
-    }, Write
+    }
 }
 
 /// Set end-of-file information for a file.
@@ -173,7 +173,7 @@ mod tests {
     use crate::FileAttributes;
 
     use super::*;
-    use smb_tests::{test_binrw, test_binrw_read, test_binrw_write};
+    use smb_tests::*;
     use time::macros::datetime;
 
     test_binrw! {

@@ -76,16 +76,33 @@ impl DfsRequestData {
     }
 }
 
-#[binrw::binrw]
+/// NOTE: This struct currently implements [`BinWrite`] only as a placeholder (calling it will panic).
+#[binrw::binread]
 #[derive(Debug, PartialEq, Eq)]
 pub struct RespGetDfsReferral {
     pub path_consumed: u16,
-    #[bw(try_calc = referral_entries.len().try_into())]
+    // #[bw(try_calc = referral_entries.len().try_into())]
+    #[br(temp)]
     number_of_referrals: u16,
     pub referral_header_flags: ReferralHeaderFlags,
     #[br(count = number_of_referrals)]
     pub referral_entries: Vec<ReferralEntry>,
     // string_buffer is here, but it's use is to provide a buffer for the strings in the referral entries.
+}
+
+impl BinWrite for RespGetDfsReferral {
+    type Args<'a> = ();
+
+    fn write_options<W: binrw::io::Write + binrw::io::Seek>(
+        &self,
+        _writer: &mut W,
+        _endian: binrw::Endian,
+        _args: Self::Args<'_>,
+    ) -> binrw::BinResult<()> {
+        unimplemented!(
+            "Placeholder trait implementation for RespGetDfsReferral - writing is currently not supported"
+        );
+    }
 }
 
 #[bitfield]
@@ -106,12 +123,15 @@ pub struct ReferralHeaderFlags {
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct ReferralEntry {
+    /* All entry types share the same fields in their beginnings, so we split it */
     #[bw(calc = value.get_version())]
     pub version: u16,
     #[bw(calc = PosMarker::default())]
     _size: PosMarker<u16>,
+
     #[br(args(version))]
-    #[bw(write_with = PosMarker::write_size, args(&_size))]
+    // map_stream is not used here because we seek manually in the inner structs.
+    #[bw(write_with = PosMarker::write_size_plus, args(&_size, Self::COMMON_PART_SIZE as u64))]
     pub value: ReferralEntryValue,
 }
 
@@ -204,12 +224,15 @@ pub struct ReferralEntryValueV2 {
 
     /// The DFS path that corresponds to the DFS root or the DFS link for which target information is returned.
     #[br(seek_before = _start.seek_from((dfs_path_offset.value as usize - ReferralEntry::COMMON_PART_SIZE).try_into().unwrap()))]
+    #[bw(write_with = PosMarker::write_roff_b_plus, args(&dfs_path_offset, &_start, ReferralEntry::COMMON_PART_SIZE as u64))]
     pub dfs_path: NullWideString,
     /// The DFS path that corresponds to the DFS root or the DFS link for which target information is returned.
     #[br(seek_before = _start.seek_from((dfs_alternate_path_offset.value as usize - ReferralEntry::COMMON_PART_SIZE).try_into().unwrap()))]
+    #[bw(write_with = PosMarker::write_roff_b_plus, args(&dfs_alternate_path_offset, &_start, ReferralEntry::COMMON_PART_SIZE as u64))]
     pub dfs_alternate_path: NullWideString,
     /// The DFS target that corresponds to this entry.
     #[br(seek_before = _start.seek_from((network_address_offset.value as usize - ReferralEntry::COMMON_PART_SIZE).try_into().unwrap()))]
+    #[bw(write_with = PosMarker::write_roff_b_plus, args(&network_address_offset, &_start, ReferralEntry::COMMON_PART_SIZE as u64))]
     pub network_address: NullWideString,
 
     #[br(seek_before = _restore_position.seek_from(0))]
@@ -290,12 +313,15 @@ pub struct EntryV3V4DfsPaths {
 
     /// The DFS path that corresponds to the DFS root or the DFS link for which target information is returned.
     #[br(seek_before = _start.seek_from((dfs_path_offset.value - EntryV3Value::OFFSET_FROM_ENTRY_START).into()))]
+    #[bw(write_with = PosMarker::write_roff_b_plus, args(&dfs_path_offset, &_start, ReferralEntry::COMMON_PART_SIZE as u64))]
     pub dfs_path: NullWideString,
     /// The DFS path that corresponds to the DFS root or the DFS link for which target information is returned.
     #[br(seek_before = _start.seek_from((dfs_alternate_path_offset.value - EntryV3Value::OFFSET_FROM_ENTRY_START).into()))]
+    #[bw(write_with = PosMarker::write_roff_b_plus, args(&dfs_alternate_path_offset, &_start, ReferralEntry::COMMON_PART_SIZE as u64))]
     pub dfs_alternate_path: NullWideString,
     /// The DFS target that corresponds to this entry.
     #[br(seek_before = _start.seek_from((network_address_offset.value - EntryV3Value::OFFSET_FROM_ENTRY_START).into()))]
+    #[bw(write_with = PosMarker::write_roff_b_plus, args(&network_address_offset, &_start, ReferralEntry::COMMON_PART_SIZE as u64))]
     pub network_address: NullWideString,
 
     #[br(seek_before = _restore_position.seek_from(0))]
@@ -362,87 +388,53 @@ struct ReferralEntryFlagsV4 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::IoctlRequestContent;
-    use std::io::Cursor;
+    use smb_tests::*;
 
-    #[test]
-    pub fn test_write_req() {
-        let req = ReqGetDfsReferral {
+    test_binrw! {
+        struct ReqGetDfsReferral {
             max_referral_level: ReferralLevel::V4,
             request_file_name: r"\ADC.aviv.local\dfs\Docs".into(),
-        };
-        let mut buf = Vec::new();
-        req.write_le(&mut Cursor::new(&mut buf)).unwrap();
-        assert_eq!(buf.len() as u32, req.get_bin_size());
-        assert_eq!(
-            buf,
-            &[
-                0x4, 0x0, 0x5c, 0x0, 0x41, 0x0, 0x44, 0x0, 0x43, 0x0, 0x2e, 0x0, 0x61, 0x0, 0x76,
-                0x0, 0x69, 0x0, 0x76, 0x0, 0x2e, 0x0, 0x6c, 0x0, 0x6f, 0x0, 0x63, 0x0, 0x61, 0x0,
-                0x6c, 0x0, 0x5c, 0x0, 0x64, 0x0, 0x66, 0x0, 0x73, 0x0, 0x5c, 0x0, 0x44, 0x0, 0x6f,
-                0x0, 0x63, 0x0, 0x73, 0x0, 0x0, 0x0
-            ]
-        );
+        } => "04005c004100440043002e0061007600690076002e006c006f00630061006c005c006400660073005c0044006f00630073000000"
     }
 
-    #[test]
-    pub fn test_v4_parses_properly() {
-        let bytes = [
-            0x30, 0x0, 0x2, 0x0, 0x2, 0x0, 0x0, 0x0, 0x4, 0x0, 0x22, 0x0, 0x0, 0x0, 0x4, 0x0, 0x8,
-            0x7, 0x0, 0x0, 0x44, 0x0, 0x76, 0x0, 0xa8, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x4, 0x0, 0x22, 0x0, 0x0, 0x0, 0x0, 0x0, 0x8,
-            0x7, 0x0, 0x0, 0x22, 0x0, 0x54, 0x0, 0xa8, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x5c, 0x0, 0x41, 0x0, 0x44, 0x0, 0x43, 0x0,
-            0x2e, 0x0, 0x61, 0x0, 0x76, 0x0, 0x69, 0x0, 0x76, 0x0, 0x2e, 0x0, 0x6c, 0x0, 0x6f, 0x0,
-            0x63, 0x0, 0x61, 0x0, 0x6c, 0x0, 0x5c, 0x0, 0x64, 0x0, 0x66, 0x0, 0x73, 0x0, 0x5c, 0x0,
-            0x44, 0x0, 0x6f, 0x0, 0x63, 0x0, 0x73, 0x0, 0x0, 0x0, 0x5c, 0x0, 0x41, 0x0, 0x44, 0x0,
-            0x43, 0x0, 0x2e, 0x0, 0x61, 0x0, 0x76, 0x0, 0x69, 0x0, 0x76, 0x0, 0x2e, 0x0, 0x6c, 0x0,
-            0x6f, 0x0, 0x63, 0x0, 0x61, 0x0, 0x6c, 0x0, 0x5c, 0x0, 0x64, 0x0, 0x66, 0x0, 0x73, 0x0,
-            0x5c, 0x0, 0x44, 0x0, 0x6f, 0x0, 0x63, 0x0, 0x73, 0x0, 0x0, 0x0, 0x5c, 0x0, 0x41, 0x0,
-            0x44, 0x0, 0x43, 0x0, 0x5c, 0x0, 0x53, 0x0, 0x68, 0x0, 0x61, 0x0, 0x72, 0x0, 0x65, 0x0,
-            0x73, 0x0, 0x5c, 0x0, 0x44, 0x0, 0x6f, 0x0, 0x63, 0x0, 0x73, 0x0, 0x0, 0x0, 0x5c, 0x0,
-            0x46, 0x0, 0x53, 0x0, 0x52, 0x0, 0x56, 0x0, 0x5c, 0x0, 0x53, 0x0, 0x68, 0x0, 0x61, 0x0,
-            0x72, 0x0, 0x65, 0x0, 0x73, 0x0, 0x5c, 0x0, 0x4d, 0x0, 0x79, 0x0, 0x53, 0x0, 0x68, 0x0,
-            0x61, 0x0, 0x72, 0x0, 0x65, 0x0, 0x0, 0x0,
-        ];
-
-        let r = RespGetDfsReferral::read_le(&mut Cursor::new(&bytes)).unwrap();
-        assert_eq!(
-            r,
-            RespGetDfsReferral {
-                path_consumed: 48,
-                referral_header_flags: ReferralHeaderFlags::new().with_storage_servers(true),
-                referral_entries: vec![
-                    ReferralEntry {
-                        value: ReferralEntryValue::V4(ReferralEntryValueV4 {
-                            server_type: DfsServerType::NonRoot,
-                            referral_entry_flags: u16::from_le_bytes(
-                                ReferralEntryFlagsV4::new()
-                                    .with_target_set_boundary(true)
-                                    .into_bytes()
-                            ),
-                            time_to_live: 1800,
-                            refs: EntryV3V4DfsPaths {
-                                dfs_path: r"\ADC.aviv.local\dfs\Docs".into(),
-                                dfs_alternate_path: r"\ADC.aviv.local\dfs\Docs".into(),
-                                network_address: r"\ADC\Shares\Docs".into()
-                            }
-                        })
-                    },
-                    ReferralEntry {
-                        value: ReferralEntryValue::V4(ReferralEntryValueV4 {
-                            server_type: DfsServerType::NonRoot,
-                            referral_entry_flags: 0,
-                            time_to_live: 1800,
-                            refs: EntryV3V4DfsPaths {
-                                dfs_path: r"\ADC.aviv.local\dfs\Docs".into(),
-                                dfs_alternate_path: r"\ADC.aviv.local\dfs\Docs".into(),
-                                network_address: r"\FSRV\Shares\MyShare".into()
-                            }
-                        })
-                    }
-                ]
-            }
-        )
+    test_binrw_read! {
+        struct RespGetDfsReferral {
+            path_consumed: 48,
+            referral_header_flags: ReferralHeaderFlags::new().with_storage_servers(true),
+            referral_entries: vec![
+                ReferralEntry {
+                    value: ReferralEntryValue::V4(ReferralEntryValueV4 {
+                        server_type: DfsServerType::NonRoot,
+                        referral_entry_flags: u16::from_le_bytes(
+                            ReferralEntryFlagsV4::new()
+                                .with_target_set_boundary(true)
+                                .into_bytes()
+                        ),
+                        time_to_live: 1800,
+                        refs: EntryV3V4DfsPaths {
+                            dfs_path: r"\ADC.aviv.local\dfs\Docs".into(),
+                            dfs_alternate_path: r"\ADC.aviv.local\dfs\Docs".into(),
+                            network_address: r"\ADC\Shares\Docs".into()
+                        }
+                    })
+                },
+                ReferralEntry {
+                    value: ReferralEntryValue::V4(ReferralEntryValueV4 {
+                        server_type: DfsServerType::NonRoot,
+                        referral_entry_flags: 0,
+                        time_to_live: 1800,
+                        refs: EntryV3V4DfsPaths {
+                            dfs_path: r"\ADC.aviv.local\dfs\Docs".into(),
+                            dfs_alternate_path: r"\ADC.aviv.local\dfs\Docs".into(),
+                            network_address: r"\FSRV\Shares\MyShare".into()
+                        }
+                    })
+                }
+            ],
+        } => "300002000200000004002200000004000807000044007600a8000000000000000000000000000000000004002200000000000807000022005400a
+        800000000000000000000000000000000005c004100440043002e0061007600690076002e006c006f00630061006c005c006400660073005c0044006f00
+        6300730000005c004100440043002e0061007600690076002e006c006f00630061006c005c006400660073005c0044006f006300730000005c004100440
+        043005c005300680061007200650073005c0044006f006300730000005c0046005300520056005c005300680061007200650073005c004d007900530068
+        006100720065000000"
     }
 }

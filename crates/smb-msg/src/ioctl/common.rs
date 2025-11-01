@@ -13,6 +13,8 @@ impl IoctlRequestContent for () {
     }
 }
 
+/// Utility structure to represent inner value of Ioctl requests
+/// that have no defined struct (i.e. they are treated as raw byte buffers).
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct IoctlBuffer {

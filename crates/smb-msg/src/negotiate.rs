@@ -5,7 +5,7 @@ use modular_bitfield::prelude::*;
 use smb_dtyp::{binrw_util::prelude::*, guid::Guid};
 
 #[binrw::binrw]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct NegotiateRequest {
     #[bw(calc = 0x24)]
     #[br(assert(_structure_size == 0x24))]
@@ -219,6 +219,16 @@ impl TryFrom<NegotiateDialect> for Dialect {
     }
 }
 
+/// Represent a single negotiation context item.
+///
+/// Note: This struct should usually be NOT used directly.
+/// To construct it, use `impl From<ContextValueStruct> for NegotiateContext`:
+/// ```
+/// # use smb_msg::*;
+/// let signing_ctx: NegotiateContext = SigningCapabilities {
+///     signing_algorithms: vec![SigningAlgorithmId::AesGmac]
+/// }.into();
+/// ```
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct NegotiateContext {
@@ -266,6 +276,17 @@ impl NegotiateContextValue {
         }
     }
 }
+
+$(
+    impl From<$name> for NegotiateContext {
+        fn from(val: $name) -> Self {
+            NegotiateContext {
+                context_type: NegotiateContextType::$name,
+                data: NegotiateContextValue::$name(val),
+            }
+        }
+    }
+)+
     };
 }
 
@@ -278,15 +299,6 @@ negotiate_context_type!(
     RdmaTransformCapabilities = 0x0007,
     SigningCapabilities = 0x0008,
 );
-
-impl From<NegotiateContextValue> for NegotiateContext {
-    fn from(val: NegotiateContextValue) -> Self {
-        NegotiateContext {
-            context_type: val.get_matching_type(),
-            data: val,
-        }
-    }
-}
 
 // u16 enum hash algorithms binrw 0x01 is sha512.
 #[derive(BinRead, BinWrite, Debug, PartialEq, Eq, Clone, Copy)]
@@ -448,98 +460,129 @@ pub enum SigningAlgorithmId {
 
 #[cfg(test)]
 mod tests {
+    use smb_dtyp::make_guid;
+    use smb_tests::hex_to_u8_array;
     use time::macros::datetime;
 
     use super::*;
     use crate::*;
 
-    #[test]
-    pub fn test_negotiate_res_parse() {
-        let data = [
-            0xfe, 0x53, 0x4d, 0x42, 0x40, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0,
-            0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xff,
-            0xfe, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x41, 0x0, 0x1,
-            0x0, 0x11, 0x3, 0x5, 0x0, 0xb9, 0x21, 0xf8, 0xe0, 0x15, 0x7, 0xaa, 0x41, 0xbe, 0x38,
-            0x67, 0xfe, 0xbf, 0x5e, 0x2e, 0x11, 0x2f, 0x0, 0x0, 0x0, 0x0, 0x0, 0x80, 0x0, 0x0, 0x0,
-            0x80, 0x0, 0x0, 0x0, 0x80, 0x0, 0xa8, 0x76, 0xd8, 0x78, 0xc5, 0x69, 0xdb, 0x1, 0x0,
-            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x80, 0x0, 0x2a, 0x0, 0xb0, 0x0, 0x0, 0x0, 0x60,
-            0x28, 0x6, 0x6, 0x2b, 0x6, 0x1, 0x5, 0x5, 0x2, 0xa0, 0x1e, 0x30, 0x1c, 0xa0, 0x1a,
-            0x30, 0x18, 0x6, 0xa, 0x2b, 0x6, 0x1, 0x4, 0x1, 0x82, 0x37, 0x2, 0x2, 0x1e, 0x6, 0xa,
-            0x2b, 0x6, 0x1, 0x4, 0x1, 0x82, 0x37, 0x2, 0x2, 0xa, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1,
-            0x0, 0x26, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x20, 0x0, 0x1, 0x0, 0xd5, 0x67, 0x1b,
-            0x24, 0xa1, 0xe9, 0xcc, 0xc8, 0x93, 0xf5, 0x55, 0x5a, 0x31, 0x3, 0x43, 0x5a, 0x85,
-            0x2b, 0xc3, 0xcb, 0x1a, 0xd3, 0x2d, 0xc5, 0x1f, 0x92, 0x80, 0x6e, 0xf3, 0xfb, 0x4d,
-            0xd4, 0x0, 0x0, 0x2, 0x0, 0x4, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x2, 0x0, 0x0, 0x0,
-            0x0, 0x0, 0x8, 0x0, 0x4, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0,
-            0x0, 0x7, 0x0, 0xc, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-            0x1, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x3, 0x0, 0xc, 0x0, 0x0, 0x0, 0x0, 0x0, 0x2,
-            0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x2, 0x0, 0x4, 0x0,
-        ];
+    test_request! {
+        Negotiate {
+            security_mode: NegotiateSecurityMode::new().with_signing_enabled(true),
+            capabilities: GlobalCapabilities::new()
+                .with_dfs(true)
+                .with_leasing(true)
+                .with_large_mtu(true)
+                .with_multi_channel(true)
+                .with_persistent_handles(true)
+                .with_directory_leasing(true)
+                .with_encryption(true)
+                .with_notifications(true),
+            client_guid: make_guid!("{c12e0ddf-43dd-11f0-8b87-000c29801682}"),
+            dialects: vec![
+                Dialect::Smb0202,
+                Dialect::Smb021,
+                Dialect::Smb030,
+                Dialect::Smb0302,
+                Dialect::Smb0311,
+            ],
+            negotiate_context_list: Some(vec![
+                PreauthIntegrityCapabilities {
+                    hash_algorithms: vec![HashAlgorithm::Sha512],
+                    salt: hex_to_u8_array! {"ed006c304e332890b2bd98617b5ad9ef075994154673696280ffcc0f1291a15d"}
+                }.into(),
+                EncryptionCapabilities { ciphers: vec![
+                    EncryptionCipher::Aes128Gcm,
+                    EncryptionCipher::Aes128Ccm,
+                    EncryptionCipher::Aes256Gcm,
+                    EncryptionCipher::Aes256Ccm,
+                ] }.into(),
+                CompressionCapabilities {
+                    flags: CompressionCapsFlags::new().with_chained(true),
+                    compression_algorithms: vec![
+                        CompressionAlgorithm::PatternV1,
+                        CompressionAlgorithm::LZ77,
+                        CompressionAlgorithm::LZ77Huffman,
+                        CompressionAlgorithm::LZNT1,
+                        CompressionAlgorithm::LZ4,
+                    ]
+                }.into(),
+                SigningCapabilities { signing_algorithms: vec![
+                    SigningAlgorithmId::AesGmac,
+                    SigningAlgorithmId::AesCmac,
+                    SigningAlgorithmId::HmacSha256,
+                ] }.into(),
+                NetnameNegotiateContextId { netname: "localhost".into() }.into(),
+                RdmaTransformCapabilities { transforms: vec![RdmaTransformId::Encryption, RdmaTransformId::Signing] }.into()
+            ])
+        } => "2400050001000000ff000000df0d2ec1dd43f0118b87000c298
+        016827000000006000000020210020003020311030000010026000000
+        0000010020000100ed006c304e332890b2bd98617b5ad9ef075994154
+        673696280ffcc0f1291a15d000002000a000000000004000200010004
+        000300000000000000030012000000000005000000010000000400020
+        003000100050000000000000008000800000000000300020001000000
+        05001200000000006c006f00630061006c0068006f007300740000000
+        000000007000c0000000000020000000000000001000200"
+    }
 
-        let response = decode_content(&data).content.to_negotiate().unwrap();
-
-        assert_eq!(
-            response,
-            NegotiateResponse {
-                security_mode: NegotiateSecurityMode::new().with_signing_enabled(true),
-                dialect_revision: NegotiateDialect::Smb0311,
-                server_guid: Guid::from([
-                    0xb9, 0x21, 0xf8, 0xe0, 0x15, 0x7, 0xaa, 0x41, 0xbe, 0x38, 0x67, 0xfe, 0xbf,
-                    0x5e, 0x2e, 0x11
-                ]),
-                capabilities: GlobalCapabilities::new()
-                    .with_dfs(true)
-                    .with_leasing(true)
-                    .with_large_mtu(true)
-                    .with_multi_channel(true)
-                    .with_directory_leasing(true),
-                max_transact_size: 8388608,
-                max_read_size: 8388608,
-                max_write_size: 8388608,
-                system_time: datetime!(2025-01-18 16:24:39.448746400).into(),
-                server_start_time: FileTime::default(),
-                buffer: [
-                    0x60, 0x28, 0x6, 0x6, 0x2b, 0x6, 0x1, 0x5, 0x5, 0x2, 0xa0, 0x1e, 0x30, 0x1c,
-                    0xa0, 0x1a, 0x30, 0x18, 0x6, 0xa, 0x2b, 0x6, 0x1, 0x4, 0x1, 0x82, 0x37, 0x2,
-                    0x2, 0x1e, 0x6, 0xa, 0x2b, 0x6, 0x1, 0x4, 0x1, 0x82, 0x37, 0x2, 0x2, 0xa
-                ]
-                .to_vec(),
-                negotiate_context_list: Some(vec![
-                    NegotiateContextValue::PreauthIntegrityCapabilities(
-                        PreauthIntegrityCapabilities {
-                            hash_algorithms: vec![HashAlgorithm::Sha512],
-                            salt: [
-                                0xd5, 0x67, 0x1b, 0x24, 0xa1, 0xe9, 0xcc, 0xc8, 0x93, 0xf5, 0x55,
-                                0x5a, 0x31, 0x3, 0x43, 0x5a, 0x85, 0x2b, 0xc3, 0xcb, 0x1a, 0xd3,
-                                0x2d, 0xc5, 0x1f, 0x92, 0x80, 0x6e, 0xf3, 0xfb, 0x4d, 0xd4
-                            ]
-                            .to_vec()
-                        }
-                    )
-                    .into(),
-                    NegotiateContextValue::EncryptionCapabilities(EncryptionCapabilities {
-                        ciphers: vec![EncryptionCipher::Aes128Gcm]
-                    })
-                    .into(),
-                    NegotiateContextValue::SigningCapabilities(SigningCapabilities {
-                        signing_algorithms: vec![SigningAlgorithmId::AesGmac]
-                    })
-                    .into(),
-                    NegotiateContextValue::RdmaTransformCapabilities(RdmaTransformCapabilities {
-                        transforms: vec![RdmaTransformId::Encryption, RdmaTransformId::Signing]
-                    })
-                    .into(),
-                    NegotiateContextValue::CompressionCapabilities(CompressionCapabilities {
-                        flags: CompressionCapsFlags::new().with_chained(true),
-                        compression_algorithms: vec![
-                            CompressionAlgorithm::LZ77,
-                            CompressionAlgorithm::PatternV1
+    test_response! {
+        Negotiate {
+            security_mode: NegotiateSecurityMode::new().with_signing_enabled(true),
+            dialect_revision: NegotiateDialect::Smb0311,
+            server_guid: Guid::from([
+                0xb9, 0x21, 0xf8, 0xe0, 0x15, 0x7, 0xaa, 0x41, 0xbe, 0x38, 0x67, 0xfe, 0xbf,
+                0x5e, 0x2e, 0x11
+            ]),
+            capabilities: GlobalCapabilities::new()
+                .with_dfs(true)
+                .with_leasing(true)
+                .with_large_mtu(true)
+                .with_multi_channel(true)
+                .with_directory_leasing(true),
+            max_transact_size: 8388608,
+            max_read_size: 8388608,
+            max_write_size: 8388608,
+            system_time: datetime!(2025-01-18 16:24:39.448746400).into(),
+            server_start_time: FileTime::default(),
+            buffer: [
+                0x60, 0x28, 0x6, 0x6, 0x2b, 0x6, 0x1, 0x5, 0x5, 0x2, 0xa0, 0x1e, 0x30, 0x1c,
+                0xa0, 0x1a, 0x30, 0x18, 0x6, 0xa, 0x2b, 0x6, 0x1, 0x4, 0x1, 0x82, 0x37, 0x2,
+                0x2, 0x1e, 0x6, 0xa, 0x2b, 0x6, 0x1, 0x4, 0x1, 0x82, 0x37, 0x2, 0x2, 0xa
+            ]
+            .to_vec(),
+            negotiate_context_list: Some(vec![
+                PreauthIntegrityCapabilities {
+                        hash_algorithms: vec![HashAlgorithm::Sha512],
+                        salt: [
+                            0xd5, 0x67, 0x1b, 0x24, 0xa1, 0xe9, 0xcc, 0xc8, 0x93, 0xf5, 0x55,
+                            0x5a, 0x31, 0x3, 0x43, 0x5a, 0x85, 0x2b, 0xc3, 0xcb, 0x1a, 0xd3,
+                            0x2d, 0xc5, 0x1f, 0x92, 0x80, 0x6e, 0xf3, 0xfb, 0x4d, 0xd4
                         ]
-                    })
-                    .into(),
-                ])
-            }
-        )
+                        .to_vec()
+                    }
+                .into(),
+                EncryptionCapabilities {
+                    ciphers: vec![EncryptionCipher::Aes128Gcm]
+                }
+                .into(),
+                SigningCapabilities {
+                    signing_algorithms: vec![SigningAlgorithmId::AesGmac]
+                }
+                .into(),
+                RdmaTransformCapabilities {
+                    transforms: vec![RdmaTransformId::Encryption, RdmaTransformId::Signing]
+                }
+                .into(),
+                CompressionCapabilities {
+                    flags: CompressionCapsFlags::new().with_chained(true),
+                    compression_algorithms: vec![
+                        CompressionAlgorithm::LZ77,
+                        CompressionAlgorithm::PatternV1
+                    ]
+                }
+                .into(),
+            ])
+        } => "4100010011030500b921f8e01507aa41be3867febf5e2e112f000000000080000000800000008000a876d878c569db01000000000000000080002a00b0000000602806062b0601050502a01e301ca01a3018060a2b06010401823702021e060a2b06010401823702020a0000000000000100260000000000010020000100d5671b24a1e9ccc893f5555a3103435a852bc3cb1ad32dc51f92806ef3fb4dd40000020004000000000001000200000000000800040000000000010002000000000007000c00000000000200000000000000010002000000000003000c0000000000020000000100000002000400"
     }
 }

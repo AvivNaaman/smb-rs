@@ -29,7 +29,7 @@ file_info_classes! {
         pub Id64ExtdBothDirectory = 0x4f,
         pub IdAllExtdDirectory = 0x50,
         pub IdAllExtdBothDirectory = 0x51,
-    }, Read
+    }
 }
 
 impl QueryDirectoryInfo {
@@ -306,7 +306,7 @@ query_dir_type! {
 mod tests {
     use super::*;
     use crate::ChainedItemList;
-    use smb_tests::test_binrw;
+    use smb_tests::*;
     use time::macros::datetime;
 
     macro_rules! make_id_all_extd_both_directory {

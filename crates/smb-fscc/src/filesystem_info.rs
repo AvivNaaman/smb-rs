@@ -21,7 +21,7 @@ file_info_classes! {
         pub FsSectorSize = 11,
         pub FsSize = 3,
         pub FsVolume = 1,
-    }, Read
+    }
 }
 
 file_info_classes! {
@@ -29,7 +29,7 @@ file_info_classes! {
     pub SetFileSystemInfo {
         pub FsControl = 6,
         pub FsObjectId = 8,
-    }, Write
+    }
 }
 
 /// Query attribute information for a file system.
@@ -376,7 +376,7 @@ pub struct FileFsVolumeInformation {
 mod tests {
     use super::*;
     use smb_dtyp::make_guid;
-    use smb_tests::test_binrw;
+    use smb_tests::*;
     use time::macros::datetime;
 
     test_binrw! {

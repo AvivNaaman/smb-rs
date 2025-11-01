@@ -8,3 +8,10 @@ It also contains additional structures that are used by SMB specifically
 (for example, DFS referrals), but common structures (such as GUID) are found in the `smb-types` crate.
 
 > This crate is a part of the `smb-rs` project
+
+## Usage
+
+This crate is meant to be used with anyone who wants to implement SMB-related functionality in Rust.
+See the documentation of the crate for more information.
+
+Configure the features to your use case: use `server`, `client`, or `both`.

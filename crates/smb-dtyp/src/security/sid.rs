@@ -111,6 +111,7 @@ impl std::fmt::Display for SID {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use smb_tests::*;
 
     const SID_STRING: &str = "S-1-5-21-782712087-4182988437-2163400469-1002";
 
@@ -122,17 +123,15 @@ mod tests {
         };
         assert_eq!(SID_STRING.parse::<SID>().unwrap(), sid_value);
         assert_eq!(sid_value.to_string(), SID_STRING);
+
+        let invalid_sids = ["", "S-1", "S-1-", "S-1-2-", "S-1-4f4"];
+        for sid in invalid_sids {
+            assert!(sid.parse::<SID>().is_err())
+        }
     }
-    #[test]
-    fn test_sid_to_from_bin() {
-        let sid_value = [
-            0x1, 0x5, 0x0, 0x0, 0x0, 0x0, 0x0, 0x5, 0x15, 0x0, 0x0, 0x0, 0x17, 0x3d, 0xa7, 0x2e,
-            0x95, 0x56, 0x53, 0xf9, 0x15, 0xdf, 0xf2, 0x80, 0xea, 0x3, 0x0, 0x0,
-        ];
-        let mut cursor = std::io::Cursor::new(&sid_value);
-        assert_eq!(
-            SID::read_le(&mut cursor).unwrap(),
-            SID_STRING.parse().unwrap()
-        );
+
+    test_binrw! {
+        SID: SID_STRING.parse::<SID>().unwrap()
+            => "010500000000000515000000173da72e955653f915dff280ea030000"
     }
 }

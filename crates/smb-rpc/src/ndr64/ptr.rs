@@ -240,8 +240,9 @@ where
 #[cfg(test)]
 
 mod tests {
+    use smb_tests::*;
+
     use super::*;
-    use std::io::Cursor;
 
     #[binrw::binrw]
     #[derive(Debug, PartialEq, Eq)]
@@ -251,40 +252,25 @@ mod tests {
         other: u32,
     }
 
-    #[test]
-    fn test_nullptr_no_array() {
-        let data = TestNdrU32Ptr {
+    test_binrw! {
+        TestNdrU32Ptr => nullptr: TestNdrU32Ptr {
             unalign: 0x1,
             null_ptr: None.into(),
             other: 0x12345678,
-        };
-
-        let mut cursor = Cursor::new(vec![]);
-        data.write_le(&mut cursor).unwrap();
-        let write_result = cursor.into_inner();
-        assert_eq!(
-            write_result,
-            [
+        } => [
                 0x1, // unaligned byte
                 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, // alignment padding
                 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, // null pointer, no data!
                 0x78, 0x56, 0x34, 0x12 // other value
             ]
-        );
     }
 
-    #[test]
-    fn test_value_no_array() {
-        let data = TestNdrU32Ptr {
+    test_binrw! {
+        TestNdrU32Ptr => with_data: TestNdrU32Ptr {
             unalign: 0x2,
             null_ptr: Some(0xdeadbeef).into(),
             other: 0x12345678,
-        };
-        let mut cursor = Cursor::new(vec![]);
-        data.write_le(&mut cursor).unwrap();
-        let write_result = cursor.into_inner();
-        assert_eq!(
-            write_result,
+        } =>
             [
                 0x2, // unaligned byte
                 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, // alignment padding
@@ -292,6 +278,5 @@ mod tests {
                 0xef, 0xbe, 0xad, 0xde, // value data
                 0x78, 0x56, 0x34, 0x12 // other value
             ]
-        );
     }
 }

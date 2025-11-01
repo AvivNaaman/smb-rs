@@ -9,7 +9,7 @@ use smb_dtyp::{SecurityDescriptor, binrw_util::prelude::*};
 use smb_fscc::*;
 
 #[binrw::binrw]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct SetInfoRequest {
     #[bw(calc = 33)]
     #[br(assert(_structure_size == 33))]
@@ -103,39 +103,22 @@ mod tests {
     use super::*;
     use crate::*;
     use smb_dtyp::*;
+    use smb_tests::*;
 
-    #[test]
-    fn test_set_info_request_write() {
-        let set_info = SetFileInfo::RenameInformation(FileRenameInformation {
-            replace_if_exists: false.into(),
-            root_directory: 0,
-            file_name: "hello\\myNewFile.txt".into(),
-        });
-
-        let cls = set_info.class();
-        let req = SetInfoData::from(RawSetInfoData::<SetFileInfo>::from(set_info)).to_req(
-            cls.into(),
-            make_guid!("00000042-000e-0000-0500-10000e000000").into(),
-            AdditionalInfo::new(),
-        );
-        let req_data = encode_content(req.into());
-        assert_eq!(
-            req_data,
-            [
-                0x21, 0x0, 0x1, 0xa, 0x3a, 0x0, 0x0, 0x0, 0x60, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                0x42, 0x0, 0x0, 0x0, 0xe, 0x0, 0x0, 0x0, 0x5, 0x0, 0x10, 0x0, 0xe, 0x0, 0x0, 0x0,
-                0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                0x26, 0x0, 0x0, 0x0, 0x68, 0x0, 0x65, 0x0, 0x6c, 0x0, 0x6c, 0x0, 0x6f, 0x0, 0x5c,
-                0x0, 0x6d, 0x0, 0x79, 0x0, 0x4e, 0x0, 0x65, 0x0, 0x77, 0x0, 0x46, 0x0, 0x69, 0x0,
-                0x6c, 0x0, 0x65, 0x0, 0x2e, 0x0, 0x74, 0x0, 0x78, 0x0, 0x74, 0x0
-            ]
-        );
+    test_request! {
+        SetInfo {
+            info_class: SetInfoClass::File(SetFileInfoClass::RenameInformation),
+            data: SetInfoData::from(RawSetInfoData::from(SetFileInfo::RenameInformation(FileRenameInformation {
+                replace_if_exists: false.into(),
+                root_directory: 0,
+                file_name: "hello\\myNewFile.txt".into(),
+            }))),
+            file_id: make_guid!("00000042-000e-0000-0500-10000e000000").into(),
+            additional_information: AdditionalInfo::new(),
+        } => "2100010a3a0000006000000000000000420000000e000000050010000e0000000000000000000000000000000000000026000000680065006c006c006f005c006d0079004e0065007700460069006c0065002e00740078007400"
     }
 
-    #[test]
-    fn test_set_info_response_parse() {
-        let data = [0x2, 0x0, 0x0, 0x0];
-        let response = SetInfoResponse::read_le(&mut std::io::Cursor::new(&data)).unwrap();
-        assert_eq!(response, SetInfoResponse {});
+    test_binrw! {
+        struct SetInfoResponse {} => "0200"
     }
 }

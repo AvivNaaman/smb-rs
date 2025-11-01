@@ -17,20 +17,15 @@ pub type EchoResponse = EchoMesasge;
 
 #[cfg(test)]
 mod tests {
+    use smb_tests::*;
+
     use super::*;
 
-    #[test]
-    pub fn test_echo_req_write() {
-        let mut cursor = std::io::Cursor::new(Vec::new());
-        let echo_req = EchoRequest::default();
-        echo_req.write_le(&mut cursor).unwrap();
-        assert_eq!(cursor.into_inner(), [0x4, 0x0, 0x0, 0x0])
+    test_binrw! {
+        struct EchoRequest {} => "04000000"
     }
 
-    #[test]
-    pub fn test_echo_resp_parse() {
-        let data = [0x4, 0x0, 0x0, 0x0];
-        let echo_resp = EchoResponse::read_le(&mut std::io::Cursor::new(&data)).unwrap();
-        assert_eq!(echo_resp, EchoResponse::default());
+    test_binrw! {
+        struct EchoResponse {} => "04000000"
     }
 }

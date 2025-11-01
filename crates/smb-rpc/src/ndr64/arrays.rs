@@ -231,39 +231,39 @@ where
 
 #[cfg(test)]
 mod tests {
+    use smb_tests::*;
+
     use crate::ndr64::NdrString;
 
     use super::*;
-    use std::io::Cursor;
 
-    #[test]
-    fn test_array_structure_with_ptrs() {
-        #[binrw::binrw]
-        #[derive(Debug, PartialEq, Eq)]
-        #[bw(import(stage: NdrPtrWriteStage))]
-        #[br(import(prev: Option<&Self>))]
-        struct InArrayElement {
-            #[bw(args_raw(NdrPtrWriteArgs(stage, ())))]
-            #[br(args(prev.map(|x| &x.ptr_to_value), NdrPtrReadMode::WithArraySupport, ()))]
-            ptr_to_value: NdrPtr<u32>,
-            #[bw(if(stage == NdrPtrWriteStage::ArraySupportWriteRefId))]
-            #[br(args(prev.map(|x| &**x.random_byte)))]
-            random_byte: NdrArrayStructureElement<u8>,
-            #[bw(args_raw(NdrPtrWriteArgs(stage, ())))]
-            #[br(args(prev.map(|x| &x.string_val), NdrPtrReadMode::WithArraySupport, ()))]
-            string_val: NdrPtr<NdrString<u16>>,
-        }
+    #[binrw::binrw]
+    #[derive(Debug, PartialEq, Eq)]
+    #[bw(import(stage: NdrPtrWriteStage))]
+    #[br(import(prev: Option<&Self>))]
+    struct InArrayElement {
+        #[bw(args_raw(NdrPtrWriteArgs(stage, ())))]
+        #[br(args(prev.map(|x| &x.ptr_to_value), NdrPtrReadMode::WithArraySupport, ()))]
+        ptr_to_value: NdrPtr<u32>,
+        #[bw(if(stage == NdrPtrWriteStage::ArraySupportWriteRefId))]
+        #[br(args(prev.map(|x| &**x.random_byte)))]
+        random_byte: NdrArrayStructureElement<u8>,
+        #[bw(args_raw(NdrPtrWriteArgs(stage, ())))]
+        #[br(args(prev.map(|x| &x.string_val), NdrPtrReadMode::WithArraySupport, ()))]
+        string_val: NdrPtr<NdrString<u16>>,
+    }
 
-        #[binrw::binrw]
-        #[derive(Debug, PartialEq, Eq)]
+    #[binrw::binrw]
+    #[derive(Debug, PartialEq, Eq)]
+    struct WithArray {
+        #[bw(calc = (array.len() as u32).into())]
+        size: NdrAlign<u32>,
+        #[br(args(*size as u64))] // TODO: prevent default to 0
+        array: NdrArray<InArrayElement>,
+    }
+
+    test_binrw! {
         struct WithArray {
-            #[bw(calc = (array.len() as u32).into())]
-            size: NdrAlign<u32>,
-            #[br(args(*size as u64))] // TODO: prevent default to 0
-            array: NdrArray<InArrayElement>,
-        }
-
-        let array = WithArray {
             array: vec![
                 InArrayElement {
                     ptr_to_value: 42.into(),
@@ -277,66 +277,6 @@ mod tests {
                 },
             ]
             .into(),
-        };
-        let mut cursor = Cursor::new(vec![]);
-        array.write_le(&mut cursor).unwrap();
-
-        let (hello_data, world_data) = {
-            let mut cursor = Cursor::new(vec![]);
-            Into::<NdrAlign<NdrString<u16>>>::into("Hello".parse::<NdrString<u16>>().unwrap())
-                .write_le(&mut cursor)
-                .unwrap();
-            let hello_data = cursor.into_inner();
-            let mut cursor = Cursor::new(vec![]);
-            Into::<NdrAlign<NdrString<u16>>>::into("World".parse::<NdrString<u16>>().unwrap())
-                .write_le(&mut cursor)
-                .unwrap();
-
-            let world_data = cursor.into_inner();
-            (hello_data, world_data)
-        };
-
-        let exp_data = [
-            // our size
-            0x02, 0x00, 0x00, 0x00, // size of array (2 elements)
-            0x00, 0x00, 0x00, 0x00, // aligned to 8 bytes
-            // array max_count
-            0x02, 0x00, 0x00, 0x00, // size of array (2 elements)
-            0x00, 0x00, 0x00, 0x00, // aligned to 8 bytes
-            // struct#1
-            0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00,
-            0x00, // ptr ref to first element's dword ptr
-            0x01, // random byte of first element
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // aligned to 8 bytes
-            0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00,
-            0x00, // ptr ref to first element's string
-            // struct#2
-            0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00,
-            0x00, // ptr ref to second element's dword ptr
-            0x02, // random byte of second element
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // aligned to 8 bytes
-            0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00,
-            0x00, // ptr ref to second element's string
-            42, 0, 0, 0, // value of first element
-            0, 0, 0, 0, // aligned to 8 bytes
-        ]
-        .into_iter()
-        .chain(hello_data)
-        .collect::<Vec<u8>>();
-        let pad_to_ndr = exp_data.len() % 8;
-        let exp_data = exp_data
-            .into_iter()
-            .chain(std::iter::repeat(0).take(pad_to_ndr))
-            .chain([
-                84, 0, 0, 0, 0, 0, 0, 0, // aligned to 8 bytes
-            ])
-            .chain(world_data)
-            .collect::<Vec<u8>>();
-
-        assert_eq!(cursor.into_inner(), exp_data);
-
-        let mut cursor = Cursor::new(exp_data);
-        let read_array: WithArray = BinRead::read_le(&mut cursor).unwrap();
-        assert_eq!(read_array, array);
+        } => "020000000000000002000000000000000000020000000000010000000000000000000200000000000000020000000000020000000000000000000200000000002a00000000000000060000000000000000000000000000000600000000000000480065006c006c006f00000000000000540000000000000006000000000000000000000000000000060000000000000057006f0072006c0064000000"
     }
 }

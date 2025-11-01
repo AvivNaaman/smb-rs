@@ -9,7 +9,7 @@ This project is the first rust implementation of
 the protocol that powers Windows file sharing and remote services.
 The project is designed to be used as a crate, but also includes a CLI tool for basic operations.
 
-While most current implementations are mostly bindings to C libraries (such as libsmb2, samba, or windows' own libraries), this project is a full implementation in Rust, with no dependencies on C libraries!
+While most current implementations are mostly bindings to C libraries (such as libsmb2, samba, or windows' own libraries), this project is a full implementation in Rust, with no _direct_ dependencies on C libraries.
 
 ## Getting started
 
@@ -23,7 +23,8 @@ Check out the `info` and the `copy` sub-commands for more information.
 
 ## Features
 
-- ✅ SMB 2.X & 3.X support.
+- ✅ All SMB 2.X & 3.X dialects support.
+- ✅ Wire message parsing is fully safe, using the `binrw` crate.
 - ✅ Async (`tokio`), Multi-threaded, or Single-threaded client.
 - ✅ Compression & Encryption support.
 - ✅ Transport using SMB over TCP (445), over NetBIOS (139), and over QUIC (443).

@@ -20,8 +20,18 @@ impl<T> PosMarker<T> {
     }
 
     /// Returns a [SeekFrom] that seeks relative from the position of the PosMarker.
+    #[inline]
     pub fn seek_from(&self, offset: u64) -> SeekFrom {
-        SeekFrom::Start(self.pos.get().unwrap() + offset)
+        self.seek_from_if(offset, true)
+    }
+
+    /// Returns a [SeekFrom] that seeks relative from the position of the PosMarker if condition is true,
+    pub fn seek_from_if(&self, offset: u64, condition: bool) -> SeekFrom {
+        if condition {
+            SeekFrom::Start(self.pos.get().unwrap() + offset)
+        } else {
+            SeekFrom::Current(0)
+        }
     }
 
     fn get_pos(&self) -> binrw::BinResult<u64> {
@@ -430,6 +440,35 @@ where
                 (),
                 Self::NO_EXTRA_SIZE,
                 Self::NO_EXTRA_OFFSET,
+            ),
+        )
+    }
+
+    /// Writer for value
+    /// * fill absolute offset to offset location.
+    /// * add extra size to the written **offset**.
+    #[binrw::writer(writer, endian)]
+    pub fn write_roff_b_plus<U, B>(
+        value: &U,
+        write_offset_to: &Self,
+        offset_relative_to: &PosMarker<B>,
+        offset_plus: u64,
+    ) -> BinResult<()>
+    where
+        U: BinWrite<Args<'static> = ()>,
+    {
+        let no_size: Option<&PosMarker<T>> = None;
+        Self::write_hero(
+            value,
+            writer,
+            endian,
+            (
+                no_size,
+                Some(write_offset_to),
+                Some(offset_relative_to),
+                (),
+                Self::NO_EXTRA_SIZE,
+                offset_plus,
             ),
         )
     }

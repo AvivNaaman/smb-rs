@@ -44,6 +44,9 @@ pastey = { workspace = true }
 maybe-async = { workspace = true }
 thiserror = { workspace = true }
 
+[dev-dependencies]
+smb-tests = { path = "../smb-tests", version = "0.10.2" }
+
 [features]
 default = ["async", "netbios-transport"]
 async = ["tokio", "tokio-util", "futures-core", "futures-util"]
@@ -51,4 +54,4 @@ is_sync = ["maybe-async/is_sync"]
 
 netbios-transport = []
 quic = ["dep:quinn", "dep:rustls", "dep:rustls-platform-verifier"]
-rdma = ["dep:smb-msg"] # , "dep:async-rdma"]
+rdma = ["dep:smb-msg"]                                             # , "dep:async-rdma"]

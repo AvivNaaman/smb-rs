@@ -237,40 +237,28 @@ pub struct HeaderFlags {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::io::Cursor;
+    use smb_tests::*;
 
-    #[test]
-    pub fn test_async_header_parse() {
-        let arr = &[
-            0xfe, 0x53, 0x4d, 0x42, 0x40, 0x0, 0x0, 0x0, 0x3, 0x1, 0x0, 0x0, 0xf, 0x0, 0x1, 0x0,
-            0x13, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x8, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x8,
-            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0xd7, 0x27, 0x53, 0x8, 0x0, 0x0, 0x0, 0x0, 0x63,
-            0xf8, 0x25, 0xde, 0xae, 0x2, 0x95, 0x2f, 0xa3, 0xd8, 0xc8, 0xaa, 0xf4, 0x6e, 0x7c,
-            0x99,
-        ];
-        let mut cursor = Cursor::new(arr);
-        let header = Header::read_le(&mut cursor).unwrap();
-        assert_eq!(
-            header,
-            Header {
-                credit_charge: 0,
-                status: Status::Pending as u32,
-                command: Command::ChangeNotify,
-                credit_request: 1,
-                flags: HeaderFlags::new()
-                    .with_async_command(true)
-                    .with_server_to_redir(true)
-                    .with_priority_mask(1),
-                next_command: 0,
-                message_id: 8,
-                tree_id: None,
-                async_id: Some(8),
-                session_id: 0x00000000085327d7,
-                signature: u128::from_le_bytes(u128::to_be_bytes(
-                    0x63f825deae02952fa3d8c8aaf46e7c99
-                )),
-            }
-        )
+    use super::*;
+
+    test_binrw! {
+        Header => async: Header {
+            credit_charge: 0,
+            status: Status::Pending as u32,
+            command: Command::ChangeNotify,
+            credit_request: 1,
+            flags: HeaderFlags::new()
+                .with_async_command(true)
+                .with_server_to_redir(true)
+                .with_priority_mask(1),
+            next_command: 0,
+            message_id: 8,
+            tree_id: None,
+            async_id: Some(8),
+            session_id: 0x00000000085327d7,
+            signature: u128::from_le_bytes(u128::to_be_bytes(
+                0x63f825deae02952fa3d8c8aaf46e7c99
+            )),
+        } => "fe534d4240000000030100000f000100130000000000000008000000000000000800000000000000d72753080000000063f825deae02952fa3d8c8aaf46e7c99"
     }
 }

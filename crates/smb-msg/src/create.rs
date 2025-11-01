@@ -61,7 +61,7 @@ impl Debug for FileId {
 }
 
 #[binrw::binrw]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct CreateRequest {
     #[bw(calc = 57)]
     #[br(assert(_structure_size == 57))]
@@ -96,15 +96,15 @@ pub struct CreateRequest {
     #[br(args { size: SizedStringSize::bytes16(name_length) })]
     pub name: SizedWideString,
 
-    /// Use the `CreateContextReqData::first_...` function family to get the first context of a specific type.
+    /// Use the [`CreateContextRequestData`]`::first_...` function family to get the first context of a specific type.
     #[brw(align_before = 8)]
     #[br(map_stream = |s| s.take_seek(_create_contexts_length.value.into()))]
     #[bw(write_with = PosMarker::write_roff_size, args(&_create_contexts_offset, &_create_contexts_length))]
-    pub contexts: ChainedItemList<ReqCreateContext, 8>,
+    pub contexts: ChainedItemList<RequestCreateContext, 8>,
 }
 
 #[binrw::binrw]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 #[brw(repr(u32))]
 pub enum ImpersonationLevel {
     Anonymous = 0x0,
@@ -127,7 +127,7 @@ pub enum CreateDisposition {
 }
 
 #[bitfield]
-#[derive(BinWrite, BinRead, Default, Debug, Clone, Copy)]
+#[derive(BinWrite, BinRead, Default, Debug, Clone, Copy, PartialEq, Eq)]
 #[bw(map = |&x| Self::into_bytes(x))]
 #[br(map = Self::from_bytes)]
 pub struct CreateOptions {
@@ -206,11 +206,11 @@ pub struct CreateResponse {
     #[bw(calc = PosMarker::default())]
     create_contexts_length: PosMarker<u32>, // bytes
 
-    /// Use the `CreateContextRespData::first_...` function family to get the first context of a specific type.
+    /// Use the [`CreateContextResponseData`]`::first_...` function family to get the first context of a specific type.
     #[br(seek_before = SeekFrom::Start(create_contexts_offset.value as u64))]
     #[br(map_stream = |s| s.take_seek(create_contexts_length.value.into()))]
     #[bw(write_with = PosMarker::write_roff_size, args(&create_contexts_offset, &create_contexts_length))]
-    pub create_contexts: ChainedItemList<RespCreateContext, 8>,
+    pub create_contexts: ChainedItemList<ResponseCreateContext, 8>,
 }
 
 #[bitfield]
@@ -234,6 +234,8 @@ pub enum CreateAction {
     Overwritten = 0x3,
 }
 
+/// The common definition that wrap around all create contexts, for both request and response.
+///
 /// This is meant to be used within a [`ChainedItemList<T>`][smb_fscc::ChainedItemList<T>]!
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
@@ -244,7 +246,7 @@ where
     for<'a> T: BinRead<Args<'a> = (&'a Vec<u8>,)> + BinWrite<Args<'static> = ()>,
 {
     #[bw(calc = PosMarker::default())]
-    _name_offset: PosMarker<u16>,
+    _name_offset: PosMarker<u16>, // relative to ChainedItem (any access must consider +CHAINED_ITEM_PREFIX_SIZE from start of item)
     #[bw(calc = u16::try_from(name.len()).unwrap())]
     name_length: u16,
     #[bw(calc = 0)]
@@ -257,11 +259,14 @@ where
 
     #[brw(align_before = 8)]
     #[br(count = name_length)]
+    #[br(seek_before = _name_offset.seek_from(_name_offset.value as u64 - CHAINED_ITEM_PREFIX_SIZE as u64))]
     #[bw(write_with = PosMarker::write_roff_plus, args(&_name_offset, CHAINED_ITEM_PREFIX_SIZE as u64))]
     pub name: Vec<u8>,
 
-    #[brw(align_before = 8)]
+    #[bw(align_before = 8)]
+    #[br(assert(_data_offset.value % 8 == 0))]
     #[bw(write_with = PosMarker::write_roff_size_b_plus, args(&_data_offset, &_data_length, &_name_offset, CHAINED_ITEM_PREFIX_SIZE as u64))]
+    #[br(seek_before = _name_offset.seek_from_if(_data_offset.value as u64 - CHAINED_ITEM_PREFIX_SIZE as u64, _data_length.value > 0))]
     #[br(map_stream = |s| s.take_seek(_data_length.value.into()), args(&name))]
     pub data: T,
 }
@@ -276,11 +281,14 @@ macro_rules! create_context_half {
     ) => {
     pastey::paste! {
 
+/// This trait is automatically implemented for all
+#[doc = concat!("[`Create", stringify!($struct_name), "`]")]
+/// create context values.
 pub trait [<CreateContextData $struct_name Value>] : Into<CreateContext<[<CreateContext $struct_name Data>]>> {
     const CONTEXT_NAME: &'static [u8];
 }
 
-#[doc = concat!("The `", stringify!($struct_name), "` Create Context data enum. This contains all the possible context types for ", stringify!($struct_name))]
+#[doc = concat!("The [`Create", stringify!($struct_name), "`] Context data enum. ")]
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 #[br(import(name: &Vec<u8>))]
@@ -352,20 +360,27 @@ pub type [<$struct_name CreateContext>] = CreateContext<[<CreateContext $struct_
     }
 }
 
+/// Internal macro to generate request/response context enums for create.
 macro_rules! make_create_context {
     (
-        $($context_type:ident : $class_name:literal, $req_type:ty, $res_type:ty, )+
+        $(
+            $(#[doc = $docstring:literal])*
+            $context_type:ident : $class_name:literal, $req_type:ty $(, $res_type:ty)?;
+        )+
     ) => {
         pastey::paste!{
 
+/// This enum contains all the types of create contexts.
 pub enum CreateContextType {
     $(
+        $(#[doc = $docstring])*
         [<$context_type:upper>],
     )+
 }
 
 impl CreateContextType {
     $(
+        #[doc = concat!("The name for the `", stringify!($context_type), "` create context.")]
         pub const [<$context_type:upper _NAME>]: &[u8] = $class_name;
     )+
 
@@ -389,34 +404,49 @@ impl CreateContextType {
         }
 
         create_context_half! {
-            Req {
+            Request {
                 $($context_type: $req_type,)+
             }
         }
 
         create_context_half! {
-            Resp {
-                $($context_type: $res_type,)+
+            Response {
+                $($($context_type: $res_type,)?)+
             }
         }
     }
 }
 
 make_create_context!(
-    exta: b"ExtA", ChainedItemList<FileGetEaInformation>, ChainedItemList<FileFullEaInformation>,
-    secd: b"SecD", SdBuffer, SdBuffer,
-    dhnq: b"DHnQ", DurableHandleRequest, DurableHandleResponse,
-    dhnc: b"DHNc", DurableHandleReconnect, DurableHandleReconnect,
-    alsi: b"AlSi", AllocationSize, AllocationSize,
-    mxac: b"MxAc", QueryMaximalAccessRequest,  QueryMaximalAccessResponse,
-    twrp: b"TWrp", TimewarpToken, TimewarpToken,
-    qfid: b"QFid", QueryOnDiskIdReq,  QueryOnDiskIdResp,
-    rqls: b"RqLs", RequestLease, RequestLease, // v1+2
-    dh2q: b"DH2Q", DurableHandleRequestV2, DH2QResp,
-    dh2c: b"DH2C", DurableHandleReconnectV2, DurableHandleReconnectV2,
-    appinstid: b"\x45\xBC\xA6\x6A\xEF\xA7\xF7\x4A\x90\x08\xFA\x46\x2E\x14\x4D\x74", AppInstanceId, AppInstanceId,
-    appinstver: b"\xB9\x82\xD0\xB7\x3B\x56\x07\x4F\xA0\x7B\x52\x4A\x81\x16\xA0\x10", AppInstanceVersion, AppInstanceVersion,
-    svhdxopendev: b"\x9C\xCB\xCF\x9E\x04\xC1\xE6\x43\x98\x0E\x15\x8D\xA1\xF6\xEC\x83", SvhdxOpenDeviceContext, SvhdxOpenDeviceContext,
+    /// The data contains the extended attributes that MUST be stored on the created file.
+    exta: b"ExtA", ChainedItemList<FileFullEaInformation>;
+    /// The data contains a security descriptor that MUST be stored on the created file.
+    secd: b"SecD", SecurityDescriptor;
+    /// The client is requesting the open to be durable
+    dhnq: b"DHnQ", DurableHandleRequest, DurableHandleResponse;
+    /// The client is requesting to reconnect to a durable open after being disconnected
+    dhnc: b"DHNc", DurableHandleReconnect;
+    /// The data contains the required allocation size of the newly created file.
+    alsi: b"AlSi", AllocationSize;
+    /// The client is requesting that the server return maximal access information.
+    mxac: b"MxAc", QueryMaximalAccessRequest, QueryMaximalAccessResponse;
+    /// The client is requesting that the server open an earlier version of the file identified by the provided time stamp.
+    twrp: b"TWrp", TimewarpToken;
+    /// The client is requesting that the server return a 32-byte opaque BLOB that uniquely identifies the file being opened on disk.
+    qfid: b"QFid", QueryOnDiskIdReq, QueryOnDiskIdResp;
+    /// The client is requesting that the server return a lease. This value is only supported for the SMB 2.1 and 3.x dialect family.
+    rqls: b"RqLs", RequestLease, RequestLease; // v1+2, request & response are the same
+    /// The client is requesting the open to be durable. This value is only supported for the SMB 3.x dialect family.
+    dh2q: b"DH2Q", DurableHandleRequestV2, DH2QResp;
+    /// The client is requesting to reconnect to a durable open after being disconnected. This value is only supported for the SMB 3.x dialect family.
+    dh2c: b"DH2C", DurableHandleReconnectV2;
+    /// The client is supplying an identifier provided by an application instance while opening a file. This value is only supported for the SMB 3.x dialect family.
+    appinstid: b"\x45\xBC\xA6\x6A\xEF\xA7\xF7\x4A\x90\x08\xFA\x46\x2E\x14\x4D\x74", AppInstanceId, AppInstanceId;
+    /// The client is supplying a version to correspond to the application instance identifier.  This value is only supported for SMB 3.1.1 dialect.
+    appinstver: b"\xB9\x82\xD0\xB7\x3B\x56\x07\x4F\xA0\x7B\x52\x4A\x81\x16\xA0\x10", AppInstanceVersion, AppInstanceVersion;
+    /// Provided by an application while opening a shared virtual disk file.
+    /// This Create Context value is not valid for the SMB 2.002, SMB 2.1, and SMB 3.0 dialects
+    svhdxopendev: b"\x9C\xCB\xCF\x9E\x04\xC1\xE6\x43\x98\x0E\x15\x8D\xA1\xF6\xEC\x83", SvhdxOpenDeviceContext, SvhdxOpenDeviceContext;
 );
 
 macro_rules! empty_req {
@@ -426,8 +456,6 @@ macro_rules! empty_req {
         pub struct $name;
     };
 }
-
-pub type SdBuffer = SecurityDescriptor;
 
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq, Default)]
@@ -452,6 +480,7 @@ pub struct DurableHandleReconnect {
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq, Default)]
 pub struct QueryMaximalAccessRequest {
+    #[br(parse_with = binread_if_has_data)]
     pub timestamp: Option<FileTime>,
 }
 
@@ -464,7 +493,7 @@ pub struct AllocationSize {
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct TimewarpToken {
-    pub tiemstamp: FileTime,
+    pub timestamp: FileTime,
 }
 
 #[binrw::binrw]
@@ -491,8 +520,7 @@ pub struct RequestLeaseV1 {
 pub struct RequestLeaseV2 {
     pub lease_key: u128,
     pub lease_state: LeaseState,
-    #[br(assert(lease_flags == 0 || lease_flags == 4))]
-    pub lease_flags: u32,
+    pub lease_flags: LeaseFlags,
     #[bw(calc = 0)]
     #[br(assert(lease_duration == 0))]
     lease_duration: u64,
@@ -501,6 +529,18 @@ pub struct RequestLeaseV2 {
     #[bw(calc = 0)]
     #[br(assert(reserved == 0))]
     reserved: u16,
+}
+
+#[bitfield]
+#[derive(BinWrite, BinRead, Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[bw(map = |&x| Self::into_bytes(x))]
+#[br(map = Self::from_bytes)]
+pub struct LeaseFlags {
+    #[skip]
+    __: B2,
+    pub parent_lease_key_set: bool,
+    #[skip]
+    __: B29,
 }
 
 empty_req!(QueryOnDiskIdReq);
@@ -547,6 +587,7 @@ pub struct AppInstanceId {
     _reserved: u16,
     pub app_instance_id: Guid,
 }
+
 #[binrw::binrw]
 #[derive(Debug, PartialEq, Eq)]
 pub struct AppInstanceVersion {
@@ -688,10 +729,8 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    pub fn test_create_request_written_correctly() {
-        let file_name = "hello";
-        let request = CreateRequest {
+    test_request! {
+        Create {
             requested_oplock_level: OplockLevel::None,
             impersonation_level: ImpersonationLevel::Impersonation,
             desired_access: FileAccessMask::from_bytes(0x00100081u32.to_le_bytes()),
@@ -704,7 +743,7 @@ mod tests {
             create_options: CreateOptions::new()
                 .with_synchronous_io_nonalert(true)
                 .with_disallow_exclusive(true),
-            name: file_name.into(),
+            name: "hello".into(),
             contexts: vec![
                 DurableHandleRequestV2 {
                     timeout: 0,
@@ -716,53 +755,14 @@ mod tests {
                 QueryOnDiskIdReq.into(),
             ]
             .into(),
-        };
-        let data_without_header = encode_content(request.into());
-        assert_eq!(
-            data_without_header,
-            vec![
-                0x39, 0x0, 0x0, 0x0, 0x2, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x81, 0x0, 0x10, 0x0, 0x0, 0x0, 0x0, 0x0,
-                0x7, 0x0, 0x0, 0x0, 0x1, 0x0, 0x0, 0x0, 0x20, 0x0, 0x2, 0x0, 0x78, 0x0, 0xa, 0x0,
-                0x88, 0x0, 0x0, 0x0, 0x68, 0x0, 0x0, 0x0, 0x68, 0x0, 0x65, 0x0, 0x6c, 0x0, 0x6c,
-                0x0, 0x6f, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x38, 0x0, 0x0, 0x0, 0x10, 0x0, 0x4,
-                0x0, 0x0, 0x0, 0x18, 0x0, 0x20, 0x0, 0x0, 0x0, 0x44, 0x48, 0x32, 0x51, 0x0, 0x0,
-                0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                0x0, 0x0, 0x20, 0xa3, 0x79, 0xc6, 0xa0, 0xc0, 0xef, 0x11, 0x8b, 0x7b, 0x0, 0xc,
-                0x29, 0x80, 0x16, 0x82, 0x18, 0x0, 0x0, 0x0, 0x10, 0x0, 0x4, 0x0, 0x0, 0x0, 0x18,
-                0x0, 0x0, 0x0, 0x0, 0x0, 0x4d, 0x78, 0x41, 0x63, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                0x0, 0x10, 0x0, 0x4, 0x0, 0x0, 0x0, 0x18, 0x0, 0x0, 0x0, 0x0, 0x0, 0x51, 0x46,
-                0x69, 0x64, 0x0, 0x0, 0x0, 0x0
-            ]
-        )
+        } => "390000000200000000000000000000000000000000000000810010000000000007000000010000002000020078000a008800000068
+        000000680065006c006c006f0000000000000038000000100004000000180020000000444832510000000000000000000000000000000000
+        00000020a379c6a0c0ef118b7b000c29801682180000001000040000001800000000004d7841630000000000000000100004000000180000
+        0000005146696400000000"
     }
 
-    #[test]
-    pub fn test_create_response_parsed_correctly() {
-        let data: [u8; 240] = [
-            0xfe, 0x53, 0x4d, 0x42, 0x40, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x05, 0x00,
-            0x01, 0x00, 0x31, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x12, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0xff, 0xfe, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x61, 0x00,
-            0x00, 0x14, 0x00, 0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x59, 0x00, 0x00, 0x00, 0x01, 0x00,
-            0x00, 0x00, 0x3c, 0x08, 0x38, 0x96, 0xae, 0x4b, 0xdb, 0x01, 0xc8, 0x55, 0x4b, 0x70,
-            0x6b, 0x58, 0xdb, 0x01, 0x62, 0x0c, 0xcd, 0xc1, 0xc8, 0x4b, 0xdb, 0x01, 0x62, 0x0c,
-            0xcd, 0xc1, 0xc8, 0x4b, 0xdb, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x49, 0x01, 0x00, 0x00, 0x0c, 0x00, 0x00, 0x00, 0x09, 0x00, 0x00, 0x00,
-            0x0c, 0x00, 0x00, 0x00, 0x98, 0x00, 0x00, 0x00, 0x58, 0x00, 0x00, 0x00, 0x20, 0x00,
-            0x00, 0x00, 0x10, 0x00, 0x04, 0x00, 0x00, 0x00, 0x18, 0x00, 0x08, 0x00, 0x00, 0x00,
-            0x4d, 0x78, 0x41, 0x63, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0x01,
-            0x1f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x04, 0x00, 0x00, 0x00, 0x18, 0x00,
-            0x20, 0x00, 0x00, 0x00, 0x51, 0x46, 0x69, 0x64, 0x00, 0x00, 0x00, 0x00, 0x2a, 0xe7,
-            0x01, 0x00, 0x00, 0x00, 0x04, 0x00, 0xd9, 0xcf, 0x17, 0xb0, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-            0x00, 0x00,
-        ];
-        let m = decode_content(&data).content.to_create().unwrap();
-        assert_eq!(
-            m,
-            CreateResponse {
+    test_response! {
+        Create {
                 oplock_level: OplockLevel::None,
                 flags: CreateResponseFlags::new(),
                 create_action: CreateAction::Opened,
@@ -787,7 +787,104 @@ mod tests {
                     .into(),
                 ]
                 .into()
-            }
-        )
+            } => "59000000010000003c083896ae4bdb01c8554b706b58db01620ccdc1c84bdb01620ccdc1c84bdb0100000000000000000000
+            0000000000001000000000000000490100000c000000090000000c0000009800000058000000200000001000040000001800080000
+            004d7841630000000000000000ff011f000000000010000400000018002000000051466964000000002ae7010000000400d9cf17b0
+            0000000000000000000000000000000000000000"
+    }
+
+    /*
+    Tests to add for contexts:
+    dhnc: b"DHNc", DurableHandleReconnect, DurableHandleReconnect,
+    dh2c: b"DH2C", DurableHandleReconnectV2, DurableHandleReconnectV2,
+    appinstid: b"\x45\xBC\xA6\x6A\xEF\xA7\xF7\x4A\x90\x08\xFA\x46\x2E\x14\x4D\x74", AppInstanceId, AppInstanceId,
+    appinstver: b"\xB9\x82\xD0\xB7\x3B\x56\x07\x4F\xA0\x7B\x52\x4A\x81\x16\xA0\x10", AppInstanceVersion, AppInstanceVersion,
+    svhdxopendev: b"\x9C\xCB\xCF\x9E\x04\xC1\xE6\x43\x98\x0E\x15\x8D\xA1\xF6\xEC\x83", SvhdxOpenDeviceContext, SvhdxOpenDeviceContext,
+     */
+
+    use smb_dtyp::guid;
+    use smb_tests::*;
+    use time::macros::datetime;
+
+    // Tests for the following contexts are not implemented here:
+    // - ExtA - already tested in smb-fscc & query info/ea tests
+    // - SecD - already tested in smb-dtyp tests
+
+    test_binrw! {
+        struct DurableHandleRequest {} => "00000000000000000000000000000000"
+    }
+
+    test_binrw! {
+        struct DurableHandleResponse {} => "0000000000000000"
+    }
+
+    test_binrw! {
+        struct QueryMaximalAccessRequest {
+            timestamp: None,
+        } => ""
+    }
+
+    test_binrw! {
+        struct QueryMaximalAccessResponse {
+            query_status: Status::Success,
+            maximal_access: FileAccessMask::from_bytes(0x001f01ffu32.to_le_bytes()),
+        } => "00000000ff011f00"
+    }
+
+    test_binrw! {
+        struct QueryOnDiskIdReq {} => ""
+    }
+
+    test_binrw! {
+        struct QueryOnDiskIdResp {
+            file_id: 0x2ae7010000000400,
+            volume_id: 0xd9cf17b000000000,
+        } => "000400000001e72a 00000000b017cfd9 00000000000000000000000000000000"
+    }
+
+    // TODO(TEST): RqLsV1
+    test_binrw! {
+        RequestLease => rqlsv2: RequestLease::RqLsReqv2(RequestLeaseV2 {
+            lease_key: guid!("b69d8fd8-184b-7c4d-a359-40c8a53cd2b7").as_u128(),
+            lease_state: LeaseState::new().with_read_caching(true).with_handle_caching(true),
+            lease_flags: LeaseFlags::new().with_parent_lease_key_set(true),
+            parent_lease_key: guid!("2d158ea3-55db-f749-9cd1-095496a06627").as_u128(),
+            epoch: 0
+        }) => "d88f9db64b184d7ca35940c8a53cd2b703000000040000000000000000000000a38e152ddb5549f79cd1095496a0662700000000"
+    }
+
+    test_binrw! {
+        struct AllocationSize {
+            allocation_size: 0xebfef0d4c000,
+        } => "00c0d4f0feeb0000"
+    }
+
+    test_binrw! {
+        struct DurableHandleRequestV2 {
+            create_guid: guid!("5a08e844-45c3-234d-87c6-596d2bc8bca5"),
+            flags: DurableHandleV2Flags::new(),
+            timeout: 0,
+        } => "0000000000000000000000000000000044e8085ac3454d2387c6596d2bc8bca5"
+    }
+
+    test_binrw! {
+        struct DH2QResp {
+            timeout: 180000,
+            flags: DurableHandleV2Flags::new(),
+        } => "20bf020000000000"
+    }
+
+    test_binrw! {
+        struct TimewarpToken {
+            timestamp: datetime!(2025-01-20 15:36:20.277632400).into(),
+        } => "048fa10d516bdb01"
+    }
+
+    test_binrw! {
+        struct DurableHandleReconnectV2 {
+            file_id: guid!("000000b3-0008-0000-dd00-000008000000").into(),
+            create_guid: guid!("a23e428c-1bac-7e43-8451-91f9f2277a95"),
+            flags: DurableHandleV2Flags::new(),
+        } => "b300000008000000dd000000080000008c423ea2ac1b437e845191f9f2277a9500000000"
     }
 }

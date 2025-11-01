@@ -1,6 +1,5 @@
-use binrw::{Endian, NullWideString, prelude::*};
-use std::io::{Read, Seek, Write};
-use std::ops::{Deref, DerefMut};
+use binrw::{Endian, prelude::*};
+use std::io::SeekFrom;
 
 #[binrw::writer(writer, endian)]
 pub fn write_u48(value: &u64) -> binrw::BinResult<()> {
@@ -21,6 +20,26 @@ pub fn read_u48() -> binrw::BinResult<u64> {
     };
     reader.read_exact(out)?;
     Ok(conv(buf))
+}
+
+/// Utility binrw parser function that reads an optional value of type `T`
+/// if there is _ANY_ data left in the stream
+/// (any data, not enough data - for Option<u32> it's 1 byte in the stream).
+#[binrw::parser(reader, endian)]
+pub fn binread_if_has_data<T>() -> BinResult<Option<T>>
+where
+    for<'a> T: BinRead<Args<'a> = ()>,
+{
+    let current_pos = reader.stream_position()?;
+    let stream_len = reader.seek(SeekFrom::End(0))?;
+    reader.seek(SeekFrom::Start(current_pos))?;
+
+    let data_left = stream_len - current_pos;
+    if data_left > 0 {
+        Ok(Some(T::read_options(reader, endian, ())?))
+    } else {
+        Ok(None)
+    }
 }
 
 #[cfg(test)]
@@ -78,119 +97,25 @@ mod test {
         PARSED_BE.write_be(&mut Cursor::new(&mut buf)).unwrap();
         assert_eq!(buf, DATA_BYTES);
     }
-}
 
-/// A simple Boolean type that reads and writes as a single byte.
-/// Any non-zero value is considered `true`, as defined by MS-FSCC 2.1.8.
-/// Similar to the WinAPI `BOOL` type.
-///
-/// This type supports `std::size_of::<Boolean>() == 1`, ensuring it is 1 byte in size.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Boolean(bool);
-
-impl Boolean {
-    const _VALIDATE_SIZE_OF: [u8; 1] = [0; size_of::<Self>()];
-}
-
-impl BinRead for Boolean {
-    type Args<'a> = ();
-
-    fn read_options<R: Read + Seek>(
-        reader: &mut R,
-        _: Endian,
-        _: Self::Args<'_>,
-    ) -> binrw::BinResult<Self> {
-        let value: u8 = u8::read_options(reader, Endian::Little, ())?;
-        Ok(Boolean(value != 0))
+    #[binrw::binrw]
+    #[derive(Debug, PartialEq, Eq)]
+    struct TestBinReadIfHasData {
+        #[br(parse_with = super::binread_if_has_data)]
+        pub val1: Option<u8>,
     }
-}
 
-impl BinWrite for Boolean {
-    type Args<'a> = ();
-
-    fn write_options<W: Write + Seek>(
-        &self,
-        writer: &mut W,
-        _: Endian,
-        _: Self::Args<'_>,
-    ) -> binrw::BinResult<()> {
-        let value: u8 = if self.0 { 1 } else { 0 };
-        value.write_options(writer, Endian::Little, ())
-    }
-}
-
-impl From<bool> for Boolean {
-    fn from(value: bool) -> Self {
-        Boolean(value)
-    }
-}
-
-impl From<Boolean> for bool {
-    fn from(val: Boolean) -> Self {
-        val.0
-    }
-}
-
-/// A MultiSz (Multiple Null-terminated Wide Strings) type that reads and writes a sequence of
-/// null-terminated wide strings, ending with an additional null string.
-///
-/// Similar to the Registry [`REG_MULTI_SZ`](https://learn.microsoft.com/en-us/windows/win32/sysinfo/registry-value-types) type.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MultiSz(Vec<NullWideString>);
-
-impl BinRead for MultiSz {
-    type Args<'a> = ();
-
-    fn read_options<R: Read + Seek>(
-        reader: &mut R,
-        endian: Endian,
-        _: Self::Args<'_>,
-    ) -> BinResult<Self> {
-        let mut strings = Vec::new();
-        loop {
-            let string: NullWideString = NullWideString::read_options(reader, endian, ())?;
-            if string.is_empty() {
-                break;
-            }
-            strings.push(string);
-        }
-        Ok(MultiSz(strings))
-    }
-}
-
-impl BinWrite for MultiSz {
-    type Args<'a> = ();
-
-    fn write_options<W: Write + Seek>(
-        &self,
-        writer: &mut W,
-        endian: Endian,
-        _: Self::Args<'_>,
-    ) -> BinResult<()> {
-        for string in &self.0 {
-            string.write_options(writer, endian, ())?;
-        }
-        NullWideString::default().write_options(writer, endian, ())?;
-        Ok(())
-    }
-}
-
-impl Deref for MultiSz {
-    type Target = Vec<NullWideString>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for MultiSz {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
-
-impl From<Vec<NullWideString>> for MultiSz {
-    fn from(strings: Vec<NullWideString>) -> Self {
-        MultiSz(strings)
+    #[test]
+    fn test_if_has_data() {
+        // with data
+        let data_with = [0x42u8];
+        let mut reader = Cursor::new(&data_with);
+        let parsed = TestBinReadIfHasData::read_le(&mut reader).unwrap();
+        assert_eq!(parsed, TestBinReadIfHasData { val1: Some(0x42) });
+        // without data
+        let data_without: [u8; 0] = [];
+        let mut reader = Cursor::new(&data_without);
+        let parsed = TestBinReadIfHasData::read_le(&mut reader).unwrap();
+        assert_eq!(parsed, TestBinReadIfHasData { val1: None });
     }
 }
